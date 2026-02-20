@@ -1,0 +1,18 @@
+# Python cache
+__pycache__/
+*.py[cod]
+
+# Generated reports / exports
+Rapport_*.xlsx
+Liste_*.xlsx
+Liste_*.pdf
+Recu_*.pdf
+
+# Runtime artifacts
+*.log
+error_log.txt
+
+# Local database backups and temp artifacts
+*.db-journal
+*.db-wal
+*.db-shm
