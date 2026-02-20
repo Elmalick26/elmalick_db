@@ -16,3 +16,12 @@ error_log.txt
 *.db-journal
 *.db-wal
 *.db-shm
+
+# Local runtime data
+school_management.db
+backups/
+logs/
+
+# Python virtual environments
+.venv/
+venv/
