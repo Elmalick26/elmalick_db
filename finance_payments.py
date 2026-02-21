@@ -19,6 +19,17 @@ from ui_styles import ThemeManager, get_card_style, apply_shadow_to_widget, get_
 THEME_AVAILABLE = True
 
 
+def sanitize(text):
+    if text is None:
+        return ""
+    if not isinstance(text, str):
+        text = str(text)
+    try:
+        return text.encode("latin-1").decode("latin-1")
+    except UnicodeEncodeError:
+        return text.encode("ascii", "ignore").decode("ascii")
+
+
 class LatePayersDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
