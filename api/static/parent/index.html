@@ -1,0 +1,1174 @@
+<!DOCTYPE html>
+<html lang="fr" dir="ltr">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>El Malick Gest — Portail Parents</title>
+  <style>
+    /* ── Reset & Base ─────────────────────────────── */
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    :root {
+      --bg: #0f1623;
+      --surface: #161d2f;
+      --card: #1e2740;
+      --border: #2a3352;
+      --primary: #4f8ef7;
+      --primary-d: #3570d4;
+      --success: #3ecf74;
+      --warn: #f7c948;
+      --danger: #f75c5c;
+      --text: #e2e8f0;
+      --muted: #7a8aaa;
+      --radius: 12px;
+      --shadow: 0 4px 24px rgba(0, 0, 0, .45);
+    }
+
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* ── Login Screen ─────────────────────────────── */
+    #login-screen {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .login-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 44px 40px 36px;
+      width: 100%;
+      max-width: 420px;
+    }
+
+    .logo-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 32px;
+    }
+
+    .logo-icon {
+      width: 48px;
+      height: 48px;
+      background: linear-gradient(135deg, var(--primary), #7b5ea7);
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 24px;
+    }
+
+    .logo-text h1 {
+      font-size: 18px;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .logo-text p {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    .form-group {
+      margin-bottom: 18px;
+    }
+
+    .form-group label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--muted);
+      margin-bottom: 7px;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+    }
+
+    .form-group input {
+      width: 100%;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      font-size: 15px;
+      padding: 11px 14px;
+      outline: none;
+      transition: border-color .2s;
+    }
+
+    .form-group input:focus {
+      border-color: var(--primary);
+    }
+
+    .btn-primary {
+      width: 100%;
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: 15px;
+      font-weight: 600;
+      padding: 13px;
+      cursor: pointer;
+      margin-top: 8px;
+      transition: background .2s, transform .1s;
+    }
+
+    .btn-primary:hover {
+      background: var(--primary-d);
+    }
+
+    .btn-primary:active {
+      transform: scale(.98);
+    }
+
+    .btn-primary:disabled {
+      opacity: .55;
+      cursor: not-allowed;
+    }
+
+    .error-msg {
+      background: rgba(247, 92, 92, .12);
+      border: 1px solid var(--danger);
+      border-radius: 8px;
+      color: var(--danger);
+      font-size: 13px;
+      padding: 10px 14px;
+      margin-top: 14px;
+      display: none;
+    }
+
+    .error-msg.show {
+      display: block;
+    }
+
+    .hint-text {
+      font-size: 12px;
+      color: var(--muted);
+      text-align: center;
+      margin-top: 18px;
+      line-height: 1.6;
+    }
+
+    /* ── App Shell ────────────────────────────────── */
+    #app-screen {
+      display: none;
+      flex-direction: column;
+      flex: 1;
+    }
+
+    #app-screen.visible {
+      display: flex;
+    }
+
+    /* ── Top Bar ──────────────────────────────────── */
+    .topbar {
+      background: var(--card);
+      border-bottom: 1px solid var(--border);
+      padding: 0 24px;
+      height: 60px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+
+    .topbar-left {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+
+    .topbar-logo {
+      font-size: 20px;
+    }
+
+    .topbar-title {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .topbar-subtitle {
+      font-size: 12px;
+      color: var(--muted);
+    }
+
+    .topbar-right {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .student-badge {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 5px 14px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--primary);
+    }
+
+    .btn-logout {
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--muted);
+      font-size: 13px;
+      padding: 6px 14px;
+      cursor: pointer;
+      transition: border-color .2s, color .2s;
+    }
+
+    .btn-logout:hover {
+      border-color: var(--danger);
+      color: var(--danger);
+    }
+
+    /* ── Tab Nav ──────────────────────────────────── */
+    .tab-nav {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      gap: 0;
+      padding: 0 24px;
+      overflow-x: auto;
+    }
+
+    .tab-btn {
+      background: transparent;
+      border: none;
+      border-bottom: 3px solid transparent;
+      color: var(--muted);
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 600;
+      padding: 14px 18px;
+      transition: color .2s, border-color .2s;
+      white-space: nowrap;
+    }
+
+    .tab-btn:hover {
+      color: var(--text);
+    }
+
+    .tab-btn.active {
+      color: var(--primary);
+      border-bottom-color: var(--primary);
+    }
+
+    /* ── Main Content ─────────────────────────────── */
+    .main-content {
+      flex: 1;
+      padding: 24px;
+      max-width: 1000px;
+      width: 100%;
+      margin: 0 auto;
+    }
+
+    /* ── Tab Panels ───────────────────────────────── */
+    .tab-panel {
+      display: none;
+    }
+
+    .tab-panel.active {
+      display: block;
+    }
+
+    /* ── Cards ────────────────────────────────────── */
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px 22px;
+      margin-bottom: 16px;
+    }
+
+    .card-title {
+      font-size: 13px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      color: var(--muted);
+      margin-bottom: 14px;
+    }
+
+    /* ── KPI Row ──────────────────────────────────── */
+    .kpi-row {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+
+    .kpi-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 16px 18px;
+      border-left: 4px solid var(--primary);
+    }
+
+    .kpi-card.green {
+      border-left-color: var(--success);
+    }
+
+    .kpi-card.yellow {
+      border-left-color: var(--warn);
+    }
+
+    .kpi-card.red {
+      border-left-color: var(--danger);
+    }
+
+    .kpi-label {
+      font-size: 11px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .5px;
+    }
+
+    .kpi-value {
+      font-size: 26px;
+      font-weight: 700;
+      margin-top: 4px;
+    }
+
+    .kpi-card.green .kpi-value {
+      color: var(--success);
+    }
+
+    .kpi-card.yellow .kpi-value {
+      color: var(--warn);
+    }
+
+    .kpi-card.red .kpi-value {
+      color: var(--danger);
+    }
+
+    .kpi-card:not(.green):not(.yellow):not(.red) .kpi-value {
+      color: var(--primary);
+    }
+
+    /* ── Info Grid (profile) ──────────────────────── */
+    .info-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 12px 20px;
+    }
+
+    .info-item label {
+      display: block;
+      font-size: 11px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .4px;
+      margin-bottom: 3px;
+    }
+
+    .info-item span {
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--text);
+    }
+
+    /* ── Table ────────────────────────────────────── */
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+    }
+
+    .data-table th {
+      background: var(--surface);
+      color: var(--muted);
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      padding: 10px 14px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .data-table td {
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+      color: var(--text);
+    }
+
+    .data-table tr:last-child td {
+      border-bottom: none;
+    }
+
+    .data-table tr:hover td {
+      background: rgba(79, 142, 247, .04);
+    }
+
+    /* ── Badges ───────────────────────────────────── */
+    .badge {
+      display: inline-block;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 700;
+      padding: 3px 10px;
+      text-transform: uppercase;
+      letter-spacing: .3px;
+    }
+
+    .badge-green {
+      background: rgba(62, 207, 116, .15);
+      color: var(--success);
+    }
+
+    .badge-red {
+      background: rgba(247, 92, 92, .15);
+      color: var(--danger);
+    }
+
+    .badge-yellow {
+      background: rgba(247, 201, 72, .15);
+      color: var(--warn);
+    }
+
+    .badge-blue {
+      background: rgba(79, 142, 247, .15);
+      color: var(--primary);
+    }
+
+    /* ── Score Pill ───────────────────────────────── */
+    .score-pill {
+      display: inline-block;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 700;
+      padding: 2px 10px;
+      min-width: 44px;
+      text-align: center;
+    }
+
+    .score-high {
+      background: rgba(62, 207, 116, .18);
+      color: var(--success);
+    }
+
+    .score-mid {
+      background: rgba(247, 201, 72, .18);
+      color: var(--warn);
+    }
+
+    .score-low {
+      background: rgba(247, 92, 92, .18);
+      color: var(--danger);
+    }
+
+    /* ── Progress Bar ─────────────────────────────── */
+    .progress-wrap {
+      background: var(--surface);
+      border-radius: 4px;
+      height: 6px;
+      overflow: hidden;
+    }
+
+    .progress-fill {
+      height: 100%;
+      border-radius: 4px;
+      transition: width .5s;
+    }
+
+    /* ── Loading Spinner ──────────────────────────── */
+    .loader {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+      padding: 40px 0;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .spinner {
+      width: 24px;
+      height: 24px;
+      border: 3px solid var(--border);
+      border-top-color: var(--primary);
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+    }
+
+    @keyframes spin {
+      to {
+        transform: rotate(360deg);
+      }
+    }
+
+    /* ── Empty State ──────────────────────────────── */
+    .empty-state {
+      text-align: center;
+      padding: 50px 20px;
+      color: var(--muted);
+    }
+
+    .empty-state .empty-icon {
+      font-size: 40px;
+      margin-bottom: 12px;
+    }
+
+    .empty-state p {
+      font-size: 14px;
+    }
+
+    /* ── Footer ───────────────────────────────────── */
+    footer {
+      background: var(--surface);
+      border-top: 1px solid var(--border);
+      text-align: center;
+      padding: 14px;
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    /* ── Responsive ───────────────────────────────── */
+    @media (max-width: 600px) {
+      .login-card {
+        padding: 32px 20px 28px;
+      }
+
+      .main-content {
+        padding: 14px;
+      }
+
+      .topbar {
+        padding: 0 14px;
+      }
+
+      .topbar-subtitle {
+        display: none;
+      }
+
+      .student-badge {
+        display: none;
+      }
+
+      .kpi-row {
+        grid-template-columns: repeat(2, 1fr);
+      }
+
+      .data-table {
+        font-size: 12px;
+      }
+
+      .data-table th,
+      .data-table td {
+        padding: 8px 10px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- ════════════════════════════════════════════════
+     LOGIN SCREEN
+═════════════════════════════════════════════════ -->
+  <div id="login-screen">
+    <div class="login-card">
+      <div class="logo-row">
+        <div class="logo-icon">🏫</div>
+        <div class="logo-text">
+          <h1>El Malick Gest</h1>
+          <p>Portail Parents &amp; Tuteurs</p>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="input-code">Code de l'élève</label>
+        <input id="input-code" type="text" placeholder="ex: EMG-0001" autocomplete="username"
+          style="text-transform:uppercase" />
+      </div>
+      <div class="form-group">
+        <label for="input-pin">Code PIN</label>
+        <input id="input-pin" type="password" placeholder="4–6 chiffres" autocomplete="current-password" maxlength="6"
+          inputmode="numeric" pattern="[0-9]*" />
+      </div>
+
+      <button class="btn-primary" id="btn-login">Se connecter</button>
+      <div class="error-msg" id="login-error"></div>
+
+      <p class="hint-text">
+        Saisissez le code permanent de votre enfant (format EMG-XXXX), puis votre PIN personnel (4–6 chiffres).<br />
+        Première connexion ? Choisissez librement un PIN, il sera conservé pour les prochaines connexions.
+      </p>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════════════════════
+     APP SCREEN
+═════════════════════════════════════════════════ -->
+  <div id="app-screen">
+    <!-- Top Bar -->
+    <header class="topbar">
+      <div class="topbar-left">
+        <span class="topbar-logo">🏫</span>
+        <div>
+          <div class="topbar-title">El Malick Gest</div>
+          <div class="topbar-subtitle">Portail Parents</div>
+        </div>
+      </div>
+      <div class="topbar-right">
+        <span class="student-badge" id="student-badge">—</span>
+        <button class="btn-logout" id="btn-logout">Déconnexion</button>
+      </div>
+    </header>
+
+    <!-- Tab Navigation -->
+    <nav class="tab-nav">
+      <button class="tab-btn active" data-tab="profile">👤 Profil</button>
+      <button class="tab-btn" data-tab="grades">📚 Notes</button>
+      <button class="tab-btn" data-tab="attendance">📅 Présences</button>
+      <button class="tab-btn" data-tab="dues">💰 Frais scolaires</button>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="main-content">
+
+      <!-- ── Profile Tab ──────────────────────── -->
+      <section id="tab-profile" class="tab-panel active">
+        <div id="profile-content">
+          <div class="loader">
+            <div class="spinner"></div>Chargement…
+          </div>
+        </div>
+      </section>
+
+      <!-- ── Grades Tab ───────────────────────── -->
+      <section id="tab-grades" class="tab-panel">
+        <div id="grades-content">
+          <div class="loader">
+            <div class="spinner"></div>Chargement…
+          </div>
+        </div>
+      </section>
+
+      <!-- ── Attendance Tab ───────────────────── -->
+      <section id="tab-attendance" class="tab-panel">
+        <div id="attendance-content">
+          <div class="loader">
+            <div class="spinner"></div>Chargement…
+          </div>
+        </div>
+      </section>
+
+      <!-- ── Dues Tab ─────────────────────────── -->
+      <section id="tab-dues" class="tab-panel">
+        <div id="dues-content">
+          <div class="loader">
+            <div class="spinner"></div>Chargement…
+          </div>
+        </div>
+      </section>
+
+    </main>
+
+    <footer>El Malick Gest © 2026 — Toutes les données sont confidentielles</footer>
+  </div>
+
+  <!-- ════════════════════════════════════════════════
+     JAVASCRIPT
+═════════════════════════════════════════════════ -->
+  <script>
+    "use strict";
+
+    // ── Config ──────────────────────────────────────
+    function detectApiBase() {
+      const origin = window.location.origin || "";
+      // If opened from file/preview schemes, fallback to local API server.
+      if (!origin || origin === "null" || !/^https?:\/\//i.test(origin)) {
+        return "http://127.0.0.1:8000/api";
+      }
+      return origin + "/api";
+    }
+    const API_BASE = detectApiBase();
+
+    // ── State ───────────────────────────────────────
+    let _token = sessionStorage.getItem("parent_token") || null;
+    let _studentName = sessionStorage.getItem("student_name") || "";
+
+    // ── Utilities ───────────────────────────────────
+    const $ = id => document.getElementById(id);
+    const qs = sel => document.querySelector(sel);
+
+    async function apiFetch(path, opts = {}) {
+      const headers = { "Content-Type": "application/json", ...(opts.headers || {}) };
+      if (_token) headers["Authorization"] = `Bearer ${_token}`;
+      const res = await fetch(API_BASE + path, { ...opts, headers });
+      if (!res.ok) {
+        const raw = await res.text().catch(() => "");
+        let detail = "Erreur inconnue";
+        if (raw) {
+          try {
+            const body = JSON.parse(raw);
+            detail = body.detail || body.message || detail;
+          } catch {
+            detail = raw.slice(0, 180);
+          }
+        }
+        throw { status: res.status, detail };
+      }
+      const okRaw = await res.text().catch(() => "");
+      if (!okRaw) return {};
+      try {
+        return JSON.parse(okRaw);
+      } catch {
+        throw { status: res.status, detail: "Réponse serveur invalide" };
+      }
+    }
+
+    function scorePillClass(score, maxScore) {
+      const ratio = score / maxScore;
+      if (ratio >= 0.7) return "score-high";
+      if (ratio >= 0.5) return "score-mid";
+      return "score-low";
+    }
+
+    function fmtDate(val) {
+      if (!val) return "—";
+      const d = new Date(val);
+      if (isNaN(d)) return String(val);
+      return d.toLocaleDateString("fr-FR", { day: "2-digit", month: "2-digit", year: "numeric" });
+    }
+
+    function fmtCFA(val) {
+      return Number(val || 0).toLocaleString("fr-FR") + " FCFA";
+    }
+
+    function el(tag, cls, html) {
+      const e = document.createElement(tag);
+      if (cls) e.className = cls;
+      if (html !== undefined) e.innerHTML = html;
+      return e;
+    }
+
+    // ── Auth ─────────────────────────────────────────
+    async function doLogin() {
+      const code = $("input-code").value.trim().toUpperCase();
+      const pin = $("input-pin").value.trim();
+      const errEl = $("login-error");
+      errEl.classList.remove("show");
+
+      if (!code || !pin) {
+        errEl.textContent = "Veuillez remplir tous les champs.";
+        errEl.classList.add("show");
+        return;
+      }
+
+      const btn = $("btn-login");
+      btn.disabled = true;
+      btn.textContent = "Connexion…";
+
+      try {
+        const data = await apiFetch("/parent/login", {
+          method: "POST",
+          body: JSON.stringify({ student_code: code, pin }),
+        });
+        _token = data.access_token;
+        _studentName = data.student_name || "";
+        sessionStorage.setItem("parent_token", _token);
+        sessionStorage.setItem("student_name", _studentName);
+        showApp();
+      } catch (err) {
+        errEl.textContent =
+          err.status === 404 ? (err.detail || "Code élève introuvable. Vérifiez le code sur le carnet scolaire.") :
+            err.status === 401 ? "PIN incorrect." :
+              err.status === 0 ? "Serveur API inaccessible. Vérifiez que uvicorn tourne sur 127.0.0.1:8000." :
+                err.detail || "Erreur de connexion.";
+        errEl.classList.add("show");
+      } finally {
+        btn.disabled = false;
+        btn.textContent = "Se connecter";
+      }
+    }
+
+    function doLogout() {
+      _token = null;
+      _studentName = "";
+      sessionStorage.clear();
+      $("login-screen").style.display = "flex";
+      $("app-screen").classList.remove("visible");
+      $("input-code").value = "";
+      $("input-pin").value = "";
+      $("login-error").classList.remove("show");
+      // Reset tabs
+      document.querySelectorAll(".tab-btn").forEach((b, i) => b.classList.toggle("active", i === 0));
+      document.querySelectorAll(".tab-panel").forEach((p, i) => p.classList.toggle("active", i === 0));
+      resetContent();
+    }
+
+    function resetContent() {
+      const loader = '<div class="loader"><div class="spinner"></div>Chargement…</div>';
+      ["profile", "grades", "attendance", "dues"].forEach(t => {
+        $(`${t}-content`).innerHTML = loader;
+      });
+    }
+
+    // ── App Shell ────────────────────────────────────
+    function showApp() {
+      $("login-screen").style.display = "none";
+      $("app-screen").classList.add("visible");
+      $("student-badge").textContent = _studentName || "Élève";
+      loadProfile();
+    }
+
+    // ── Tab Switching ────────────────────────────────
+    document.querySelectorAll(".tab-btn").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const tab = btn.dataset.tab;
+        document.querySelectorAll(".tab-btn").forEach(b => b.classList.remove("active"));
+        document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
+        btn.classList.add("active");
+        $(`tab-${tab}`).classList.add("active");
+
+        // Lazy-load tab data
+        if (tab === "grades") loadGrades();
+        if (tab === "attendance") loadAttendance();
+        if (tab === "dues") loadDues();
+      });
+    });
+
+    // ── Profile ──────────────────────────────────────
+    async function loadProfile() {
+      const box = $("profile-content");
+      try {
+        const d = await apiFetch("/parent/me");
+        const fullName = [d.first_name_fr, d.last_name_fr].filter(Boolean).join(" ");
+        const fullNameAr = [d.first_name_ar, d.last_name_ar].filter(Boolean).join(" ");
+
+        box.innerHTML = `
+      <div class="kpi-row">
+        <div class="kpi-card">
+          <div class="kpi-label">Élève</div>
+          <div class="kpi-value" style="font-size:18px">${escHtml(fullName)}</div>
+        </div>
+        <div class="kpi-card blue">
+          <div class="kpi-label">Classe</div>
+          <div class="kpi-value" style="font-size:18px">${escHtml(d.class_name || "—")}</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Année scolaire</div>
+          <div class="kpi-value" style="font-size:16px">${escHtml(d.academic_year || "—")}</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Informations de l'élève</div>
+        <div class="info-grid">
+          <div class="info-item"><label>Nom complet (FR)</label><span>${escHtml(fullName || "—")}</span></div>
+          <div class="info-item"><label>Nom complet (AR)</label><span>${escHtml(fullNameAr || "—")}</span></div>
+          <div class="info-item"><label>Date de naissance</label><span>${fmtDate(d.birth_date)}</span></div>
+          <div class="info-item"><label>Sexe</label><span>${escHtml(d.gender || "—")}</span></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Contacts parent / tuteur</div>
+        <div class="info-grid">
+          <div class="info-item"><label>Nom du parent</label><span>${escHtml(d.parent_name || "—")}</span></div>
+          <div class="info-item"><label>Téléphone</label><span>${escHtml(d.parent_phone || "—")}</span></div>
+          <div class="info-item"><label>Email</label><span>${escHtml(d.parent_email || "—")}</span></div>
+        </div>
+      </div>
+    `;
+      } catch (err) {
+        box.innerHTML = errBox(err.detail);
+      }
+    }
+
+    // ── Grades ───────────────────────────────────────
+    async function loadGrades() {
+      const box = $("grades-content");
+      if (!box.querySelector(".loader")) return; // already loaded
+      try {
+        const grades = await apiFetch("/parent/grades");
+
+        if (!grades.length) {
+          box.innerHTML = emptyState("📚", "Aucune note disponible pour cette année.");
+          return;
+        }
+
+        // Group by period
+        const byPeriod = {};
+        grades.forEach(g => {
+          const p = g.period || "—";
+          if (!byPeriod[p]) byPeriod[p] = [];
+          byPeriod[p].push(g);
+        });
+
+        // KPIs
+        const avgAll = grades.reduce((s, g) => s + Number(g.score || 0), 0) / grades.length;
+        const maxS = grades[0]?.max_score || 20;
+        const atRisk = grades.filter(g => Number(g.score || 0) / maxS < 0.5).length;
+
+        let html = `
+      <div class="kpi-row">
+        <div class="kpi-card ${avgAll / maxS >= 0.6 ? "green" : avgAll / maxS >= 0.5 ? "yellow" : "red"}">
+          <div class="kpi-label">Moyenne générale</div>
+          <div class="kpi-value">${avgAll.toFixed(1)}<span style="font-size:14px;opacity:.6">/${maxS}</span></div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-label">Matières évaluées</div>
+          <div class="kpi-value">${new Set(grades.map(g => g.subject)).size}</div>
+        </div>
+        <div class="kpi-card ${atRisk > 0 ? "red" : "green"}">
+          <div class="kpi-label">Matières en difficulté</div>
+          <div class="kpi-value">${atRisk}</div>
+        </div>
+      </div>
+    `;
+
+        for (const [period, rows] of Object.entries(byPeriod)) {
+          // Aggregate by subject (avg of all exams)
+          const bySubject = {};
+          rows.forEach(r => {
+            if (!bySubject[r.subject]) bySubject[r.subject] = { scores: [], coeff: r.coefficient, max: r.max_score };
+            bySubject[r.subject].scores.push(Number(r.score || 0));
+          });
+
+          html += `
+        <div class="card">
+          <div class="card-title">📖 ${escHtml(period)}</div>
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Matière</th>
+                <th>Coeff.</th>
+                <th>Moyenne</th>
+                <th>/ Max</th>
+                <th>Progression</th>
+              </tr>
+            </thead>
+            <tbody>
+      `;
+
+          for (const [sub, info] of Object.entries(bySubject)) {
+            const avg = info.scores.reduce((a, b) => a + b, 0) / info.scores.length;
+            const pct = Math.round((avg / info.max) * 100);
+            const barColor = pct >= 70 ? "var(--success)" : pct >= 50 ? "var(--warn)" : "var(--danger)";
+            html += `
+          <tr>
+            <td><strong>${escHtml(sub)}</strong></td>
+            <td>${info.coeff}</td>
+            <td><span class="score-pill ${scorePillClass(avg, info.max)}">${avg.toFixed(1)}</span></td>
+            <td style="color:var(--muted)">${info.max}</td>
+            <td style="min-width:100px">
+              <div class="progress-wrap">
+                <div class="progress-fill" style="width:${pct}%;background:${barColor}"></div>
+              </div>
+              <span style="font-size:11px;color:var(--muted)">${pct}%</span>
+            </td>
+          </tr>
+        `;
+          }
+          html += `</tbody></table></div>`;
+        }
+
+        box.innerHTML = html;
+      } catch (err) {
+        box.innerHTML = errBox(err.detail);
+      }
+    }
+
+    // ── Attendance ───────────────────────────────────
+    async function loadAttendance() {
+      const box = $("attendance-content");
+      if (!box.querySelector(".loader")) return;
+      try {
+        const records = await apiFetch("/parent/attendance");
+
+        if (!records.length) {
+          box.innerHTML = emptyState("📅", "Aucun enregistrement de présence.");
+          return;
+        }
+
+        const total = records.length;
+        const present = records.filter(r => r.status === "Present").length;
+        const absent = records.filter(r => r.status === "Absent").length;
+        const late = records.filter(r => r.status === "Late").length;
+        const rate = Math.round((present / total) * 100);
+
+        let html = `
+      <div class="kpi-row">
+        <div class="kpi-card ${rate >= 80 ? "green" : rate >= 65 ? "yellow" : "red"}">
+          <div class="kpi-label">Taux de présence</div>
+          <div class="kpi-value">${rate}%</div>
+        </div>
+        <div class="kpi-card green">
+          <div class="kpi-label">Jours présent</div>
+          <div class="kpi-value">${present}</div>
+        </div>
+        <div class="kpi-card red">
+          <div class="kpi-label">Absences</div>
+          <div class="kpi-value">${absent}</div>
+        </div>
+        <div class="kpi-card yellow">
+          <div class="kpi-label">Retards</div>
+          <div class="kpi-value">${late}</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Historique (60 derniers jours)</div>
+        <table class="data-table">
+          <thead><tr><th>Date</th><th>Statut</th><th>Motif</th></tr></thead>
+          <tbody>
+    `;
+
+        records.forEach(r => {
+          const badgeCls = r.status === "Present" ? "badge-green"
+            : r.status === "Absent" ? "badge-red"
+              : "badge-yellow";
+          const statusFr = r.status === "Present" ? "Présent"
+            : r.status === "Absent" ? "Absent"
+              : r.status === "Late" ? "En retard"
+                : escHtml(r.status || "—");
+          html += `
+        <tr>
+          <td>${fmtDate(r.date)}</td>
+          <td><span class="badge ${badgeCls}">${statusFr}</span></td>
+          <td style="color:var(--muted)">${escHtml(r.reason || "—")}</td>
+        </tr>
+      `;
+        });
+
+        html += `</tbody></table></div>`;
+        box.innerHTML = html;
+      } catch (err) {
+        box.innerHTML = errBox(err.detail);
+      }
+    }
+
+    // ── Dues ─────────────────────────────────────────
+    async function loadDues() {
+      const box = $("dues-content");
+      if (!box.querySelector(".loader")) return;
+      try {
+        const dues = await apiFetch("/parent/dues");
+
+        if (!dues.length) {
+          box.innerHTML = emptyState("💰", "Aucune donnée financière disponible.");
+          return;
+        }
+
+        const totalDue = dues.reduce((s, d) => s + Number(d.amount || 0), 0);
+        const totalPaid = dues.filter(d => d.is_paid).reduce((s, d) => s + Number(d.amount || 0), 0);
+        const remaining = totalDue - totalPaid;
+        const paidPct = totalDue > 0 ? Math.round((totalPaid / totalDue) * 100) : 0;
+
+        let html = `
+      <div class="kpi-row">
+        <div class="kpi-card">
+          <div class="kpi-label">Total dû</div>
+          <div class="kpi-value" style="font-size:18px">${fmtCFA(totalDue)}</div>
+        </div>
+        <div class="kpi-card green">
+          <div class="kpi-label">Payé</div>
+          <div class="kpi-value" style="font-size:18px">${fmtCFA(totalPaid)}</div>
+        </div>
+        <div class="kpi-card ${remaining > 0 ? "red" : "green"}">
+          <div class="kpi-label">Restant</div>
+          <div class="kpi-value" style="font-size:18px">${fmtCFA(remaining)}</div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-title">Recouvrement global</div>
+        <div style="display:flex;align-items:center;gap:14px">
+          <div class="progress-wrap" style="flex:1;height:10px">
+            <div class="progress-fill" style="width:${paidPct}%;background:${paidPct >= 80 ? "var(--success)" : paidPct >= 50 ? "var(--warn)" : "var(--danger)"}"></div>
+          </div>
+          <span style="font-weight:700;color:var(--primary);min-width:40px">${paidPct}%</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Détail des frais</div>
+        <table class="data-table">
+          <thead><tr><th>Libellé</th><th>Montant</th><th>Échéance</th><th>Statut</th></tr></thead>
+          <tbody>
+    `;
+
+        dues.forEach(d => {
+          const paid = d.is_paid;
+          html += `
+        <tr>
+          <td>${escHtml(d.label || "—")}</td>
+          <td style="font-weight:600">${fmtCFA(d.amount)}</td>
+          <td>${fmtDate(d.due_date)}</td>
+          <td><span class="badge ${paid ? "badge-green" : "badge-red"}">${paid ? "Payé" : "En attente"}</span></td>
+        </tr>
+      `;
+        });
+
+        html += `</tbody></table></div>`;
+        box.innerHTML = html;
+      } catch (err) {
+        box.innerHTML = errBox(err.detail);
+      }
+    }
+
+    // ── Helpers ──────────────────────────────────────
+    function escHtml(str) {
+      return String(str ?? "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+    }
+
+    function emptyState(icon, msg) {
+      return `<div class="empty-state"><div class="empty-icon">${icon}</div><p>${escHtml(msg)}</p></div>`;
+    }
+
+    function errBox(msg) {
+      return `<div class="card" style="border-left:4px solid var(--danger)">
+    <strong style="color:var(--danger)">Erreur</strong>
+    <p style="margin-top:8px;color:var(--muted)">${escHtml(msg || "Impossible de charger les données.")}</p>
+  </div>`;
+    }
+
+    // ── Events ───────────────────────────────────────
+    $("btn-login").addEventListener("click", doLogin);
+    $("btn-logout").addEventListener("click", doLogout);
+
+    $("input-pin").addEventListener("keydown", e => {
+      if (e.key === "Enter") doLogin();
+    });
+    $("input-code").addEventListener("keydown", e => {
+      if (e.key === "Enter") $("input-pin").focus();
+    });
+
+    // ── Auto-login if token exists ───────────────────
+    if (_token) {
+      showApp();
+    }
+  </script>
+</body>
+
+</html>
