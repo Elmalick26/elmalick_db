@@ -8,6 +8,9 @@ from PyQt6.QtWidgets import (QApplication, QPushButton, QLineEdit, QComboBox,
                              QFrame, QGraphicsDropShadowEffect)
 from PyQt6.QtGui import QFont, QColor
 from PyQt6.QtCore import Qt
+from db_path import configure_qt_font_environment
+
+configure_qt_font_environment()
 
 # ========== COLORS (لوحة الألوان) ==========
 class Colors:
@@ -22,7 +25,6 @@ class Colors:
     SUCCESS_HOVER = "#059669"  # Emerald 600
     WARNING       = "#F59E0B"  # Amber 500
     DANGER        = "#EF4444"  # Red 500
-
     DANGER_HOVER  = "#DC2626"  # Red 600
     
     # خلفيات
@@ -59,7 +61,6 @@ class DarkColors:
     SUCCESS_HOVER = "#10B981"
     WARNING       = "#FBBF24"
     DANGER        = "#F87171"
-
     DANGER_HOVER  = "#EF4444"
     
     # خلفيات

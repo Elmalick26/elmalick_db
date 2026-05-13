@@ -1,747 +1,1052 @@
 import sys
+import os
+import traceback
 from datetime import datetime
-
-from database_setup import DatabaseManager
-
-# --- إصلاح Unicode على Windows ---
-if sys.platform == 'win32':
-    import os
-    os.environ['PYTHONIOENCODING'] = 'utf-8'
-
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                              QHBoxLayout, QPushButton, QLabel, QStackedWidget, 
-                             QFrame, QGridLayout, QScrollArea, QSizePolicy, QDialog,
-                             QGraphicsDropShadowEffect, QMessageBox)
-from PyQt6.QtCore import Qt, QSize
-from PyQt6.QtGui import QFont, QIcon, QColor, QAction
+                             QFrame, QMessageBox, QSpacerItem, QSizePolicy, 
+                             QGraphicsDropShadowEffect, QGridLayout, QScrollArea)
+from PyQt6.QtCore import Qt, QSize, QTimer
+from PyQt6.QtGui import QFont, QIcon, QColor, QShortcut, QKeySequence
 
-# Import database path manager
-from db_path import DB_PATH
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.figure import Figure
 
-# --- استيراد الأنظمة الجديدة ---
+# --- استيراد أنظمة الدعم الأساسية ---
+from database_setup import DatabaseManager
+from db_path import configure_qt_font_environment
+from config_manager import ConfigManager
+from app_logger import AppLogger
+from auto_backup import AutoBackupSystem
+from ui_styles import ThemeManager, Colors, DarkColors
+
+THEME_AVAILABLE = True
+
+
+def _resolve_app_icon_path():
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    candidates = [
+        os.path.join(base_dir, "icon.ico"),
+        os.path.join(base_dir, "assets", "icon.ico"),
+        os.path.join(base_dir, "..", "icon.ico"),
+        os.path.join(base_dir, "..", "assets", "icon.ico"),
+    ]
+    for candidate in candidates:
+        if os.path.exists(candidate):
+            return candidate
+    return ""
+
+# --- استيراد شاشة تسجيل الدخول ---
+from login_window import LoginWindow
+
+# --- استيراد جميع وحدات النظام (الشاشات) ---
 try:
-    from config_manager import ConfigManager
-    from auto_backup import AutoBackupSystem
-    from app_logger import AppLogger
-    from ui_styles import ThemeManager, rgba
-    ENHANCED_FEATURES = True
-except ImportError:
-    ENHANCED_FEATURES = False
-    print("⚠️ بعض الميزات المحسنة غير متوفرة")
+    from academic_settings import AcademicSettingsWindow
+    from student_management import ModernStudentManagement
+    from staff_management import ModernStaffManagement
+    from staff_attendance import StaffAttendanceWindow
+    from staff_leaves import StaffLeaveWindow
+    from finance_fees_setup import FeesSetupWindow
+    from payment_management import StudentDuesWindow
+    from finance_payments import StudentPaymentWindow
+    from finance_expenses import ExpensesWindow
+    from student_attendance import StudentAttendanceWindow
+    from student_discipline import DisciplineWindow
+    from student_grades import StudentGradesWindow
+    from bulletin_generation import BulletinGenerationWindow
+    from advanced_reports import AdvancedReportsWindow
+    from analytics_dashboard import AnalyticsDashboardWindow
+    from timetable_manager import TimetableWindow
+    from admin_documents import AdminDocsWindow
+    from communication_ui import CommunicationWindow
+    from user_management import UserManagementWindow
+    from system_maintenance import SystemMaintenanceWindow
+    from finance_dashboard import ModernFinanceDashboard
+    from inventory_management import InventoryWindow
+    from year_end_migration import MigrationWindow
+    MODULES_AVAILABLE = True
+except ImportError as e:
+    MODULES_AVAILABLE = False
+    AppLogger.error("MainDashboard", f"Erreur d'importation des modules: {e}")
 
-# --- استيراد جميع الوحدات ---
-from student_management import ModernStudentManagement as StudentManagementWindow
-from student_attendance import StudentAttendanceWindow
-from student_grades import StudentGradesWindow
-from bulletin_generation import BulletinGenerationWindow
-from finance_dashboard import ModernFinanceDashboard as FinanceDashboard
-from finance_fees_setup import FeesSetupWindow as FinanceFeesSetupWindow
-from finance_payments import StudentPaymentWindow as FinancePaymentsWindow
-from finance_expenses import ExpensesWindow as FinanceExpensesWindow
-from staff_management import ModernStaffManagement as StaffManagementWindow
-from staff_attendance import StaffAttendanceWindow
-from staff_leaves import StaffLeaveWindow as StaffLeaveWindow
-from academic_settings import AcademicSettingsWindow
-from user_management import UserManagementWindow
-from communication_ui import CommunicationWindow
-from inventory_management import InventoryWindow as InventoryManagementWindow
-from student_discipline import DisciplineWindow as StudentDisciplineWindow
-from year_end_migration import MigrationWindow as YearEndMigrationWindow
-from system_maintenance import SystemMaintenanceWindow
-from admin_documents import AdminDocsWindow
-from advanced_reports import AdvancedReportsWindow
-
-class MainDashboard(QMainWindow):
-    def __init__(self, user_role="Admin"):
+class MainWindow(QMainWindow):
+    def __init__(self, username, role):
         super().__init__()
-        self.user_role = user_role
-        self.nav_buttons = []  # لتخزين الأزرار مع الفهارس
-        self.setWindowTitle("El Malick Gestion Scolaire")
-        self.setMinimumSize(1358, 760)
+        self.username = username
+        self.user_role = role
+        self.config = ConfigManager()
+        self.setWindowTitle(f"{self.config.app_name} - {self.user_role}")
+        icon_path = _resolve_app_icon_path()
+        if icon_path:
+            self.setWindowIcon(QIcon(icon_path))
+        self.setMinimumSize(1280, 800)
+        self.showMaximized()
 
-        # أيقونة التطبيق
-        import os
-        if os.path.exists("icon.ico"):
-            self.setWindowIcon(QIcon("icon.ico"))
+        self.config = ConfigManager()
         
-        # التأكد من إنشاء جميع الجداول
-        self.ensure_database_structure()
-        
-        # تهيئة الأنظمة المحسنة
-        if ENHANCED_FEATURES:
-            self.config = ConfigManager()
-            self.backup_system = AutoBackupSystem(
-                db_path=self.config.db_path,
-                backup_dir=self.config.backup_dir
-            )
-            AppLogger.info("MainDashboard", "تم تحميل الأنظمة المحسنة بنجاح")
-            
-            # نسخة احتياطية عند البدء
-            if self.config.get_bool('BACKUP', 'backup_on_startup', True):
-                try:
-                    AppLogger.info("MainDashboard", "إنشاء نسخة احتياطية عند البدء...")
-                    self.backup_system.backup_on_startup()
-                except Exception as e:
-                    AppLogger.error("Startup", f"Startup Backup Failed: {e}")
-            
-            # بدء النسخ الاحتياطي التلقائي
-            try:
-                if self.config.auto_backup_enabled:
-                    self.backup_system.start_auto_backup(
-                        interval_hours=self.config.backup_interval_hours
-                    )
-            except Exception as e:
-                AppLogger.error("Startup", f"Auto Backup Init Failed: {e}")
-            
-            # ضبط الثيم الحالي (سيتم تطبيقه بعد بناء الواجهة)
-            ThemeManager.set_theme("dark" if self.config.dark_mode_enabled else "light")
-            AppLogger.info("MainDashboard", f"تم تفعيل الوضع: {ThemeManager._current_theme}")
+        # تطبيق الثيم المحفوظ
+        if self.config.dark_mode_enabled:
+            ThemeManager.set_theme("dark")
+        else:
+            ThemeManager.set_theme("light")
+        ThemeManager.apply_theme(self)
+
+        # تهيئة النسخ الاحتياطي التلقائي
+        if self.config.auto_backup_enabled:
+            self.backup_system = AutoBackupSystem()
+            self.backup_system.start_auto_backup(interval_hours=self.config.backup_interval_hours)
+
+        # حاويات النوافذ الفرعية والأزرار
+        self.module_widgets = {}
+        self.module_factories = {}
+        self.nav_buttons = {}
+        role_permissions = {
+            "Admin": ["all"],
+            "Comptable": ["finance_dashboard", "fees_setup", "student_dues", "finance_payments", "expenses_payroll", "inventory"],
+            "Secretaire": ["student_management", "staff_management", "staff_attendance", "staff_leaves", "student_attendance", "admin_docs", "communication"],
+            "Pédagogique": ["academic_settings", "student_management", "student_attendance", "student_discipline", "student_grades", "bulletin_generation", "advanced_reports"],
+            "Prof": ["student_attendance", "student_discipline", "student_grades"]
+        }
+        self.allowed_modules = role_permissions.get(self.user_role, [])
         
         self.init_ui()
-        # تطبيق الثيم بعد بناء الواجهة لضمان تحديث جميع العناصر
-        if ENHANCED_FEATURES:
-            self.apply_theme_to_all_windows()
-        self.ensure_indexes()
+        self.load_dashboard_data()
 
-    def ensure_database_structure(self):
-        """التأكد من وجود جميع الجداول باستخدام المدير المركزي"""
-        try:
-            # استخدام المدير المركزي
-            from database_setup import DatabaseManager
-            db_manager = DatabaseManager()
-            db_manager.initialize_database()
-            AppLogger.info("Database", "تم التحقق من هيكلة قاعدة البيانات بنجاح")
-        except Exception as e:
-            QMessageBox.critical(self, "خطأ قاعدة البيانات", f"فشل في تهيئة قاعدة البيانات:\n{str(e)}")
-            AppLogger.error("Database", f"Critical DB Init Error: {e}")
-            
-            
+        # تحديث لوحة التحكم تلقائياً كل 5 دقائق
+        self._kpi_timer = QTimer(self)
+        self._kpi_timer.timeout.connect(self._auto_refresh_dashboard)
+        self._kpi_timer.start(5 * 60 * 1000)
+
+        AppLogger.info("Main", f"Session démarrée pour: {self.username} ({self.user_role})")
+
+        # اختصار البحث العالمي Ctrl+K
+        self._search_dlg = None
+        sc = QShortcut(QKeySequence("Ctrl+K"), self)
+        sc.activated.connect(self.open_global_search)
+
     def init_ui(self):
+        self.central_widget = QWidget()
+        self.setCentralWidget(self.central_widget)
+        self.main_layout = QHBoxLayout(self.central_widget)
+        self.main_layout.setContentsMargins(0, 0, 0, 0)
+        self.main_layout.setSpacing(0)
+
+        # ================= 1. القائمة الجانبية (Sidebar) =================
+        self.setup_sidebar()
+
+        # ================= 2. منطقة العرض الرئيسية (Right Content) =================
+        self.right_widget = QWidget()
+        self.right_layout = QVBoxLayout(self.right_widget)
+        self.right_layout.setContentsMargins(0, 0, 0, 0)
+        self.right_layout.setSpacing(0)
+
+        # أ. الشريط العلوي (Topbar)
+        self.setup_topbar()
+
+        # ب. منطقة النوافذ (Stacked Widget)
+        self.content_area = QStackedWidget()
         colors = ThemeManager.get_colors()
-        sidebar_bg = colors.BG_HEADER
-        sidebar_hover = colors.BORDER
-        sidebar_text = colors.TEXT_SECONDARY
-        sidebar_text_active = colors.HEADER_TEXT if hasattr(colors, "HEADER_TEXT") else colors.TEXT_PRIMARY
-        sidebar_logo_bg = colors.BG_HEADER
-        user_frame_bg = colors.BG_HEADER
-        user_frame_border = colors.BORDER
-
-        # الحاوية الرئيسية
-        main_widget = QWidget()
-        self.setCentralWidget(main_widget)
-        main_layout = QHBoxLayout(main_widget)
-        main_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.setSpacing(0)
-
-        # --- 1. القائمة الجانبية (Deep Slate Sidebar) ---
-        sidebar_scroll = QScrollArea()
-        sidebar_scroll.setFixedWidth(260)
-        sidebar_scroll.setWidgetResizable(True)
-        # لون الخلفية للقائمة الجانبية (Slate 900 - داكن جداً)
-        sidebar_scroll.setStyleSheet(f"background-color: {sidebar_bg}; border: none;")
-
-        sidebar_content = QWidget()
-        sidebar_content.setStyleSheet(f"""
-            QWidget {{
-                background-color: {sidebar_bg}; 
-                color: {sidebar_text_active};
-            }}
-            QPushButton {{
-                text-align: left;
-                padding: 12px 20px;
-                border: none;
-                color: {sidebar_text};
-                font-size: 14px;
-                font-family: 'Segoe UI', 'Cairo';
-                border-radius: 6px;
-                margin: 2px 10px;
-            }}
-            QPushButton:hover {{
-                background-color: {sidebar_hover};
-                color: {sidebar_text_active};
-                font-weight: bold;
-            }}
-            /* العناوين الفرعية في القائمة */
-            QLabel {{
-                color: {sidebar_text};
-                font-weight: bold;
-                font-size: 11px;
-                padding: 15px 20px 5px 20px;
-                text-transform: uppercase;
-                letter-spacing: 0.5px;
-            }}
-        """)
+        self.content_area.setStyleSheet(f"background-color: {colors.BG_MAIN};")
         
-        side_layout = QVBoxLayout(sidebar_content)
-        side_layout.setContentsMargins(0, 0, 0, 20)
-        side_layout.setSpacing(4)
-
-        # الشعار
-        lbl_logo = QLabel("🏫 SCHOOL MASTER")
-        lbl_logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        lbl_logo.setStyleSheet(f"""
-            font-size: 20px; 
-            color: {sidebar_text_active}; 
-            padding: 30px 0; 
-            background-color: {sidebar_logo_bg};
-            font-weight: 900;
-            border-bottom: 1px solid {user_frame_border};
-        """)
-        side_layout.addWidget(lbl_logo)
-
-        # القوائم
-        self.nav_buttons = []
-
-        self.add_nav_btn(side_layout, "🏠 Tableau de Bord / الرئيسية", 0)
+        # إضافة لوحة التحكم (Dashboard) كشاشة أولى
+        self.dashboard_screen = self.create_dashboard_screen()
+        self.dashboard_idx = self.content_area.addWidget(self.dashboard_screen)
         
-        side_layout.addWidget(QLabel("SCOLARITÉ / الشؤون المدرسية"))
-        self.add_nav_btn(side_layout, "👨‍🎓 Élèves / الطلاب", 1)
-        self.add_nav_btn(side_layout, "📅 Assiduité / الغياب", 2)
-        self.add_nav_btn(side_layout, "⚖️ Discipline / الانضباط", 3)
-        self.add_nav_btn(side_layout, "🗂️ Documents & Cartes / وثائق", 4)
-        
-        side_layout.addWidget(QLabel("PÉDAGOGIE / البيداغوجيا"))
-        self.add_nav_btn(side_layout, "📝 Notes / العلامات", 5)
-        self.add_nav_btn(side_layout, "🖨️ Bulletins / الكشوف", 6)
-        
-        side_layout.addWidget(QLabel("FINANCES / المالية"))
-        self.add_nav_btn(side_layout, "💰 Tableau Financier / الملخص", 7)
-        self.add_nav_btn(side_layout, "⚙️ Configuration des Frais / إعداد الرسوم", 8)
-        self.add_nav_btn(side_layout, "💸 Paiements / المدفوعات", 9)
-        self.add_nav_btn(side_layout, "📉 Dépenses / المصاريف", 10)
-        self.add_nav_btn(side_layout, "📦 Stock & Inventaire / المخزون", 11)
-        self.add_nav_btn(side_layout, "📊 Rapports Avancés / التقارير المتقدمة", 20)
-        
-        side_layout.addWidget(QLabel("ADMINISTRATION / الإدارة"))
-        self.add_nav_btn(side_layout, "👥 Staff / الموظفون", 12)
-        self.add_nav_btn(side_layout, "⏰ Pointage / حضور الموظفين", 13)
-        self.add_nav_btn(side_layout, "🏖️ Gestion des Congés / إدارة الإجازات", 14)
-        self.add_nav_btn(side_layout, "📧 Communication / التراسل", 15)
-        self.add_nav_btn(side_layout, "⚙️ Paramètres / الإعدادات", 16)
-        self.add_nav_btn(side_layout, "🔄 Clôture Année / إغلاق", 17)
-        self.add_nav_btn(side_layout, "🔐 Utilisateurs / المستخدمين", 18)
-        self.add_nav_btn(side_layout, "🛡️ Maintenance / الصيانة", 19)
+        self.right_layout.addWidget(self.content_area, 1)
+        self.main_layout.addWidget(self.right_widget, 1)
 
-        side_layout.addStretch()
-        
-        # معلومات المستخدم
-        user_frame = QFrame()
-        user_frame.setStyleSheet(f"""
-            background-color: {user_frame_bg}; 
-            border-top: 1px solid {user_frame_border}; 
-            margin-top: 10px;
-        """)
-        user_layout = QHBoxLayout(user_frame)
-        lbl_user_icon = QLabel("👤")
-        lbl_user_icon.setStyleSheet(f"color: {sidebar_text_active};")
-        
-        lbl_user_info = QLabel(f"{self.user_role} User")
-        lbl_user_info.setStyleSheet(f"background: transparent; color: {sidebar_text_active};")
-        
-        user_layout.addWidget(lbl_user_icon)
-        user_layout.addWidget(lbl_user_info)
-        user_layout.addStretch()
-        
-        # زر تبديل Dark Mode
-        self.btn_dark_mode = QPushButton("🌙" if ThemeManager._current_theme != "dark" else "☀️")
-        self.btn_dark_mode.setMinimumHeight(32)
-        self.btn_dark_mode.setToolTip("تبديل الوضع الداكن / Dark Mode")
-        self.btn_dark_mode.setStyleSheet(f"""
-            QPushButton {{
-                background: {colors.BG_CARD};
-                color: {colors.TEXT_PRIMARY};
-                border-radius: 6px;
-                padding: 0;
-                font-size: 16px;
-                border: 1px solid {colors.BORDER};
-            }}
-            QPushButton:hover {{
-                background-color: {colors.BORDER};
-            }}
-        """)
-        self.btn_dark_mode.clicked.connect(self.toggle_dark_mode)
-        user_layout.addWidget(self.btn_dark_mode)
-        
-        # زر خروج
-        btn_logout = QPushButton("🚪")
-        btn_logout.setMinimumHeight(32)
-        btn_logout.setToolTip("Déconnexion")
-        btn_logout.setStyleSheet(f"""
-            QPushButton {{
-                background: {colors.BG_CARD};
-                color: {colors.TEXT_PRIMARY};
-                border-radius: 6px;
-                padding: 0;
-                border: 1px solid {colors.BORDER};
-            }}
-            QPushButton:hover {{
-                background-color: {colors.DANGER};
-                color: white;
-            }}
-        """)
-        btn_logout.clicked.connect(self.close)
-        user_layout.addWidget(btn_logout)
-
-        side_layout.addWidget(user_frame)
-
-        sidebar_scroll.setWidget(sidebar_content)
-        main_layout.addWidget(sidebar_scroll)
-
-        # --- 2. منطقة العمل (Content Area) ---
-        content_area = QWidget()
-        content_layout = QVBoxLayout(content_area)
-        content_layout.setContentsMargins(2, 2, 2, 2)
-        
-        # الترويسة العلوية (Header)
-        header_layout = QHBoxLayout()
-        lbl_page_title = QLabel(f"     Bienvenue, {self.user_role}")
-        lbl_page_title.setStyleSheet(f"font-size: 26px; font-weight: 800; color: {colors.TEXT_PRIMARY};")
-        
-        lbl_date = QLabel(datetime.now().strftime('%d %B %Y     '))
-        lbl_date.setStyleSheet(f"color: {colors.TEXT_SECONDARY}; font-size: 14px; font-weight: 600;")
-        
-        header_layout.addWidget(lbl_page_title)
-        header_layout.addStretch()
-        header_layout.addWidget(lbl_date)
-        
-        content_layout.addLayout(header_layout)
-        content_layout.addSpacing(15)
-
-        # Stacked Widget
-        self.stack = QStackedWidget()
-        
-        # الصفحة 0: اللوحة الرئيسية
-        self.home_page = self.create_home_dashboard()
-        self.stack.addWidget(self.home_page)
-
-        # تحميل جميع الشاشات (20 شاشة)
-        # تحميل جميع الشاشات (20 شاشة) مع معالجة الأخطاء لمنع توقف البرنامج
-        page_constructors = [
-            StudentManagementWindow, #1
-            StudentAttendanceWindow, #2
-            StudentDisciplineWindow, #3
-            AdminDocsWindow, #4
-            StudentGradesWindow, #5
-            BulletinGenerationWindow, #6
-            FinanceDashboard, #7
-            FinanceFeesSetupWindow, #8
-            FinancePaymentsWindow, #9
-            FinanceExpensesWindow, #10
-            InventoryManagementWindow, #11
-            StaffManagementWindow, #12
-            StaffAttendanceWindow, #13
-            StaffLeaveWindow, #14
-            CommunicationWindow, #15
-            AcademicSettingsWindow, #16
-            YearEndMigrationWindow, #17
-            UserManagementWindow, #18
-            SystemMaintenanceWindow, #19
-            AdvancedReportsWindow #20
-        ]
-
-        for i, PageClass in enumerate(page_constructors):
-            try:
-                page_instance = PageClass()
-                self.stack.addWidget(page_instance)
-            except Exception as e:
-                error_msg = f"Failed to load module {i+1} ({PageClass.__name__}):\n{str(e)}"
-                print(error_msg)
-                try:
-                    AppLogger.error("Startup", error_msg)
-                except:
-                    pass
-                
-                # Show error placeholder widget so user knows what happened
-                err_widget = QLabel(f"⚠️ {error_msg}")
-                err_widget.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                err_widget.setStyleSheet(
-                    f"color: {colors.DANGER}; font-size: 14px; background: {colors.BG_CARD}; border: 1px solid {colors.DANGER};"
-                )
-                self.stack.addWidget(err_widget)
-
-        content_layout.addWidget(self.stack)
-        main_layout.addWidget(content_area)
-        
-        # تطبيق الصلاحيات
-        self.apply_permissions()
-
-    def add_nav_btn(self, layout, text, index):
-        btn = QPushButton(text)
-        btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        
-        btn.clicked.connect(lambda: self.stack.setCurrentIndex(index))
-        layout.addWidget(btn)
-        self.nav_buttons.append((index, btn))
-
-    def apply_permissions(self):
-        """تطبيق نظام الصلاحيات على الأزرار"""
-        if self.user_role == "Admin":
-            return
-
-        if self.user_role == "Comptable":
-            # المحاسب يرى: المالية كاملة + المخزون + التقارير المتقدمة
-            # يخفي: بيداغوجيا، موظفين، إعدادات، صيانة، المستخدمين، انضباط، وثائق، الحضور، الطلاب
-            hidden_indices = [7, 8, 9, 10, 11]
-            for idx, btn in self.nav_buttons:
-                if idx in hidden_indices: 
-                    btn.setVisible(False)
-
-        elif self.user_role == "Prof":
-            # الأستاذ يرى: بيداغوجيا + طلاب + الحضور 
-            # يخفي: مالية، مخزون، موظفين، إعدادات، صيانة
-            hidden_indices = [2, 5]
-            for idx, btn in self.nav_buttons:
-                if idx in hidden_indices:
-                    btn.setVisible(False)
-        
-        elif self.user_role == "Pédagogique":
-            # البيداغوجي يرى: بيداغوجيا + طلاب + وثائق + انضباط
-            # يخفي: مالية، مخزون، موظفين، إعدادات، صيانة
-            hidden_indices = [2, 3, 5, 6]
-            for idx, btn in self.nav_buttons:
-                if idx in hidden_indices:
-                    btn.setVisible(False)
-        
-        elif self.user_role == "Secretaire":
-            # السكرتير يرى: الطلاب، الحضور، الوثائق، الموظفين، التراسل
-            # يخفي: الدرجات، الكشوف، المالية، الصيانة، الإعدادات
-            hidden_indices = [1, 4, 5, 6, 7, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19]
-            for idx, btn in self.nav_buttons:
-                if idx in hidden_indices:
-                    btn.setVisible(False)
-
-    def create_home_dashboard(self):
-        colors = ThemeManager.get_colors()
-        page = QWidget()
-        layout = QVBoxLayout(page)
-        layout.setContentsMargins(2, 0, 2, 0)
-        layout.setSpacing(25)
-        
-        try:
-            db_manager = DatabaseManager()
-            with db_manager.get_connection() as conn:
-                # تنبيه المخزون المنخفض (فقط للمدير والمحاسب)
-                if self.user_role in ["Admin", "Comptable"]:
-                    try:
-                        low_stock = self.get_low_stock_items(conn)
-                        if low_stock > 0:
-                            alert_frame = QFrame()
-                            alert_frame.setStyleSheet(f"""
-                                QFrame {{
-                                    background-color: {colors.BG_CARD};
-                                    border-left: 4px solid {colors.WARNING};
-                                    border-radius: 8px;
-                                    padding: 12px;
-                                }}
-                            """)
-                            
-                            alert_layout = QHBoxLayout(alert_frame)
-                            alert_layout.setContentsMargins(15, 10, 15, 10)
-                            
-                            icon_lbl = QLabel("⚠️")
-                            icon_lbl.setStyleSheet("font-size: 24px;")
-                            
-                            text_lbl = QLabel(f"<b>{low_stock} article(s)</b> en stock faible! / <b>مواد منخفضة</b>")
-                            text_lbl.setStyleSheet(f"color: {colors.TEXT_PRIMARY}; font-size: 13px; font-weight: 600;")
-                            
-                            btn_view = QPushButton("📦 Voir Stock")
-                            btn_view.setStyleSheet(f"""
-                                QPushButton {{
-                                    background-color: {colors.WARNING};
-                                    color: white;
-                                    padding: 8px 16px;
-                                    border-radius: 6px;
-                                    font-weight: bold;
-                                    border: none;
-                                }}
-                                QPushButton:hover {{
-                                    background-color: {colors.WARNING};
-                                }}
-                            """)
-                            btn_view.setCursor(Qt.CursorShape.PointingHandCursor)
-                            btn_view.clicked.connect(lambda: self.stack.setCurrentIndex(11))  # Index du stock
-                            
-                            alert_layout.addWidget(icon_lbl)
-                            alert_layout.addWidget(text_lbl)
-                            alert_layout.addStretch()
-                            alert_layout.addWidget(btn_view)
-                            
-                            layout.addWidget(alert_frame)
-                    except Exception as e:
-                        print(f"Error checking stock: {e}")
-
-                grid = QGridLayout()
-                grid.setSpacing(25)
-
-                # 1. بطاقة الطلاب
-                try:
-                    card_students = self.create_summary_card("Étudiants / الطلاب", self.get_student_count(conn), "Inscrits actifs", colors.PRIMARY, "👨‍🎓") # Blue Accent
-                    grid.addWidget(card_students, 0, 0)
-                except Exception as e:
-                    print(f"Error creating student card: {e}")
-                    grid.addWidget(QLabel("Error loading student card"), 0, 0)
-
-                # 2. بطاقة الموظفين
-                try:
-                    card_staff = self.create_summary_card("Personnel / الموظفون", self.get_staff_count(conn), "Enseignants & Admin", colors.WARNING, "👥") # Amber Accent
-                    grid.addWidget(card_staff, 0, 1)
-                except Exception as e:
-                    print(f"Error creating staff card: {e}")
-                    grid.addWidget(QLabel("Error loading staff card"), 0, 1)
-
-                # 3. بطاقة الحضور
-                try:
-                    card_attendance = self.create_summary_card("Présence / الحضور", self.get_attendance_count(conn), "Aujourd'hui", colors.SUCCESS, "✅") # Emerald Accent
-                    grid.addWidget(card_attendance, 0, 2)
-                except Exception as e:
-                    print(f"Error creating attendance card: {e}")
-                    grid.addWidget(QLabel("Error loading attendance card"), 0, 2)
-
-                # البطاقات المالية (للمدير والمحاسب فقط)
-                if self.user_role in ["Admin", "Comptable"]:
-                    try:
-                        total_income = self.get_total_income(conn)
-                        card_income = self.create_summary_card("Total Recettes / الإيرادات", f"{total_income:,.0f} FCFA", "Cumul Total", colors.SUCCESS, "💰")
-                        grid.addWidget(card_income, 1, 0)
-                        
-                        total_expenses = self.get_total_expenses(conn)
-                        card_expenses = self.create_summary_card("Total Dépenses / المصاريف", f"{total_expenses:,.0f} FCFA", "Cumul Total", colors.DANGER, "📉")
-                        grid.addWidget(card_expenses, 1, 1)
-
-                        total_balance = total_income - total_expenses
-                        color = colors.SUCCESS if total_balance >= 0 else colors.DANGER
-                        # أيقونة الميزان
-                        card_balance = self.create_summary_card("Solde Global / الرصيد العام", f"{total_balance:,.0f} FCFA", "Net Total", color, "⚖️")
-                        grid.addWidget(card_balance, 1, 2)
-                    except Exception as e:
-                        print(f"Error loading finance data: {e}")
-
-                layout.addLayout(grid)
-                layout.addStretch()
-                
-        except Exception as e:
-            error_label = QLabel(f"Critical Dashboard Error: {str(e)}")
-            error_label.setStyleSheet(f"color: {colors.DANGER}; font-size: 16px; padding: 20px;")
-            layout.addWidget(error_label)
-            AppLogger.error("Dashboard", f"Home Dashboard Creation Failed: {e}")
-
-        return page
-
-    def create_summary_card(self, title, value, subtitle, color, icon):
-        colors = ThemeManager.get_colors()
-        frame = QFrame()
-        # تصميم البطاقة بنمط Deep Slate: حدود رمادية فاتحة، خلفية بيضاء نقية
-        frame.setStyleSheet(f"""
-            QFrame {{
-                background-color: {colors.BG_CARD}; 
-                border-radius: 12px; 
-                border: 1px solid {colors.BORDER};
-            }}
-        """)
-        frame.setMinimumHeight(150)
-        
-        # ظل أنيق وناعم
-        shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(25)
-        shadow.setColor(QColor(15, 23, 42, 20)) # Slate Dark Shadow
-        shadow.setOffset(0, 4)
-        frame.setGraphicsEffect(shadow)
-        
-        layout = QHBoxLayout(frame)
-        layout.setContentsMargins(25, 25, 25, 25)
-        
-        text_layout = QVBoxLayout()
-        text_layout.setSpacing(5)
-        
-        lbl_title = QLabel(title)
-        lbl_title.setStyleSheet(f"color: {colors.TEXT_SECONDARY}; font-size: 14px; font-weight: 700; text-transform: uppercase;")
-        
-        lbl_value = QLabel(str(value))
-        lbl_value.setStyleSheet(f"color: {colors.TEXT_PRIMARY}; font-size: 28px; font-weight: 800;")
-        
-        lbl_sub = QLabel(subtitle)
-        lbl_sub.setStyleSheet(f"color: {colors.TEXT_SECONDARY}; font-size: 12px; font-weight: 600;")
-        
-        text_layout.addWidget(lbl_title)
-        text_layout.addWidget(lbl_value)
-        text_layout.addWidget(lbl_sub)
-        
-        layout.addLayout(text_layout)
-        layout.addStretch()
-        
-        # الأيقونة (دائرة ملونة)
-        icon_cont = QLabel(icon)
-        icon_cont.setFixedSize(54, 54)
-        icon_cont.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        # خلفية الأيقونة شفافة قليلاً
-        icon_cont.setStyleSheet(f"""
-            background-color: {rgba(color, 21)}; 
-            color: {color};
-            font-size: 26px;
-            border-radius: 27px;
-        """)
-        layout.addWidget(icon_cont)
-        
-        return frame
-
-    # --- Helper Functions (Database) ---
-    def get_student_count(self, conn=None):
-        return self._safe_db_query("SELECT COUNT(*) FROM Students WHERE status='Active'", conn=conn)
-
-    def get_staff_count(self, conn=None):
-        return self._safe_db_query("SELECT COUNT(*) FROM Staff WHERE status='Actif'", conn=conn)
-
-    def get_attendance_count(self, conn=None):
-        today = datetime.now().strftime("%Y-%m-%d")
-        return self._safe_db_query("SELECT COUNT(*) FROM StudentAttendance WHERE date=? AND status='Présent'", (today,), conn=conn)
-
-    def get_total_income(self, conn=None):
-        val = self._safe_db_query("SELECT SUM(amount_paid) FROM Payments", conn=conn)
-        return float(val) if val != "0" and val is not None else 0.0
-
-    def get_total_expenses(self, conn=None):
-        val = self._safe_db_query("SELECT SUM(amount) FROM Expenses", conn=conn)
-        return float(val) if val != "0" and val is not None else 0.0
-    
-    def get_low_stock_items(self, conn=None):
-        """عدد الأصناف التي كميتها أقل من أو تساوي الحد الأدنى"""
-        val = self._safe_db_query("SELECT COUNT(*) FROM InventoryItems WHERE quantity <= min_quantity", conn=conn)
-        try:
-            return int(val) if val is not None else 0
-        except (TypeError, ValueError):
-            return 0
-
-    def _safe_db_query(self, query, params=(), conn=None):
-        if conn:
-            try:
-                cur = conn.cursor()
-                cur.execute(query, params)
-                result = cur.fetchone()
-                return result[0] if result and result[0] is not None else "0"
-            except Exception:
-                return "0"
+        # إعداد الوحدات بناءً على الصلاحيات
+        if MODULES_AVAILABLE:
+            self.setup_modules_and_permissions()
         else:
-            try:
-                with DatabaseManager() as db:
-                    conn = db.get_connection()
-                    cur = conn.cursor()
-                    cur.execute(query, params)
-                    result = cur.fetchone()
-                    return result[0] if result and result[0] is not None else "0"
-            except Exception:
-                return "0"
+            err_lbl = QLabel("Certains modules sont manquants. Vérifiez les fichiers.")
+            err_lbl.setStyleSheet(f"color: {colors.DANGER}; font-size: 18px;")
+            err_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            self.content_area.addWidget(err_lbl)
 
-    def ensure_indexes(self):
-        """إنشاء الفهارس الأساسية لتحسين الأداء (آمن عند غياب الجداول)."""
-        with DatabaseManager() as db:
-            conn = db.get_connection()
-            cursor = conn.cursor()
-            index_statements = [
-                "CREATE INDEX IF NOT EXISTS idx_students_status ON Students(status)",
-                "CREATE INDEX IF NOT EXISTS idx_students_class ON Students(class_id)",
-                "CREATE INDEX IF NOT EXISTS idx_attendance_date_status ON StudentAttendance(date, status)",
-                "CREATE INDEX IF NOT EXISTS idx_attendance_student_date ON StudentAttendance(student_id, date)",
-                "CREATE INDEX IF NOT EXISTS idx_payments_student ON Payments(student_id)",
-                "CREATE INDEX IF NOT EXISTS idx_payments_date ON Payments(transaction_date)",
-                "CREATE INDEX IF NOT EXISTS idx_expenses_date ON Expenses(expense_date)",
-                "CREATE INDEX IF NOT EXISTS idx_inventory_item ON InventoryLog(item_id)",
-                "CREATE INDEX IF NOT EXISTS idx_inventory_date ON InventoryLog(transaction_date)",
-                "CREATE INDEX IF NOT EXISTS idx_inventory_low ON InventoryItems(quantity, min_quantity)",
-                "CREATE INDEX IF NOT EXISTS idx_grades_student_subject ON Grades(student_id, subject_id)",
-                "CREATE INDEX IF NOT EXISTS idx_grades_assessment ON Grades(assessment_id)",
-                "CREATE INDEX IF NOT EXISTS idx_assessments_period ON AssessmentTypes(period_id)",
-                "CREATE INDEX IF NOT EXISTS idx_periods_cycle_year ON AcademicPeriods(cycle_id, year_id)",
-                "CREATE INDEX IF NOT EXISTS idx_staff_attendance_staff_date ON StaffAttendance(staff_id, attendance_date)",
-                "CREATE INDEX IF NOT EXISTS idx_staff_attendance_date ON StaffAttendance(attendance_date)",
-                "CREATE INDEX IF NOT EXISTS idx_discipline_student_date ON StudentDiscipline(student_id, incident_date)",
-                "CREATE INDEX IF NOT EXISTS idx_salary_slips_staff_month ON SalarySlips(staff_id, month_str)",
-                "CREATE INDEX IF NOT EXISTS idx_auditlogs_timestamp ON AuditLogs(timestamp)",
-                "CREATE INDEX IF NOT EXISTS idx_notifications_sent ON NotificationLogs(sent_at)",
-            ]
-            for stmt in index_statements:
-                try:
-                    cursor.execute(stmt)
-                except Exception:
-                    continue
-            conn.commit()
-    
-    def toggle_dark_mode(self):
-        """تبديل الوضع الداكن"""
-        is_dark = (ThemeManager._current_theme == "dark")
+    def setup_sidebar(self):
+        colors = ThemeManager.get_colors()
+        self.sidebar = QFrame()
+        self.sidebar.setFixedWidth(260)
+        self.sidebar.setStyleSheet(f"""
+            QFrame {{ background-color: {colors.BG_HEADER}; border-right: 1px solid {colors.BORDER}; }}
+        """)
+        
+        shadow = QGraphicsDropShadowEffect()
+        shadow.setBlurRadius(15); shadow.setColor(QColor(0, 0, 0, 50)); shadow.setOffset(3, 0)
+        self.sidebar.setGraphicsEffect(shadow)
+
+        self.sidebar_layout = QVBoxLayout(self.sidebar)
+        self.sidebar_layout.setContentsMargins(10, 20, 10, 20)
+        self.sidebar_layout.setSpacing(5)
+
+        # شعار البرنامج
+        self.app_title = QLabel("🏫 El Malick Gest")
+        self.app_title.setFont(QFont("Segoe UI", 18, QFont.Weight.Bold))
+        self.app_title.setStyleSheet(f"color: {colors.HEADER_TEXT}; padding: 10px; margin-bottom: 10px;")
+        self.app_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.sidebar_layout.addWidget(self.app_title)
+
+        # زر الرئيسية (Dashboard)
+        self.btn_dashboard = QPushButton("🏠 Tableau de Bord / الرئيسية")
+        self.style_nav_button(self.btn_dashboard)
+        self.btn_dashboard.setChecked(True)
+        self.btn_dashboard.clicked.connect(lambda: self.switch_module(self.dashboard_idx, self.btn_dashboard))
+        self.sidebar_layout.addWidget(self.btn_dashboard)
+        
+        line = QFrame()
+        line.setFrameShape(QFrame.Shape.HLine)
+        line.setStyleSheet(f"background-color: {colors.BORDER}; opacity: 0.2; margin: 10px 0;")
+        self.sidebar_layout.addWidget(line)
+
+        # Scroll Area للأزرار
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setStyleSheet("background: transparent; border: none;")
+        self.nav_container = QWidget()
+        self.nav_container.setStyleSheet("background: transparent;")
+        self.nav_layout = QVBoxLayout(self.nav_container)
+        self.nav_layout.setContentsMargins(0,0,0,0)
+        self.nav_layout.setSpacing(2)
+        scroll.setWidget(self.nav_container)
+        self.sidebar_layout.addWidget(scroll, 1)
+
+        self.sidebar_layout.addStretch()
+
+        # زر الخروج
+        self.btn_logout = QPushButton("🚪 Déconnexion / خروج")
+        self.btn_logout.setStyleSheet(f"""
+            QPushButton {{
+                text-align: left; padding: 12px 15px; border: none; border-radius: 6px;
+                color: {colors.DANGER}; font-size: 14px; font-weight: bold; background-color: transparent;
+            }}
+            QPushButton:hover {{ background-color: {colors.DANGER_HOVER}; color: white; }}
+        """)
+        self.btn_logout.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_logout.clicked.connect(self.logout)
+        self.sidebar_layout.addWidget(self.btn_logout)
+        
+        self.main_layout.addWidget(self.sidebar)
+
+    def setup_topbar(self):
+        colors = ThemeManager.get_colors()
+        self.topbar = QFrame()
+        self.topbar.setFixedHeight(60)
+        self.topbar.setStyleSheet(f"""
+            QFrame {{ background-color: {colors.BG_CARD}; border-bottom: 1px solid {colors.BORDER}; }}
+        """)
+        
+        shadow = QGraphicsDropShadowEffect()
+        shadow.setBlurRadius(10); shadow.setColor(QColor(0, 0, 0, 20)); shadow.setOffset(0, 2)
+        self.topbar.setGraphicsEffect(shadow)
+
+        tlay = QHBoxLayout(self.topbar)
+        tlay.setContentsMargins(20, 0, 20, 0)
+
+        self.lbl_module_title = QLabel("Tableau de Bord / اللوحة الرئيسية")
+        self.lbl_module_title.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
+        self.lbl_module_title.setStyleSheet(f"color: {colors.TEXT_PRIMARY}; border: none;")
+        tlay.addWidget(self.lbl_module_title)
+
+        tlay.addStretch()
+
+        # الوقت والتاريخ
+        self.lbl_datetime = QLabel()
+        self.lbl_datetime.setStyleSheet(f"color: {colors.TEXT_SECONDARY}; font-weight: bold; margin-right: 20px; border: none;")
+        self.update_time()
+        self.timer = QTimer(self)
+        self.timer.timeout.connect(self.update_time)
+        self.timer.start(1000)
+        tlay.addWidget(self.lbl_datetime)
+
+        # زر الثيم ☀️/🌙
+        self.btn_theme = QPushButton()
+        self.btn_theme.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_theme.setFixedSize(40, 40)
+        
+        # التعديل هنا: إجبار استخدام خط الإيموجي وضبط الـ padding ليظهر الرمز
+        self.btn_theme.setStyleSheet(f"""
+            QPushButton {{ 
+                background-color: {colors.INPUT_BG}; 
+                border-radius: 20px; 
+                font-size: 20px; 
+                border: 1px solid {colors.BORDER}; 
+                font-family: "Segoe UI Emoji", "Apple Color Emoji", sans-serif;
+                padding: 0px;
+                padding-bottom: 4px; /* لرفع الإيموجي قليلاً للوسط */
+            }}
+            QPushButton:hover {{ background-color: {colors.BORDER}; }}
+        """)
+        self.update_theme_icon() # استدعاء التحديث بعد ضبط الستايل
+        self.btn_theme.clicked.connect(self.toggle_theme)
+        tlay.addWidget(self.btn_theme)
+
+        # المستخدم
+        lbl_user = QLabel(f"👤 {self.username} ({self.user_role})")
+        lbl_user.setStyleSheet(f"color: {colors.PRIMARY}; font-weight: bold; margin-left: 15px; border: none;")
+        tlay.addWidget(lbl_user)
+
+        self.right_layout.addWidget(self.topbar)
+
+    def update_time(self):
+        self.lbl_datetime.setText(datetime.now().strftime("%d %b %Y - %H:%M:%S"))
+
+    def toggle_theme(self):
+        is_dark = ThemeManager.is_dark_mode()
         new_theme = "light" if is_dark else "dark"
         
-        # تحديث ThemeManager
-        ThemeManager.apply_theme(QApplication.instance(), new_theme)
+        ThemeManager.set_theme(new_theme)
+        self.config.set('UI', 'enable_dark_mode', str(not is_dark))
+        self.config.set('APPLICATION', 'theme', new_theme)
         
-        # حفظ الإعداد في config.ini
-        if ENHANCED_FEATURES:
-            self.config.set('UI', 'enable_dark_mode', str(not is_dark))
-            AppLogger.info("MainDashboard", f"تم تغيير المظهر إلى: {new_theme}")
+        # إعادة تطبيق الاستايلات على النوافذ المفتوحة
+        ThemeManager.apply_theme(QApplication.instance())
+        self.update_theme_icon()
+        self.apply_runtime_theme_updates()
         
-        # تحديث رمز الزر
-        self.btn_dark_mode.setText("☀️" if new_theme == "dark" else "🌙")
+        # إعادة رسم الرسم البياني في لوحة التحكم إذا كان موجوداً
+        if hasattr(self, 'ax'):
+            colors = ThemeManager.get_colors()
+            self.figure.patch.set_facecolor(colors.BG_CARD)
+            self.ax.set_facecolor(colors.BG_CARD)
+            self.ax.tick_params(colors=colors.TEXT_SECONDARY)
+            for spine in self.ax.spines.values(): spine.set_color(colors.BORDER)
+            self.canvas.draw()
+
+    def update_theme_icon(self):
+        if ThemeManager.is_dark_mode():
+            self.btn_theme.setText("☀️")
+            self.btn_theme.setToolTip("Passer au mode clair / تفعيل الوضع الفاتح")
+        else:
+            self.btn_theme.setText("🌙")
+            self.btn_theme.setToolTip("Passer au mode sombre / تفعيل الوضع الداكن")
+        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+
+
+    def apply_runtime_theme_updates(self):
+        colors = ThemeManager.get_colors()
+
+        self.sidebar.setStyleSheet(
+            f"QFrame {{ background-color: {colors.BG_HEADER}; border-right: 1px solid {colors.BORDER}; }}"
+        )
+        self.topbar.setStyleSheet(
+            f"QFrame {{ background-color: {colors.BG_CARD}; border-bottom: 1px solid {colors.BORDER}; }}"
+        )
+        self.content_area.setStyleSheet(f"background-color: {colors.BG_MAIN};")
+
+        if hasattr(self, 'app_title'):
+            self.app_title.setStyleSheet(f"color: {colors.HEADER_TEXT}; padding: 10px; margin-bottom: 10px;")
+
+        self.lbl_module_title.setStyleSheet(f"color: {colors.TEXT_PRIMARY}; border: none;")
+        self.lbl_datetime.setStyleSheet(f"color: {colors.TEXT_SECONDARY}; font-weight: bold; margin-right: 20px; border: none;")
+        if hasattr(self, 'lbl_user'):
+            self.lbl_user.setStyleSheet(f"color: {colors.PRIMARY}; font-weight: bold; margin-left: 15px; border: none;")
+
+        self.btn_theme.setStyleSheet(
+            f"""
+            QPushButton {{ background-color: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; border-radius: 20px; font-size: 16px; border: 1px solid {colors.BORDER}; font-weight: 800; }}
+            QPushButton:hover {{ background-color: {colors.BORDER}; }}
+            """
+        )
+
+        self.style_nav_button(self.btn_dashboard)
+        for btn in self.nav_buttons.values():
+            self.style_nav_button(btn)
+
+        if hasattr(self, 'btn_logout'):
+            self.btn_logout.setStyleSheet(
+                f"""
+                QPushButton {{
+                    text-align: left; padding: 12px 15px; border: none; border-radius: 6px;
+                    color: {colors.DANGER}; font-size: 14px; font-weight: bold; background-color: transparent;
+                }}
+                QPushButton:hover {{ background-color: {colors.DANGER_HOVER}; color: white; }}
+                """
+            )
+
+    def create_dashboard_screen(self):
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(30, 30, 30, 30)
+        layout.setSpacing(20)
+
+        # --- 1. KPI Cards (الإحصائيات) ---
+        kpi_layout = QHBoxLayout()
+        kpi_layout.setSpacing(20)
+
+        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+
+        self.kpi_students = self.create_kpi_card("Total Élèves", "0", "👨‍🎓", colors.PRIMARY)
+        self.kpi_staff = self.create_kpi_card("Total Personnel", "0", "👥", colors.SECONDARY)
+        self.kpi_classes = self.create_kpi_card("Classes Actives", "0", "🏫", colors.WARNING)
+        self.kpi_revenue = self.create_kpi_card("Revenu (Année)", "0 FCFA", "💰", colors.SUCCESS)
+
+        kpi_layout.addWidget(self.kpi_students)
+        kpi_layout.addWidget(self.kpi_staff)
+        kpi_layout.addWidget(self.kpi_classes)
+        kpi_layout.addWidget(self.kpi_revenue)
+
+        if self.user_role not in ("Admin", "Comptable"):
+            self.kpi_revenue.hide()
+        layout.addLayout(kpi_layout)
+
+        # --- 2. Middle Section (Charts & Quick Actions) ---
+        mid_layout = QHBoxLayout()
+        mid_layout.setSpacing(20)
+
+        # Chart
+        chart_card = QFrame()
+        chart_card.setStyleSheet(f"background-color: {colors.BG_CARD}; border-radius: 12px; border: 1px solid {colors.BORDER};")
+        chart_layout = QVBoxLayout(chart_card)
+        lbl_chart = QLabel("Répartition des Élèves par Cycle / توزيع الطلاب")
+        lbl_chart.setStyleSheet(f"font-weight: bold; font-size: 14px; color: {colors.TEXT_PRIMARY}; border: none;")
+        chart_layout.addWidget(lbl_chart)
         
-        # تطبيق المظهر على جميع النوافذ المفتوحة
-        self.apply_theme_to_all_windows()
+        self.figure = Figure(figsize=(5, 3))
+        self.figure.patch.set_facecolor(colors.BG_CARD)
+        self.canvas = FigureCanvas(self.figure)
+        chart_layout.addWidget(self.canvas)
+        mid_layout.addWidget(chart_card, 2)
+
+        # Quick Actions
+        qa_card = QFrame()
+        qa_card.setStyleSheet(f"background-color: {colors.BG_CARD}; border-radius: 12px; border: 1px solid {colors.BORDER};")
+        qa_layout = QVBoxLayout(qa_card)
+        lbl_qa = QLabel("⚡ Actions Rapides / إجراءات سريعة")
+        lbl_qa.setStyleSheet(f"font-weight: bold; font-size: 14px; color: {colors.TEXT_PRIMARY}; border: none;")
+        qa_layout.addWidget(lbl_qa)
+        
+        qa_grid = QGridLayout()
+        qa_grid.setSpacing(10)
+        
+        self.btn_qa_add_student = self.create_qa_button("Nouvel Élève", "➕", colors.PRIMARY)
+        self.btn_qa_add_student.clicked.connect(lambda: self.trigger_module("student_management"))
+        
+        self.btn_qa_pay = self.create_qa_button("Encaisser", "💳", colors.SUCCESS)
+        self.btn_qa_pay.clicked.connect(lambda: self.trigger_module("finance_payments"))
+        
+        self.btn_qa_att = self.create_qa_button("Faire l'Appel", "📅", colors.WARNING)
+        self.btn_qa_att.clicked.connect(lambda: self.trigger_module("student_attendance"))
+        
+        self.btn_qa_grades = self.create_qa_button("Saisir Notes", "📝", colors.SECONDARY)
+        self.btn_qa_grades.clicked.connect(lambda: self.trigger_module("student_grades"))
+
+        qa_grid.addWidget(self.btn_qa_add_student, 0, 0)
+        qa_grid.addWidget(self.btn_qa_pay, 0, 1)
+        qa_grid.addWidget(self.btn_qa_att, 1, 0)
+        qa_grid.addWidget(self.btn_qa_grades, 1, 1)
+        
+        qa_layout.addLayout(qa_grid)
+        qa_layout.addStretch()
+        mid_layout.addWidget(qa_card, 1)
+
+        layout.addLayout(mid_layout)
+
+        # --- 3. مركز التنبيهات الذكي ---
+        alerts_frame = QFrame()
+        alerts_frame.setStyleSheet(f"""
+            QFrame {{ background-color: {colors.BG_CARD}; border-radius: 12px; border: 1px solid {colors.BORDER}; }}
+        """)
+        alerts_vlay = QVBoxLayout(alerts_frame)
+        alerts_vlay.setContentsMargins(15, 12, 15, 15)
+        alerts_vlay.setSpacing(10)
+
+        lbl_alerts_hdr = QLabel("🔔  Centre d'Alertes / مركز التنبيهات")
+        lbl_alerts_hdr.setStyleSheet(f"font-weight: bold; font-size: 14px; color: {colors.TEXT_PRIMARY}; border: none;")
+        alerts_vlay.addWidget(lbl_alerts_hdr)
+
+        alerts_cards_row = QHBoxLayout()
+        alerts_cards_row.setSpacing(15)
+
+        self.alert_absent = self.create_alert_card("Absences > 20%", "⚠️", colors.WARNING)
+        self.alert_late   = self.create_alert_card("Retards de paiement", "💸", colors.DANGER)
+        self.alert_grades = self.create_alert_card("Moyennes < 8 / 20", "📉", colors.SECONDARY)
+        self.alert_leaves = self.create_alert_card("Congés en attente", "🏖️", colors.PRIMARY)
+
+        alerts_cards_row.addWidget(self.alert_absent)
+        alerts_cards_row.addWidget(self.alert_late)
+        alerts_cards_row.addWidget(self.alert_grades)
+        alerts_cards_row.addWidget(self.alert_leaves)
+        alerts_vlay.addLayout(alerts_cards_row)
+
+        layout.addWidget(alerts_frame)
+
+        # تحديث كل 5 دقائق
+        self.alerts_refresh_timer = QTimer(self)
+        self.alerts_refresh_timer.timeout.connect(self.load_alerts_data)
+        self.alerts_refresh_timer.start(5 * 60 * 1000)
+
+        # تحديث الأزرار السريعة بناءً على الصلاحيات
+        self.apply_rbac_to_quick_actions()
+
+        return widget
+
+    def create_alert_card(self, title, icon, color):
+        """إنشاء بطاقة تنبيه قابلة للتحديث لمركز التنبيهات"""
+        colors = ThemeManager.get_colors()
+        card = QFrame()
+        card.setMinimumHeight(140)
+        card.setStyleSheet(f"""
+            QFrame {{
+                background-color: {colors.BG_MAIN}; border-radius: 10px;
+                border: 1px solid {colors.BORDER}; border-top: 4px solid {color};
+            }}
+        """)
+
+        lay = QVBoxLayout(card)
+        lay.setContentsMargins(12, 10, 12, 10)
+        lay.setSpacing(6)
+
+        # رأس البطاقة: عنوان + شارة العدد
+        header_row = QHBoxLayout()
+        lbl_title = QLabel(f"{icon}  {title}")
+        lbl_title.setStyleSheet(f"color: {colors.TEXT_PRIMARY}; font-weight: bold; font-size: 12px; border: none;")
+        header_row.addWidget(lbl_title)
+        header_row.addStretch()
+
+        lbl_badge = QLabel("0")
+        lbl_badge.setObjectName("badge")
+        lbl_badge.setMinimumWidth(24)
+        lbl_badge.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lbl_badge.setStyleSheet(f"""
+            QLabel {{ background-color: {color}; color: white; border-radius: 10px;
+                      padding: 1px 7px; font-weight: bold; font-size: 11px; border: none; }}
+        """)
+        header_row.addWidget(lbl_badge)
+        lay.addLayout(header_row)
+
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setStyleSheet(f"background-color: {colors.BORDER}; border: none; max-height: 1px;")
+        lay.addWidget(sep)
+
+        # حاوية العناصر
+        items_widget = QWidget()
+        items_widget.setStyleSheet("background: transparent;")
+        items_lay = QVBoxLayout(items_widget)
+        items_lay.setContentsMargins(0, 0, 0, 0)
+        items_lay.setSpacing(2)
+        lbl_ok = QLabel("✅  Aucune alerte")
+        lbl_ok.setStyleSheet(f"color: {colors.SUCCESS}; font-size: 11px; border: none;")
+        items_lay.addWidget(lbl_ok)
+        items_lay.addStretch()
+        lay.addWidget(items_widget, 1)
+
+        # حفظ المراجع كخصائص للبطاقة لتسهيل التحديث
+        card._badge      = lbl_badge
+        card._items_lay  = items_lay
+        card._accent     = color
+
+        return card
+
+    def _update_alert_card(self, card, rows, format_fn):
+        """تحديث محتوى بطاقة تنبيه بالبيانات الجديدة"""
+        colors = ThemeManager.get_colors()
+        lay = card._items_lay
+
+        # إزالة العناصر القديمة
+        while lay.count():
+            item = lay.takeAt(0)
+            if item.widget():
+                item.widget().deleteLater()
+
+        count = len(rows)
+        card._badge.setText(str(count))
+
+        if count == 0:
+            lbl = QLabel("✅  Aucune alerte")
+            lbl.setStyleSheet(f"color: {colors.SUCCESS}; font-size: 11px; border: none;")
+            lay.addWidget(lbl)
+        else:
+            for r in rows[:5]:
+                lbl = QLabel(f"• {format_fn(r)}")
+                lbl.setStyleSheet(f"color: {colors.TEXT_SECONDARY}; font-size: 11px; border: none;")
+                lbl.setWordWrap(True)
+                lay.addWidget(lbl)
+            if count > 5:
+                more = QLabel(f"... +{count - 5} autres")
+                more.setStyleSheet(f"color: {card._accent}; font-size: 11px; font-weight: bold; border: none;")
+                lay.addWidget(more)
+        lay.addStretch()
+
+    def load_alerts_data(self):
+        """تحميل بيانات التنبيهات الأربعة من قاعدة البيانات"""
+        try:
+            db = DatabaseManager()
+            with db.get_connection() as conn:
+                cursor = conn.cursor()
+
+                # السنة الدراسية النشطة
+                cursor.execute("SELECT id FROM AcademicYears WHERE is_active=1 LIMIT 1")
+                row = cursor.fetchone()
+                if not row:
+                    return
+                active_year = row[0]
+                today = datetime.now().date()
+
+                # 1. طلاب نسبة غيابهم > 20%
+                cursor.execute("""
+                    SELECT S.first_name_fr || ' ' || S.last_name_fr,
+                           ROUND(COUNT(*) FILTER (WHERE SA.status='Absent') * 100.0 / NULLIF(COUNT(*), 0), 0) AS absence_rate
+                    FROM Students S
+                    JOIN StudentAttendance SA ON S.id = SA.student_id
+                    WHERE SA.year_id = %s AND S.status = 'Active'
+                    GROUP BY S.id, S.first_name_fr, S.last_name_fr
+                    HAVING COUNT(*) FILTER (WHERE SA.status='Absent') * 100.0 / NULLIF(COUNT(*), 0) > 20
+                    ORDER BY absence_rate DESC
+                    LIMIT 20
+                """, (active_year,))
+                absent_rows = cursor.fetchall()
+
+                # 2. مستحقات متأخرة > 30 يوم
+                # is_paid مخزّن كـ INTEGER (0/1) وليس BOOLEAN
+                cursor.execute("""
+                    SELECT S.first_name_fr || ' ' || S.last_name_fr,
+                           SUM(SD.net_amount) AS total_debt
+                    FROM StudentDues SD
+                    JOIN Students S ON SD.student_id = S.id
+                    WHERE SD.is_paid = 0
+                      AND SD.year_id = %s
+                      AND SD.due_date < %s::date - INTERVAL '30 days'
+                    GROUP BY S.id, S.first_name_fr, S.last_name_fr
+                    ORDER BY total_debt DESC
+                    LIMIT 20
+                """, (active_year, today))
+                late_rows = cursor.fetchall()
+
+                # 3. طلاب معدلهم < 8 / 20 في السنة الحالية
+                # max_score غير مخزّن في Grades — يُستنتج من اسم الـ Cycle:
+                # ابتدائي/élémentaire → max=10 → عتبة التنبيه 4/10 (ما يعادل 8/20)
+                # مراحل أخرى          → max=20 → عتبة التنبيه 8/20
+                cursor.execute("""
+                    SELECT S.first_name_fr || ' ' || S.last_name_fr,
+                           ROUND(
+                               AVG(G.score * 20.0 /
+                                   CASE WHEN LOWER(CY.name_fr) SIMILAR TO '%%(elem|prim|ibtida)%%'
+                                        THEN 10.0
+                                        ELSE 20.0
+                                   END
+                               ), 1
+                           ) AS avg_normalized
+                    FROM Grades G
+                    JOIN Students S ON G.student_id = S.id
+                    JOIN StudentClassNumbers SCN ON S.id = SCN.student_id AND SCN.year_id = G.year_id
+                    JOIN Classes CL ON SCN.class_id = CL.id
+                    JOIN Cycles CY ON CL.cycle_id = CY.id
+                    WHERE G.year_id = %s AND G.score IS NOT NULL
+                    GROUP BY S.id, S.first_name_fr, S.last_name_fr
+                    HAVING ROUND(
+                               AVG(G.score * 20.0 /
+                                   CASE WHEN LOWER(CY.name_fr) SIMILAR TO '%%(elem|prim|ibtida)%%'
+                                        THEN 10.0
+                                        ELSE 20.0
+                                   END
+                               ), 1
+                           ) < 8
+                    ORDER BY avg_normalized ASC
+                    LIMIT 20
+                """, (active_year,))
+                low_grade_rows = cursor.fetchall()
+
+                # 4. طلبات إجازة معلقة
+                cursor.execute("""
+                    SELECT ST.first_name || ' ' || ST.last_name, SL.leave_type
+                    FROM StaffLeaves SL
+                    JOIN Staff ST ON SL.staff_id = ST.id
+                    WHERE SL.status = 'En Attente'
+                    ORDER BY SL.start_date DESC
+                    LIMIT 20
+                """)
+                leave_rows = cursor.fetchall()
+
+            # تحديث البطاقات
+            self._update_alert_card(
+                self.alert_absent, absent_rows,
+                lambda r: f"{r[0]}  ({int(r[1])}%)"
+            )
+            self._update_alert_card(
+                self.alert_late, late_rows,
+                lambda r: f"{r[0]}  ({r[1]:,.0f} F)"
+            )
+            self._update_alert_card(
+                self.alert_grades, low_grade_rows,
+                lambda r: f"{r[0]}  ({r[1]}/20)"
+            )
+            self._update_alert_card(
+                self.alert_leaves, leave_rows,
+                lambda r: f"{r[0]}  — {r[1]}"
+            )
+
+        except Exception as e:
+            AppLogger.error("MainDashboard", f"Alerts load error: {e}")
+
+    def create_kpi_card(self, title, value, icon, color):
+        card = QFrame()
+        colors = ThemeManager.get_colors()
+        card.setStyleSheet(f"""
+            QFrame {{
+                background-color: {colors.BG_CARD}; border-radius: 12px;
+                border: 1px solid {colors.BORDER}; border-left: 5px solid {color};
+            }}
+        """)
+        shadow = QGraphicsDropShadowEffect()
+        shadow.setBlurRadius(15); shadow.setColor(QColor(0,0,0,15)); shadow.setOffset(0,4)
+        card.setGraphicsEffect(shadow)
+
+        lay = QHBoxLayout(card)
+        vlay = QVBoxLayout()
+        lbl_title = QLabel(title)
+        lbl_title.setStyleSheet(f"color: {colors.TEXT_SECONDARY}; font-weight: bold; font-size: 12px; border:none;")
+        lbl_val = QLabel(value)
+        lbl_val.setObjectName("val")
+        lbl_val.setStyleSheet(f"color: {colors.TEXT_PRIMARY}; font-weight: 800; font-size: 24px; border:none;")
+        vlay.addWidget(lbl_title)
+        vlay.addWidget(lbl_val)
+        
+        lbl_icon = QLabel(icon)
+        lbl_icon.setStyleSheet(f"font-size: 28px; background: transparent; border:none;")
+        
+        lay.addLayout(vlay)
+        lay.addStretch()
+        lay.addWidget(lbl_icon)
+        return card
+
+    def create_qa_button(self, text, icon, color):
+        btn = QPushButton(f"{icon} {text}")
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn.setMinimumHeight(60)
+        colors = ThemeManager.get_colors()
+        btn.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY};
+                border: 1px solid {colors.BORDER}; border-radius: 8px; font-weight: bold; font-size: 13px;
+            }}
+            QPushButton:hover {{ background-color: {color}; color: white; border: none; }}
+        """)
+        return btn
+
+    def load_dashboard_data(self):
+        try:
+            db = DatabaseManager()
+            with db.get_connection() as conn:
+                cursor = conn.cursor()
+                
+                # Active Year
+                cursor.execute("SELECT id FROM AcademicYears WHERE is_active=1 LIMIT 1")
+                row = cursor.fetchone()
+                active_year = row[0] if row else -1
+
+                # Students (تم استبدال ? بـ %s)
+                cursor.execute("SELECT COUNT(*) FROM Students S JOIN StudentClassNumbers SCN ON S.id=SCN.student_id WHERE S.status='Active' AND SCN.year_id=%s", (active_year,))
+                st_count = cursor.fetchone()[0]
+                self.kpi_students.findChild(QLabel, "val").setText(str(st_count))
+
+                # Staff
+                cursor.execute("SELECT COUNT(*) FROM Staff WHERE status='Actif'")
+                self.kpi_staff.findChild(QLabel, "val").setText(str(cursor.fetchone()[0]))
+
+                # Classes
+                cursor.execute("SELECT COUNT(*) FROM Classes")
+                self.kpi_classes.findChild(QLabel, "val").setText(str(cursor.fetchone()[0]))
+
+                # Revenue (Current Year) - (تم استبدال ? بـ %s)
+                cursor.execute("SELECT SUM(amount_paid) FROM Payments WHERE year_id=%s", (active_year,))
+                rev = cursor.fetchone()[0] or 0
+                self.kpi_revenue.findChild(QLabel, "val").setText(f"{rev:,.0f}")
+
+                # Chart Data - (تم استبدال ? بـ %s)
+                cursor.execute("""
+                    SELECT CY.name_fr, COUNT(S.id) 
+                    FROM Students S
+                    JOIN StudentClassNumbers SCN ON S.id=SCN.student_id
+                    JOIN Classes CL ON SCN.class_id = CL.id
+                    JOIN Cycles CY ON CL.cycle_id = CY.id
+                    WHERE S.status='Active' AND SCN.year_id=%s
+                    GROUP BY CY.id
+                """, (active_year,))
+                data = cursor.fetchall()
+                
+                self.ax = self.figure.add_subplot(111)
+                self.ax.clear()
+                
+                colors = ThemeManager.get_colors()
+                if data:
+                    labels = [r[0] for r in data]
+                    sizes = [r[1] for r in data]
+                    self.ax.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=90, 
+                                colors=[colors.PRIMARY, colors.SUCCESS, colors.WARNING, colors.SECONDARY],
+                                textprops={'color': colors.TEXT_PRIMARY, 'fontweight': 'bold'})
+                else:
+                    self.ax.text(0.5, 0.5, "Pas de données", ha='center', va='center', color=colors.TEXT_SECONDARY)
+                    self.ax.axis('off')
+                
+                self.canvas.draw()
+
+        except Exception as e:
+            AppLogger.error("MainDashboard", f"Dashboard Data Error: {e}")
+
+        # تحميل بيانات التنبيهات
+        self.load_alerts_data()
+
+    def style_nav_button(self, btn):
+        colors = ThemeManager.get_colors()
+        btn.setStyleSheet(f"""
+            QPushButton {{
+                text-align: left; padding: 12px 15px; border: none; border-radius: 6px;
+                color: {colors.HEADER_TEXT}; font-size: 14px; font-weight: bold; background-color: transparent;
+            }}
+            QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}
+            QPushButton:checked {{ background-color: {colors.PRIMARY}; border-left: 4px solid white; }}
+        """)
+        btn.setCheckable(True)
+        btn.setCursor(Qt.CursorShape.PointingHandCursor)
+
+    def setup_modules_and_permissions(self):
+        self.module_windows = {}
+        all_modules = [
+            ("academic_settings", "Configuration Scolaire", "⚙️", AcademicSettingsWindow, "Paramètres"),
+            ("user_management", "Utilisateurs & Droits", "🔐", UserManagementWindow, "Paramètres"),
+            ("system_maintenance", "Sauvegarde & Système", "🛡️", SystemMaintenanceWindow, "Paramètres"),
+            ("migration_tool", "Clôture & Migration", "🔄", MigrationWindow, "Paramètres"),
+            
+            ("student_management", "Gestion des Élèves", "👨‍🎓", ModernStudentManagement, "Scolarité & Pédagogie"),
+            ("staff_management", "Ressources Humaines", "👥", ModernStaffManagement, "Scolarité & Pédagogie"),
+            ("staff_attendance", "Présence du Personnel", "🕘", StaffAttendanceWindow, "Scolarité & Pédagogie"),
+            ("staff_leaves", "Congés du Personnel", "🏖️", StaffLeaveWindow, "Scolarité & Pédagogie"),
+            ("student_attendance", "Assiduité (Présence)", "📅", StudentAttendanceWindow, "Scolarité & Pédagogie"),
+            ("student_discipline", "Discipline & Comportement", "⚖️", DisciplineWindow, "Scolarité & Pédagogie"),
+            ("student_grades", "Saisie des Notes", "📝", StudentGradesWindow, "Scolarité & Pédagogie"),
+            ("bulletin_generation", "Génération Bulletins", "🖨️", BulletinGenerationWindow, "Scolarité & Pédagogie"),
+            
+            ("finance_dashboard", "Tableau de Bord Financier", "📈", ModernFinanceDashboard, "Finance"),
+            ("fees_setup", "Configuration des Frais", "💰", FeesSetupWindow, "Finance"),
+            ("student_dues", "Factures & Engagements", "🧾", StudentDuesWindow, "Finance"),
+            ("finance_payments", "Caisse & Paiements", "💵", StudentPaymentWindow, "Finance"),
+            ("expenses_payroll", "Dépenses & Salaires", "💸", ExpensesWindow, "Finance"),
+            ("inventory", "Gestion de Stock", "📦", InventoryWindow, "Finance"),
+            
+            ("admin_docs", "Documents Administratifs", "🗂️", AdminDocsWindow, "Outils & Rapports"),
+            ("communication", "Centre de Messagerie", "📧", CommunicationWindow, "Outils & Rapports"),
+            ("advanced_reports", "Rapports Avancés (Excel)", "📊", AdvancedReportsWindow, "Outils & Rapports"),
+            ("analytics_dashboard", "Analytique & Statistiques", "📉", AnalyticsDashboardWindow, "Outils & Rapports"),
+            ("timetable", "Emploi du Temps", "📅", TimetableWindow, "Scolarité & Pédagogie"),
+        ]
+
+        role_permissions = {
+            "Admin": ["all"],
+            "Comptable": ["finance_dashboard", "fees_setup", "student_dues", "finance_payments", "expenses_payroll", "inventory"],
+            "Secretaire": ["student_management", "staff_management", "staff_attendance", "staff_leaves", "student_attendance", "admin_docs", "communication"],
+            "Pédagogique": ["academic_settings", "student_management", "student_attendance", "student_discipline", "student_grades", "bulletin_generation", "advanced_reports"],
+            "Prof": ["student_attendance", "student_discipline", "student_grades"]
+        }
+
+        self.allowed_modules = role_permissions.get(self.user_role, [])
+        is_admin = "all" in self.allowed_modules
+
+        colors = ThemeManager.get_colors()
+        current_category = ""
+
+        for mod_id, title, icon, window_class, category in all_modules:
+            if is_admin or mod_id in self.allowed_modules:
+                
+                # Category Header
+                if category != current_category:
+                    lbl_cat = QLabel(category.upper())
+                    lbl_cat.setStyleSheet(f"color: {colors.TEXT_SECONDARY}; font-size: 11px; font-weight: bold; margin-top: 10px; margin-left: 5px;")
+                    self.nav_layout.addWidget(lbl_cat)
+                    current_category = category
+
+                # Navigation Button
+                btn = QPushButton(f" {icon}   {title}")
+                self.style_nav_button(btn)
+
+                self.module_factories[mod_id] = window_class
+                self.module_widgets[mod_id] = None
+                btn.clicked.connect(lambda checked, mid=mod_id, b=btn, t=title: self.open_module(mid, b, t))
+
+                self.nav_layout.addWidget(btn)
+                self.nav_buttons[mod_id] = btn
+
+    def open_module(self, mod_id, active_button, title):
+        widget_idx = self.module_widgets.get(mod_id)
+
+        if widget_idx is None:
+            window_class = self.module_factories.get(mod_id)
+            if not window_class:
+                AppLogger.error("Main", f"Module introuvable: {mod_id}")
+                return
+
+            try:
+                module_instance = window_class()
+                self.module_windows[mod_id] = module_instance
+
+                if isinstance(module_instance, QMainWindow):
+                    widget_to_add = module_instance.takeCentralWidget()
+                    if widget_to_add is None:
+                        widget_to_add = QWidget()
+                else:
+                    widget_to_add = module_instance
+
+                widget_idx = self.content_area.addWidget(widget_to_add)
+                self.module_widgets[mod_id] = widget_idx
+            except Exception as e:
+                AppLogger.error("Main", f"Erreur de chargement du module {mod_id}: {e}")
+                QMessageBox.warning(self, "Module", f"Impossible d'ouvrir le module: {title}")
+                return
+
+        self.refresh_module_data(mod_id)
+        self.switch_module(widget_idx, active_button, title)
+
+    def refresh_module_data(self, mod_id):
+        module_instance = self.module_windows.get(mod_id)
+        if not module_instance:
+            return
+
+        refresh_calls = [
+            "refresh_all_data",
+            "refresh_data",
+            "load_filters",
+            "load_classes",
+            "load_students",
+            "load_inventory",
+            "load_logs",
+            "load_users",
+        ]
+
+        for method_name in refresh_calls:
+            method = getattr(module_instance, method_name, None)
+            if callable(method):
+                try:
+                    method()
+                except Exception as e:
+                    AppLogger.warning("Main", f"Refresh {mod_id}.{method_name} ignoré: {e}")
+
+    def apply_rbac_to_quick_actions(self):
+        """إخفاء الأزرار السريعة التي لا يملك المستخدم صلاحية عليها"""
+        is_admin = "all" in self.allowed_modules
+        
+        if not is_admin and "student_management" not in self.allowed_modules:
+            self.btn_qa_add_student.hide()
+            
+        if not is_admin and "finance_payments" not in self.allowed_modules:
+            self.btn_qa_pay.hide()
+            
+        if not is_admin and "student_attendance" not in self.allowed_modules:
+            self.btn_qa_att.hide()
+            
+        if not is_admin and "student_grades" not in self.allowed_modules:
+            self.btn_qa_grades.hide()
+
+    def trigger_module(self, mod_id):
+        """تشغيل وحدة من خلال الأزرار السريعة (Quick Actions)"""
+        if mod_id in self.nav_buttons:
+            self.nav_buttons[mod_id].click()
+
+    def switch_module(self, index, active_button, title="Tableau de Bord / اللوحة الرئيسية"):
+        self.content_area.setCurrentIndex(index)
+        self.lbl_module_title.setText(title)
+        
+        # تحديث حالة الأزرار في القائمة الجانبية
+        self.btn_dashboard.setChecked(False)
+        for btn in self.nav_buttons.values():
+            btn.setChecked(False)
+        active_button.setChecked(True)
+        
+        # إذا عدنا للوحة الرئيسية، قم بتحديث البيانات
+        if index == self.dashboard_idx:
+            self.load_dashboard_data()
+
+    def _auto_refresh_dashboard(self):
+        """تحديث تلقائي للـ KPI وبطاقات التنبيه كل 5 دقائق"""
+        if self.content_area.currentIndex() == self.dashboard_idx:
+            self.load_dashboard_data()
+        else:
+            # حتى لو الشاشة الأخرى مفتوحة — حدّث فقط التنبيهات بصمت
+            self.load_alerts_data()
+
+    def open_global_search(self):
+        """فتح نافذة البحث العالمي (Ctrl+K)"""
+        from global_search_dialog import GlobalSearchDialog
+        if self._search_dlg is None:
+            self._search_dlg = GlobalSearchDialog(parent=self)
+            self._search_dlg.navigate_to.connect(self._on_search_navigate)
+        self._search_dlg.show()
+        self._search_dlg.raise_()
+        self._search_dlg.activateWindow()
+
+    def _on_search_navigate(self, module_id: str, record_id: int):
+        """التنقل إلى الوحدة المطلوبة عند اختيار نتيجة من البحث"""
+        if module_id in self.nav_buttons:
+            self.nav_buttons[module_id].click()
+        else:
+            AppLogger.warning("Main", f"Module '{module_id}' introuvable dans la nav")
+
+    def logout(self):
+        reply = QMessageBox.question(self, 'Déconnexion', "Voulez-vous vraiment vous déconnecter ?",
+                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        if reply == QMessageBox.StandardButton.Yes:
+            AppLogger.info("Main", f"Utilisateur déconnecté: {self.username}")
+            self.close()
+            # إعادة تشغيل نافذة تسجيل الدخول
+            self.login_window = LoginWindow()
+            if self.login_window.exec():
+                self.new_main = MainWindow(self.login_window.txt_user.text(), self.login_window.user_role)
+                self.new_main.show()
+
+    def closeEvent(self, event):
+        """تنظيف الموارد عند إغلاق البرنامج نهائياً"""
+        if hasattr(self, 'backup_system'):
+            self.backup_system.stop_auto_backup()
+        AppLogger.info("Main", "Fermeture de l'application.")
+        event.accept()
+
+def main():
+    configure_qt_font_environment()
+
+    # 1. إعداد النظام وقاعدة البيانات
+    db = DatabaseManager()
+    db.initialize_database()
+
+    # 2. بدء التطبيق
+    app = QApplication(sys.argv)
+    icon_path = _resolve_app_icon_path()
+    if icon_path:
+        app.setWindowIcon(QIcon(icon_path))
     
-    def apply_theme_to_all_windows(self):
-        """تطبيق المظهر على جميع النوافذ"""
-        # تطبيق على النافذة الرئيسية والتطبيق
-        ThemeManager.apply_theme(QApplication.instance(), ThemeManager._current_theme)
-
-
-def excepthook(type, value, traceback):
-    error_msg = f"Critical Error: {value}"
-    print(error_msg)
+    # تحميل خط مخصص (اختياري لتحسين المظهر)
+    font = QFont("Segoe UI", 10)
+    app.setFont(font)
+    
+    # 3. شاشة تسجيل الدخول
+    # 2.5 معالج الإعداد الأول (يعمل فقط عند أول تشغيل أو عدم وجود إعدادات)
     try:
-        from app_logger import AppLogger
-        AppLogger.error("System", f"Uncaught Exception: {value}")
-    except:
-        pass
-    
-    QMessageBox.critical(None, "Application Crash", 
-                         f"An unexpected error occurred:\n{value}\n\nThe application will close.")
-    sys.exit(1)
+        from first_run_wizard import should_run_wizard, FirstRunWizard
+        from PyQt6.QtWidgets import QDialog
+        if should_run_wizard():
+            wizard = FirstRunWizard()
+            if wizard.exec() != QDialog.DialogCode.Accepted:
+                # المستخدم أغلق المعالج دون إكمال الإعداد
+                AppLogger.warning("Main", "Fermeture de l'assistant de configuration — arrêt de l'application")
+                sys.exit(0)
+    except Exception as _wiz_err:
+        AppLogger.error("Main", f"Erreur lors du lancement de l'assistant: {_wiz_err}")
+
+    # 3. شاشة تسجيل الدخول
+    login = LoginWindow()
+    if login.exec():
+        user = login.txt_user.text()
+        role = login.user_role
+
+        try:
+            # 4. الواجهة الرئيسية
+            app.main_window = MainWindow(user, role)
+            app.main_window.show()
+            sys.exit(app.exec())
+        except Exception as e:
+            error_details = traceback.format_exc()
+            AppLogger.error("Main", f"Crash au démarrage de la fenêtre principale: {e}\n{error_details}")
+            QMessageBox.critical(None, "Erreur Critique", "Échec d'ouverture de l'interface principale. Consultez le fichier de logs.")
 
 if __name__ == "__main__":
-    sys.excepthook = excepthook
-    app = QApplication(sys.argv)
-    
-    # 1. Initialize Database Structure First
-    try:
-        from database_setup import DatabaseManager
-        db_mgr = DatabaseManager()
-        db_mgr.initialize_database()
-        print("Database initialized successfully.")
-    except Exception as e:
-        print(f"Database Initialization Failed: {e}")
-        # MessageBox could be shown here if critical, but proceed to try login
-    
-    try:
-        from login_window import LoginWindow
-        has_login = True
-    except ImportError:
-        has_login = False
-        print("LoginWindow file not found, running Dashboard directly.")
-
-    if has_login:
-        try:
-            login = LoginWindow()
-            if login.exec():
-                try:
-                    main_win = MainDashboard(user_role=login.user_role)
-                    main_win.show()
-                    sys.exit(app.exec())
-                except Exception as e:
-                    QMessageBox.critical(None, "Dashboard Error", f"Failed to start dashboard:\n{str(e)}")
-                    print(f"Dashboard init failed: {e}")
-            else:
-                sys.exit(0)
-        except Exception as e:
-            QMessageBox.critical(None, "Login Error", f"Failed to start login window:\n{str(e)}")
-            print(f"Login window failed: {e}")
-            
-    else:
-        main_win = MainDashboard(user_role="Admin")
-        main_win.show()
-        sys.exit(app.exec())
+    main()
