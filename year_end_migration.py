@@ -1,28 +1,40 @@
 import sys
-from database_setup import DatabaseManager
-from db_path import DB_PATH
+import psycopg2
+import os
+from datetime import datetime, timedelta
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
-                             QHBoxLayout, QTableWidget, QTableWidgetItem, 
-                             QPushButton, QLabel, QComboBox, QMessageBox, 
-                             QHeaderView, QFrame, QGroupBox, QProgressBar, 
-                             QCheckBox, QGridLayout, QGraphicsDropShadowEffect)
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
+                             QHBoxLayout, QPushButton, QLabel, QComboBox, 
+                             QMessageBox, QGroupBox, QTabWidget, QFrame, 
+                             QGridLayout, QGraphicsDropShadowEffect, QDateEdit,
+                             QFileDialog, QProgressBar, QTableWidget, QTableWidgetItem, QHeaderView, QCheckBox)
+from PyQt6.QtCore import Qt, QDate, QThread, pyqtSignal
 from PyQt6.QtGui import QFont, QColor
+import matplotlib.pyplot as plt
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.figure import Figure
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+from fpdf import FPDF
+from database_setup import DatabaseManager
+from pdf_report_style import apply_grades_sheet_header, apply_table_header_style, apply_table_body_style, set_zebra_row_fill, get_school_info_row
+from print_export_service import output_pdf, get_report_output_mode
+from app_logger import AppLogger
+from services.grade_service import GradeService
+from services.migration_service import MigrationService
 
-from ui_styles import ThemeManager, get_card_style, apply_shadow_to_widget, Colors, get_table_style
+from ui_styles import ThemeManager, get_card_style, apply_shadow_to_widget, Colors, get_table_style, get_tabs_style
 
 THEME_AVAILABLE = True
-
 
 class MigrationCalculator(QThread):
     progress = pyqtSignal(int)
     finished = pyqtSignal(list)
 
-    def __init__(self, db_path, current_year_id, filter_class_id=None):
+    def __init__(self, current_year_id, filter_class_id=None):
         super().__init__()
-        self.db_path = db_path
         self.current_year_id = current_year_id
         self.filter_class_id = filter_class_id
+        self.grade_service = GradeService()
 
     def run(self):
         results = []
@@ -43,15 +55,26 @@ class MigrationCalculator(QThread):
 
                 period_ids = []
                 try:
-                    cursor.execute("SELECT id FROM Periods WHERE school_year_id=?", (self.current_year_id,))
+                    cursor.execute("SELECT id FROM AcademicPeriods WHERE year_id=%s", (self.current_year_id,))
                     period_ids = [row[0] for row in cursor.fetchall()]
-                except Exception:
+                except Exception as e:
+                    AppLogger.error("YearEndMigration", f"Error fetching periods: {e}")
                     period_ids = []
 
                 if self.filter_class_id:
-                    cursor.execute("SELECT id, first_name_fr, last_name_fr, class_id FROM Students WHERE status='Active' AND class_id=?", (self.filter_class_id,))
+                    cursor.execute("""
+                        SELECT S.id, S.first_name_fr, S.last_name_fr, SCN.class_id 
+                        FROM Students S
+                        JOIN StudentClassNumbers SCN ON S.id = SCN.student_id
+                        WHERE S.status='Active' AND SCN.class_id=%s AND SCN.year_id=%s
+                    """, (self.filter_class_id, self.current_year_id))
                 else:
-                    cursor.execute("SELECT id, first_name_fr, last_name_fr, class_id FROM Students WHERE status='Active'")
+                    cursor.execute("""
+                        SELECT S.id, S.first_name_fr, S.last_name_fr, SCN.class_id 
+                        FROM Students S
+                        JOIN StudentClassNumbers SCN ON S.id = SCN.student_id
+                        WHERE S.status='Active' AND SCN.year_id=%s
+                    """, (self.current_year_id,))
                 students = cursor.fetchall()
 
                 total = max(len(students), 1)
@@ -59,62 +82,47 @@ class MigrationCalculator(QThread):
                     cycle_id = class_map.get(class_id, {}).get('cycle', 0)
                     subjects = []
                     try:
-                        cursor.execute("SELECT id, coefficient FROM Subjects WHERE cycle_id=?", (cycle_id,))
+                        cursor.execute("SELECT id, coefficient FROM Subjects WHERE cycle_id=%s", (cycle_id,))
                         subjects = cursor.fetchall()
                     except Exception:
-                        cursor.execute("SELECT id, coefficient FROM Subjects")
-                        subjects = cursor.fetchall()
+                        pass
 
                     period_avgs = []
                     if period_ids and subjects:
                         for pid in period_ids:
-                            total_pts = 0
-                            total_coef = 0
+                            weighted_scores = []
                             for sub_id, coef in subjects:
                                 cursor.execute("""
                                     SELECT AVG(G.score) FROM Grades G
                                     JOIN AssessmentTypes A ON G.assessment_id = A.id
-                                    WHERE G.student_id=? AND G.subject_id=? AND A.period_id=?
-                                """, (std_id, sub_id, pid))
+                                    WHERE G.student_id=%s AND G.subject_id=%s AND A.period_id=%s AND G.year_id=%s
+                                """, (std_id, sub_id, pid, self.current_year_id))
                                 res = cursor.fetchone()
                                 if res and res[0] is not None:
-                                    total_pts += res[0] * coef
-                                    total_coef += coef
-                            period_avgs.append(total_pts / total_coef if total_coef > 0 else 0.0)
+                                    weighted_scores.append((float(res[0]), float(coef)))
+                            period_avgs.append(self.grade_service.calculate_period_average(weighted_scores))
 
-                    if period_avgs:
-                        avg_annual = sum(period_avgs) / len(period_avgs)
-                    else:
-                        cursor.execute("SELECT AVG(score) FROM Grades WHERE student_id=?", (std_id,))
+                    fallback_average = 0.0
+                    if not period_avgs:
+                        cursor.execute("SELECT AVG(score) FROM Grades WHERE student_id=%s AND year_id=%s", (std_id, self.current_year_id))
                         res = cursor.fetchone()
-                        avg_annual = res[0] if res and res[0] is not None else 0.0
+                        fallback_average = float(res[0]) if res and res[0] is not None else 0.0
+
+                    avg_annual = self.grade_service.calculate_annual_average(period_avgs, fallback_average)
 
                     # --- Decision Logic ---
-                    threshold = 10.0
-                    cursor.execute("SELECT name_fr FROM Cycles WHERE id=?", (cycle_id,))
+                    cursor.execute("SELECT name_fr FROM Cycles WHERE id=%s", (cycle_id,))
                     cname_res = cursor.fetchone()
-                    if cname_res:
-                        cname = cname_res[0].lower()
-                        if "elem" in cname or "prim" in cname:
-                            threshold = 5.0
-
-                    decision = "Admis" if avg_annual >= threshold else "Redouble"
+                    cycle_name = cname_res[0] if cname_res else ""
+                    decision = self.grade_service.get_promotion_decision(avg_annual, cycle_name)
 
                     # --- Next Class Logic ---
-                    next_class_id = class_id
-                    next_class_name = class_map.get(class_id, {}).get('name', '?') + " (Redouble)"
-                    if decision == "Admis":
-                        current_order = class_map.get(class_id, {}).get('order', 0)
-                        found_next = False
-                        for cid, cdata in class_map.items():
-                            if cdata['cycle'] == cycle_id and cdata['order'] == current_order + 1:
-                                next_class_id = cid
-                                next_class_name = cdata['name']
-                                found_next = True
-                                break
-                        if not found_next:
-                            next_class_id = None
-                            next_class_name = "Fin de Cycle (Orientation)"
+                    next_class_id, next_class_name = self.grade_service.get_next_class(
+                        class_map,
+                        class_id,
+                        cycle_id,
+                        decision,
+                    )
 
                     results.append({
                         'id': std_id,
@@ -128,15 +136,16 @@ class MigrationCalculator(QThread):
                     })
 
                     self.progress.emit(int((i + 1) / total * 100))
-
-        except Exception:
-            pass
+        except Exception as e:
+            AppLogger.error("YearEndMigration", f"Background thread error: {e}")
 
         self.finished.emit(results)
+
 
 class MigrationWindow(QMainWindow):
     def __init__(self):
         super().__init__()
+        self.migration_service = MigrationService()
         self.setWindowTitle("Clôture de l'Année & Migration / الترحيل السنوي")
         self.setMinimumSize(1100, 700)
         
@@ -145,27 +154,14 @@ class MigrationWindow(QMainWindow):
             ThemeManager.apply_theme(self)
         else:
             colors = Colors()
-            # Deep Slate Theme Application
             self.setStyleSheet(f"""
-                QMainWindow {
-                    background-color: {colors.BG_MAIN};
-                }
-                QLabel {
-                    font-family: 'Segoe UI', 'Cairo', sans-serif;
-                    color: {colors.TEXT_PRIMARY};
-                }
-                QProgressBar {
-                    border: 1px solid {colors.BORDER};
-                    border-radius: 6px;
-                    text-align: center;
-                    background-color: {colors.BG_CARD};
-                    color: {colors.TEXT_PRIMARY};
-                    font-weight: bold;
-                }
-                QProgressBar::chunk {
-                    background-color: {colors.PRIMARY};
-                    border-radius: 5px;
-                }
+                QMainWindow {{ background-color: {colors.BG_MAIN}; }}
+                QLabel {{ font-family: 'Segoe UI', 'Cairo', sans-serif; color: {colors.TEXT_PRIMARY}; }}
+                QProgressBar {{
+                    border: 1px solid {colors.BORDER}; border-radius: 6px; text-align: center;
+                    background-color: {colors.BG_CARD}; color: {colors.TEXT_PRIMARY}; font-weight: bold;
+                }}
+                QProgressBar::chunk {{ background-color: {colors.PRIMARY}; border-radius: 5px; }}
             """)
         
         self.init_ui()
@@ -180,22 +176,12 @@ class MigrationWindow(QMainWindow):
         self.main_layout.setContentsMargins(20, 20, 20, 20)
         self.main_layout.setSpacing(20)
 
-        # 1. Header Frame (Deep Slate Style)
+        # 1. Header Frame
         header_frame = QFrame()
         if THEME_AVAILABLE:
-            header_frame.setStyleSheet(f"""
-                QFrame {{
-                    background-color: {ThemeManager.get_colors().BG_HEADER};
-                    border-radius: 10px;
-                }}
-            """)
+            header_frame.setStyleSheet(f"QFrame {{ background-color: {ThemeManager.get_colors().BG_HEADER}; border-radius: 10px; }}")
         else:
-            header_frame.setStyleSheet(f"""
-                QFrame {
-                    background-color: {fallback_colors.BG_HEADER};
-                    border-radius: 10px;
-                }
-            """)
+            header_frame.setStyleSheet(f"QFrame {{ background-color: {fallback_colors.BG_HEADER}; border-radius: 10px; }}")
         header_frame.setFixedHeight(80)
         
         shadow = QGraphicsDropShadowEffect()
@@ -213,18 +199,17 @@ class MigrationWindow(QMainWindow):
         title_box = QVBoxLayout()
         title = QLabel("MIGRATION ANNUELLE")
         title.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
+        
+        subtitle = QLabel("إغلاق السنة الدراسية وترحيل الطلاب للعام الجديد")
+        subtitle.setFont(QFont("Cairo", 11))
+        
         if THEME_AVAILABLE:
             title.setStyleSheet(f"color: {ThemeManager.get_colors().HEADER_TEXT}; background: transparent;")
-        else:
-            title.setStyleSheet(f"color: {fallback_colors.HEADER_TEXT}; background: transparent;")
-        
-        subtitle = QLabel("إغلاق السنة الدراسية وترحيل الطلاب")
-        subtitle.setFont(QFont("Cairo", 11))
-        if THEME_AVAILABLE:
             subtitle.setStyleSheet(f"color: {ThemeManager.get_colors().TEXT_SECONDARY}; background: transparent;")
         else:
+            title.setStyleSheet(f"color: {fallback_colors.HEADER_TEXT}; background: transparent;")
             subtitle.setStyleSheet(f"color: {fallback_colors.TEXT_SECONDARY}; background: transparent;")
-        
+
         title_box.addWidget(title)
         title_box.addWidget(subtitle)
         
@@ -241,7 +226,6 @@ class MigrationWindow(QMainWindow):
         grid_config.setSpacing(15)
         grid_config.setContentsMargins(20, 20, 20, 20)
         
-        # Title inside card
         card_title = QLabel("1. Configuration & Filtrage / الإعدادات")
         if THEME_AVAILABLE:
             card_title.setStyleSheet(f"font-weight: bold; color: {ThemeManager.get_colors().TEXT_PRIMARY}; font-size: 14px; margin-bottom: 10px;")
@@ -249,13 +233,12 @@ class MigrationWindow(QMainWindow):
             card_title.setStyleSheet(f"font-weight: bold; color: {fallback_colors.TEXT_PRIMARY}; font-size: 14px; margin-bottom: 10px;")
         grid_config.addWidget(card_title, 0, 0, 1, 4)
         
-        # Controls
         self.combo_current_year = self.styled_combo()
         self.combo_target_year = self.styled_combo()
         
-        grid_config.addWidget(QLabel("Année Source (Actuelle):"), 1, 0)
+        grid_config.addWidget(QLabel("Année Source (الحالية):"), 1, 0)
         grid_config.addWidget(self.combo_current_year, 1, 1)
-        grid_config.addWidget(QLabel("➡ Année Cible (Nouvelle):"), 1, 2)
+        grid_config.addWidget(QLabel("➡ Année Cible (القادمة):"), 1, 2)
         grid_config.addWidget(self.combo_target_year, 1, 3)
 
         self.combo_filter_class = self.styled_combo()
@@ -267,26 +250,12 @@ class MigrationWindow(QMainWindow):
         if THEME_AVAILABLE:
             colors = ThemeManager.get_colors()
             btn_calc.setStyleSheet(f"""
-                QPushButton {{ 
-                    background-color: {colors.PRIMARY}; 
-                    color: white; 
-                    font-weight: bold; 
-                    border-radius: 6px; 
-                    font-size: 13px;
-                    border: none;
-                }}
+                QPushButton {{ background-color: {colors.PRIMARY}; color: white; font-weight: bold; border-radius: 6px; font-size: 13px; border: none; }}
                 QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}
             """)
         else:
             btn_calc.setStyleSheet(f"""
-                QPushButton {{ 
-                    background-color: {fallback_colors.PRIMARY}; 
-                    color: white; 
-                    font-weight: bold; 
-                    border-radius: 6px; 
-                    font-size: 13px;
-                    border: none;
-                }}
+                QPushButton {{ background-color: {fallback_colors.PRIMARY}; color: white; font-weight: bold; border-radius: 6px; font-size: 13px; border: none; }}
                 QPushButton:hover {{ background-color: {fallback_colors.PRIMARY_HOVER}; }}
             """)
         btn_calc.clicked.connect(self.start_calculation)
@@ -323,41 +292,25 @@ class MigrationWindow(QMainWindow):
 
         # 4. Execution Area
         action_layout = QHBoxLayout()
-        self.chk_archive = QCheckBox("Archiver l'historique / حفظ في الأرشيف")
+        self.chk_archive = QCheckBox("Activer automatiquement la nouvelle année / تفعيل السنة الجديدة آلياً")
         self.chk_archive.setChecked(True)
         if THEME_AVAILABLE:
             self.chk_archive.setStyleSheet(f"font-size: 14px; color: {ThemeManager.get_colors().TEXT_PRIMARY};")
         else:
             self.chk_archive.setStyleSheet(f"font-size: 14px; color: {fallback_colors.TEXT_PRIMARY};")
         
-        btn_execute = QPushButton("🚀 CONFIRMER LA MIGRATION / تنفيذ")
+        btn_execute = QPushButton("🚀 CONFIRMER LA MIGRATION / تنفيذ الترحيل")
         btn_execute.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_execute.setMinimumHeight(50)
         if THEME_AVAILABLE:
             colors = ThemeManager.get_colors()
             btn_execute.setStyleSheet(f"""
-                QPushButton {{ 
-                    background-color: {colors.DANGER};
-                    color: white; 
-                    font-weight: bold; 
-                    padding: 0 20px; 
-                    font-size: 14px; 
-                    border-radius: 8px;
-                    border: none;
-                }}
+                QPushButton {{ background-color: {colors.DANGER}; color: white; font-weight: bold; padding: 0 20px; font-size: 14px; border-radius: 8px; border: none; }}
                 QPushButton:hover {{ background-color: {colors.DANGER_HOVER}; }}
             """)
         else:
             btn_execute.setStyleSheet(f"""
-                QPushButton {{ 
-                    background-color: {fallback_colors.DANGER};
-                    color: white; 
-                    font-weight: bold; 
-                    padding: 0 20px; 
-                    font-size: 14px; 
-                    border-radius: 8px;
-                    border: none;
-                }}
+                QPushButton {{ background-color: {fallback_colors.DANGER}; color: white; font-weight: bold; padding: 0 20px; font-size: 14px; border-radius: 8px; border: none; }}
                 QPushButton:hover {{ background-color: {fallback_colors.DANGER_HOVER}; }}
             """)
         btn_execute.clicked.connect(self.execute_migration)
@@ -376,13 +329,7 @@ class MigrationWindow(QMainWindow):
             apply_shadow_to_widget(frame)
         else:
             fallback_colors = Colors()
-            frame.setStyleSheet(f"""
-                QFrame {
-                    background-color: {fallback_colors.BG_CARD}; 
-                    border-radius: 12px; 
-                    border: 1px solid {fallback_colors.BORDER};
-                }
-            """)
+            frame.setStyleSheet(f"QFrame {{ background-color: {fallback_colors.BG_CARD}; border-radius: 12px; border: 1px solid {fallback_colors.BORDER}; }}")
             shadow = QGraphicsDropShadowEffect()
             shadow.setBlurRadius(20)
             shadow.setColor(QColor(15, 23, 42, 15))
@@ -394,28 +341,10 @@ class MigrationWindow(QMainWindow):
         combo = QComboBox()
         if THEME_AVAILABLE:
             colors = ThemeManager.get_colors()
-            combo.setStyleSheet(f"""
-                QComboBox {{
-                    padding: 8px 12px;
-                    border: 1px solid {colors.BORDER};
-                    border-radius: 6px;
-                    background: {colors.INPUT_BG};
-                    color: {colors.TEXT_PRIMARY};
-                }}
-                QComboBox:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}
-            """)
+            combo.setStyleSheet(f"QComboBox {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }} QComboBox:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}")
         else:
             fallback_colors = Colors()
-            combo.setStyleSheet(f"""
-                QComboBox {
-                    padding: 8px 12px;
-                    border: 1px solid {fallback_colors.BORDER};
-                    border-radius: 6px;
-                    background: {fallback_colors.INPUT_BG};
-                    color: {fallback_colors.TEXT_PRIMARY};
-                }
-                QComboBox:focus {{ border: 2px solid {fallback_colors.BORDER_FOCUS}; background: {fallback_colors.INPUT_BG_FOCUS}; }}
-            """)
+            combo.setStyleSheet(f"QComboBox {{ padding: 8px 12px; border: 1px solid {fallback_colors.BORDER}; border-radius: 6px; background: {fallback_colors.INPUT_BG}; color: {fallback_colors.TEXT_PRIMARY}; }} QComboBox:focus {{ border: 2px solid {fallback_colors.BORDER_FOCUS}; background: {fallback_colors.INPUT_BG_FOCUS}; }}")
         combo.setMinimumHeight(40)
         return combo
 
@@ -424,61 +353,14 @@ class MigrationWindow(QMainWindow):
         table.setAlternatingRowColors(True)
         table.verticalHeader().setVisible(False)
         if THEME_AVAILABLE:
-            colors = ThemeManager.get_colors()
-            table.setStyleSheet(f"""
-                QTableWidget {{
-                    background-color: {colors.BG_CARD};
-                    border: 1px solid {colors.BORDER};
-                    border-radius: 8px;
-                    gridline-color: {colors.BORDER};
-                    font-size: 13px;
-                    color: {colors.TEXT_PRIMARY};
-                }}
-                QTableWidget::item {{
-                    padding: 6px;
-                    border-bottom: 1px solid {colors.BG_MAIN};
-                    color: {colors.TEXT_PRIMARY};
-                }}
-                QTableWidget::item:alternate {{
-                    background-color: {colors.BG_MAIN};
-                }}
-                QTableWidget::item:selected {{
-                    background-color: {colors.PRIMARY};
-                    color: white;
-                }}
-                QHeaderView::section {{
-                    background-color: {colors.BG_HEADER};
-                    color: {colors.HEADER_TEXT};
-                    padding: 10px;
-                    border: none;
-                    font-weight: bold;
-                }}
-            """)
+            table.setStyleSheet(get_table_style())
         else:
             fallback_colors = Colors()
             table.setStyleSheet(f"""
-                QTableWidget {
-                    background-color: {fallback_colors.BG_CARD};
-                    border: 1px solid {fallback_colors.BORDER};
-                    border-radius: 8px;
-                    gridline-color: {fallback_colors.BORDER};
-                    font-size: 13px;
-                }
-                QTableWidget::item {
-                    padding: 6px;
-                    border-bottom: 1px solid {fallback_colors.BG_MAIN};
-                }
-                QTableWidget::item:selected {
-                    background-color: {fallback_colors.PRIMARY};
-                    color: white;
-                }
-                QHeaderView::section {
-                    background-color: {fallback_colors.BG_HEADER};
-                    color: white;
-                    padding: 10px;
-                    border: none;
-                    font-weight: bold;
-                }
+                QTableWidget {{ background-color: {fallback_colors.BG_CARD}; border: 1px solid {fallback_colors.BORDER}; border-radius: 8px; gridline-color: {fallback_colors.BORDER}; font-size: 13px; color: {fallback_colors.TEXT_PRIMARY}; }}
+                QTableWidget::item {{ padding: 6px; border-bottom: 1px solid {fallback_colors.BG_MAIN}; }}
+                QTableWidget::item:selected {{ background-color: {fallback_colors.PRIMARY}; color: white; }}
+                QHeaderView::section {{ background-color: {fallback_colors.BG_HEADER}; color: white; padding: 10px; border: none; font-weight: bold; }}
             """)
 
     # --- Logic Methods ---
@@ -487,20 +369,27 @@ class MigrationWindow(QMainWindow):
             conn = db.get_connection()
             cursor = conn.cursor()
             
-            # Load Years
-            cursor.execute("SELECT id, year_label, is_active FROM AcademicYears ORDER BY id DESC")
+            cursor.execute("SELECT id, year_label, is_active FROM AcademicYears ORDER BY id ASC")
             years = cursor.fetchall()
             
             self.combo_current_year.clear()
             self.combo_target_year.clear()
             
-            for y in years:
+            active_idx = -1
+            for i, y in enumerate(years):
                 self.combo_current_year.addItem(y[1], y[0])
                 self.combo_target_year.addItem(y[1], y[0])
                 if y[2] == 1: 
-                    self.combo_current_year.setCurrentIndex(self.combo_current_year.count()-1)
+                    active_idx = i
 
-            # Load Classes
+            if active_idx != -1:
+                self.combo_current_year.setCurrentIndex(active_idx)
+                # الافتراضي أن السنة المستهدفة هي السنة التي تلي السنة النشطة
+                if active_idx + 1 < len(years):
+                    self.combo_target_year.setCurrentIndex(active_idx + 1)
+                else:
+                    self.combo_target_year.setCurrentIndex(active_idx)
+
             cursor.execute("SELECT id, class_name_fr FROM Classes ORDER BY sort_order")
             classes = cursor.fetchall()
             self.combo_filter_class.clear()
@@ -521,7 +410,7 @@ class MigrationWindow(QMainWindow):
         self.progress_bar.setValue(0)
         self.table_preview.setRowCount(0)
         
-        self.calc_thread = MigrationCalculator(DB_PATH, curr_id, filter_cls)
+        self.calc_thread = MigrationCalculator(curr_id, filter_cls)
         self.calc_thread.progress.connect(self.progress_bar.setValue)
         self.calc_thread.finished.connect(self.display_results)
         self.calc_thread.start()
@@ -540,7 +429,6 @@ class MigrationWindow(QMainWindow):
             idx = self.table_preview.rowCount()
             self.table_preview.insertRow(idx)
             
-            # Read-only items
             id_item = QTableWidgetItem(str(r['id']))
             id_item.setFlags(Qt.ItemFlag.ItemIsEnabled)
             self.table_preview.setItem(idx, 0, id_item)
@@ -563,7 +451,6 @@ class MigrationWindow(QMainWindow):
             avg_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
             self.table_preview.setItem(idx, 3, avg_item)
             
-            # Editable Decision
             combo_dec = QComboBox()
             combo_dec.addItems(["Admis", "Redouble", "Exclu"])
             combo_dec.setCurrentText(r['decision'])
@@ -583,60 +470,54 @@ class MigrationWindow(QMainWindow):
                     dest_item.setForeground(QColor(fallback_colors.BG_MAIN))
             self.table_preview.setItem(idx, 5, dest_item)
 
+    # ===== تعديل استراتيجي: الترحيل يتم بإضافة سجلات جديدة في SCN =====
     def execute_migration(self):
-        if not self.migration_data: return
+        if not self.migration_data:
+            return
         
         msg = f"Êtes-vous sûr de vouloir traiter {len(self.migration_data)} élèves ?\n"
         if self.combo_filter_class.currentData():
             msg += "(Filtre appliqué : Seulement la classe sélectionnée)"
         
         reply = QMessageBox.question(self, "Confirmation", msg, QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-        
         if reply != QMessageBox.StandardButton.Yes: return
 
-        change_active_year = (self.combo_filter_class.currentData() is None) 
+        change_active_year = self.chk_archive.isChecked() 
         target_year_id = self.combo_target_year.currentData()
+
+        migration_rows = []
+        for idx in range(self.table_preview.rowCount()):
+            student_id = int(self.table_preview.item(idx, 0).text())
+            original_data = next((item for item in self.migration_data if item['id'] == student_id), None)
+            if not original_data:
+                continue
+
+            decision_widget = self.table_preview.cellWidget(idx, 4)
+            migration_rows.append({
+                'student_id': student_id,
+                'decision': decision_widget.currentText(),
+                'current_class_id': original_data['current_class_id'],
+                'next_class_id': original_data['next_class_id'],
+            })
         
         with DatabaseManager() as db:
             conn = db.get_connection()
-            cursor = conn.cursor()
             
             try:
-                count = 0
-                for idx in range(self.table_preview.rowCount()):
-                    std_id = int(self.table_preview.item(idx, 0).text())
-                    
-                    original_data = next((item for item in self.migration_data if item['id'] == std_id), None)
-                    if not original_data: continue
-
-                    decision_widget = self.table_preview.cellWidget(idx, 4)
-                    decision = decision_widget.currentText()
-                    
-                    new_class_id = None
-                    if decision == "Admis":
-                        new_class_id = original_data['next_class_id']
-                    elif decision == "Redouble":
-                        new_class_id = original_data['current_class_id']
-                    # Else Exclu -> new_class_id is None
-
-                    if decision == "Exclu":
-                        cursor.execute("UPDATE Students SET status='Exclu' WHERE id=?", (std_id,))
-                    elif new_class_id:
-                        cursor.execute("UPDATE Students SET class_id=? WHERE id=?", (new_class_id, std_id))
-                    
-                    count += 1
-                
-                if change_active_year:
-                    cursor.execute("UPDATE AcademicYears SET is_active=0")
-                    cursor.execute("UPDATE AcademicYears SET is_active=1 WHERE id=?", (target_year_id,))
-                
+                count = self.migration_service.execute_migration(
+                    conn,
+                    migration_rows,
+                    target_year_id,
+                    change_active_year,
+                )
                 conn.commit()
-                QMessageBox.information(self, "Succès", f"Opération terminée. {count} élèves mis à jour.")
+                QMessageBox.information(self, "Succès", f"Opération terminée. {count} dossiers mis à jour pour l'année cible.")
                 self.table_preview.setRowCount(0)
                 self.migration_data = []
+                self.load_initial_data() # تحديث القوائم لتظهر السنة النشطة الجديدة
                 
             except Exception as e:
-                QMessageBox.critical(self, "Erreur", str(e))
+                QMessageBox.critical(self, "Erreur lors de la migration", str(e))
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
