@@ -26,7 +26,12 @@ class AppLogger:
     def _initialize(self):
         """إعداد نظام السجلات"""
         # إنشاء مجلد السجلات
-        log_dir = Path(db_path.get_logs_dir())
+        try:
+            log_dir = Path(db_path.get_logs_dir())
+        except AttributeError:
+            # Fallback إذا لم تكن الدالة موجودة في db_path
+            log_dir = Path(os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs"))
+            
         log_dir.mkdir(parents=True, exist_ok=True)
         
         # إعداد Logger
@@ -40,16 +45,15 @@ class AppLogger:
         file_handler = logging.FileHandler(log_file, encoding='utf-8')
         file_handler.setLevel(logging.DEBUG)
         
-        # Console Handler - مع UTF-8 encoding
+        # Console Handler - تأمين ضد بيئات التشغيل التي لا تحتوي على Console (مثل ملفات EXE)
         try:
-            # محاولة استخدام UTF-8 في console على Windows
-            if sys.platform == 'win32':
+            if sys.platform == 'win32' and hasattr(sys.stdout, 'fileno'):
                 console_handler = logging.StreamHandler(sys.stdout)
                 console_handler.stream = open(sys.stdout.fileno(), mode='w', 
                                              encoding='utf-8', buffering=1)
             else:
                 console_handler = logging.StreamHandler(sys.stdout)
-        except:
+        except Exception:
             console_handler = logging.StreamHandler()
         
         console_handler.setLevel(logging.INFO)
@@ -63,7 +67,7 @@ class AppLogger:
         file_handler.setFormatter(formatter)
         console_handler.setFormatter(formatter)
         
-        # إزالة المعالجات القديمة إن وجدت
+        # إزالة المعالجات القديمة إن وجدت لتفادي التكرار
         for handler in self._logger.handlers[:]:
             self._logger.removeHandler(handler)
         
@@ -104,16 +108,16 @@ class ErrorHandler:
     @staticmethod
     def handle_database_error(error, context=""):
         """معالجة أخطاء قاعدة البيانات"""
-        import sqlite3
+        import psycopg2
         
-        if isinstance(error, sqlite3.OperationalError):
-            message = f"Database operational error: {error}"
-            if "locked" in str(error).lower():
-                message = "قاعدة البيانات مقفولة. حاول مرة أخرى بعد قليل."
-        elif isinstance(error, sqlite3.IntegrityError):
-            message = f"Integrity error: {error}"
+        if isinstance(error, psycopg2.OperationalError):
+            message = f"Erreur de connexion: {error}"
+            # في PostgreSQL، الخطأ التشغيلي غالباً يعني فقدان الاتصال بالخادم
+            message = "فقدان الاتصال بقاعدة البيانات. تأكد من أن خادم PostgreSQL يعمل."
+        elif isinstance(error, psycopg2.IntegrityError):
+            message = f"Erreur d'intégrité / Integrity error: {error}"
         else:
-            message = f"Database error: {error}"
+            message = f"Erreur de base de données / Database error: {error}"
         
         AppLogger.error("ErrorHandler", f"[{context}] {message}", error)
         return message
@@ -160,4 +164,4 @@ if __name__ == "__main__":
     AppLogger.debug("main", "هذه رسالة تصحيح")
     
     print("✅ نظام السجلات يعمل بشكل صحيح")
-    print("📝 تحقق من ملف السجل في: logs/")
+    print("📝 تحقق من ملف السجل في مجلد السجلات")
