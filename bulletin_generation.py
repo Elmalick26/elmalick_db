@@ -1,8 +1,8 @@
-import sys
-import sqlite3
+﻿import sys
 import os
 from datetime import datetime
 from database_setup import DatabaseManager
+from app_logger import AppLogger
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                              QHBoxLayout, QTableWidget, QTableWidgetItem, 
                              QPushButton, QLabel, QComboBox, QMessageBox, 
@@ -13,8 +13,10 @@ from PyQt6.QtGui import QFont, QColor
 from fpdf import FPDF
 
 from ui_styles import ThemeManager, get_card_style, apply_shadow_to_widget, Colors, get_table_style, get_tabs_style
+from print_export_service import output_pdf, get_report_output_mode
 
 THEME_AVAILABLE = True
+BULLETIN_SUMMARY_OUTPUT_MODE = get_report_output_mode("bulletin_summary_mode", "save")
 
 try:
     import arabic_reshaper
@@ -94,7 +96,7 @@ class GradeCalculator:
                 SELECT CY.name_fr 
                 FROM Classes CL 
                 JOIN Cycles CY ON CL.cycle_id = CY.id 
-                WHERE CL.id = ?
+                WHERE CL.id = %s
             """, (class_id,))
             res = cursor.fetchone()
         
@@ -115,23 +117,23 @@ class GradeCalculator:
             SELECT DISTINCT S.id, S.subject_name_fr, S.subject_name_ar, S.coefficient
             FROM Timetable T
             JOIN Subjects S ON T.subject_id = S.id
-            WHERE T.class_id = ?
+            WHERE T.class_id = %s
             ORDER BY S.id
         """, (class_id,))
         subjects = cursor.fetchall()
         if subjects:
             return subjects
 
-        cursor.execute("SELECT cycle_id FROM Classes WHERE id=?", (class_id,))
+        cursor.execute("SELECT cycle_id FROM Classes WHERE id=%s", (class_id,))
         res = cursor.fetchone()
         if not res:
             return []
         cycle_id = res[0]
-        cursor.execute("SELECT id, subject_name_fr, subject_name_ar, coefficient FROM Subjects WHERE cycle_id=? ORDER BY id", (cycle_id,))
+        cursor.execute("SELECT id, subject_name_fr, subject_name_ar, coefficient FROM Subjects WHERE cycle_id=%s ORDER BY id", (cycle_id,))
         return cursor.fetchall()
 
     def _get_period_year_id(self, cursor, period_id):
-        cursor.execute("SELECT year_id FROM AcademicPeriods WHERE id=?", (period_id,))
+        cursor.execute("SELECT year_id FROM AcademicPeriods WHERE id=%s", (period_id,))
         res = cursor.fetchone()
         return res[0] if res else None
 
@@ -140,70 +142,128 @@ class GradeCalculator:
             cursor.execute("""
                 SELECT score
                 FROM Grades
-                WHERE student_id=? AND subject_id=? AND assessment_id=?
-                AND (year_id=? OR year_id IS NULL)
-                ORDER BY CASE WHEN year_id=? THEN 0 ELSE 1 END, id DESC
+                WHERE student_id=%s AND subject_id=%s AND assessment_id=%s
+                AND (year_id=%s OR year_id IS NULL)
+                ORDER BY CASE WHEN year_id=%s THEN 0 ELSE 1 END, id DESC
                 LIMIT 1
             """, (student_id, subject_id, assessment_id, year_id, year_id))
         else:
             cursor.execute(
-                "SELECT score FROM Grades WHERE student_id=? AND subject_id=? AND assessment_id=? ORDER BY id DESC LIMIT 1",
+                "SELECT score FROM Grades WHERE student_id=%s AND subject_id=%s AND assessment_id=%s ORDER BY id DESC LIMIT 1",
                 (student_id, subject_id, assessment_id)
             )
         res = cursor.fetchone()
         return res[0] if res else 0
 
-    def _get_attendance_count(self, cursor, student_id, status, year_id):
+    def _get_table_columns(self, cursor, table_name):
+        """Read table columns in PostgreSQL using information_schema."""
+        try:
+            cursor.execute(
+                """
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_schema = current_schema()
+                  AND lower(table_name) = lower(%s)
+                """,
+                (table_name,)
+            )
+            return {row[0] for row in cursor.fetchall()}
+        except Exception:
+            return set()
+
+    def _get_attendance_count(self, cursor, student_id, status, year_id, period_id=None):
+        attendance_cols = self._get_table_columns(cursor, "StudentAttendance")
+        has_period_col = "period_id" in attendance_cols
+
+        if period_id and has_period_col:
+            cursor.execute(
+                "SELECT COUNT(*) FROM StudentAttendance WHERE student_id=%s AND status=%s AND period_id=%s",
+                (student_id, status, period_id)
+            )
+            return int(cursor.fetchone()[0] or 0)
+
         if year_id:
             cursor.execute(
-                "SELECT COUNT(*) FROM StudentAttendance WHERE student_id=? AND status=? AND year_id=?",
+                "SELECT COUNT(*) FROM StudentAttendance WHERE student_id=%s AND status=%s AND year_id=%s",
                 (student_id, status, year_id)
             )
-            count_year = cursor.fetchone()[0]
-            if count_year > 0:
-                return count_year
+            return int(cursor.fetchone()[0] or 0)
 
         cursor.execute(
-            "SELECT COUNT(*) FROM StudentAttendance WHERE student_id=? AND status=?",
+            "SELECT COUNT(*) FROM StudentAttendance WHERE student_id=%s AND status=%s",
             (student_id, status)
         )
-        return cursor.fetchone()[0]
+        return int(cursor.fetchone()[0] or 0)
 
-    def _get_discipline_data(self, cursor, student_id, year_id, is_primary):
+    def _get_discipline_data(self, cursor, student_id, year_id, is_primary, period_id=None):
+        discipline_cols = self._get_table_columns(cursor, "StudentDiscipline")
+        points_col = "points_deducted" if "points_deducted" in discipline_cols else "0"
+        sanction_col = "sanction" if "sanction" in discipline_cols else ("action_taken" if "action_taken" in discipline_cols else "''")
+        observation_col = "observation" if "observation" in discipline_cols else ("description" if "description" in discipline_cols else "''")
+        has_period_col = "period_id" in discipline_cols
+
+        if period_id and has_period_col:
+            cursor.execute(f"""
+                SELECT COALESCE(SUM({points_col}), 0)
+                FROM StudentDiscipline
+                WHERE student_id=%s AND period_id=%s
+            """, (student_id, period_id))
+            total_deducted = cursor.fetchone()[0]
+
+            cursor.execute(f"""
+                SELECT incident_type, {sanction_col}, {points_col}, {observation_col}
+                FROM StudentDiscipline
+                WHERE student_id=%s AND period_id=%s
+                ORDER BY incident_date DESC
+                LIMIT 5
+            """, (student_id, period_id))
+            discipline_records = cursor.fetchall()
+
+            base_conduct_score = 10.0 if is_primary else 20.0
+            conduct_score = max(0, base_conduct_score - total_deducted)
+
+            return {
+                'conduct_score': conduct_score,
+                'base_score': base_conduct_score,
+                'total_deducted': total_deducted,
+                'records': discipline_records,
+                'appreciation': self.get_conduct_appreciation(conduct_score, base_conduct_score)
+            }
+
         if year_id:
-            cursor.execute("SELECT COUNT(*) FROM StudentDiscipline WHERE student_id=? AND year_id=?", (student_id, year_id))
+            cursor.execute("SELECT COUNT(*) FROM StudentDiscipline WHERE student_id=%s AND year_id=%s", (student_id, year_id))
             has_year_data = cursor.fetchone()[0] > 0
         else:
             has_year_data = False
 
         if has_year_data:
-            cursor.execute("""
-                SELECT COALESCE(SUM(points_deducted), 0)
+            cursor.execute(f"""
+                SELECT COALESCE(SUM({points_col}), 0)
                 FROM StudentDiscipline
-                WHERE student_id=? AND year_id=?
+                WHERE student_id=%s AND year_id=%s
             """, (student_id, year_id))
             total_deducted = cursor.fetchone()[0]
 
-            cursor.execute("""
-                SELECT incident_type, sanction, points_deducted, observation
+            cursor.execute(f"""
+                SELECT incident_type, {sanction_col}, {points_col}, {observation_col}
                 FROM StudentDiscipline
-                WHERE student_id=? AND year_id=?
+                WHERE student_id=%s AND year_id=%s
                 ORDER BY incident_date DESC
                 LIMIT 5
             """, (student_id, year_id))
             discipline_records = cursor.fetchall()
         else:
-            cursor.execute("""
-                SELECT COALESCE(SUM(points_deducted), 0)
+            cursor.execute(f"""
+                SELECT COALESCE(SUM({points_col}), 0)
                 FROM StudentDiscipline
-                WHERE student_id=?
+                WHERE student_id=%s
             """, (student_id,))
             total_deducted = cursor.fetchone()[0]
 
-            cursor.execute("""
-                SELECT incident_type, sanction, points_deducted, observation
+            cursor.execute(f"""
+                SELECT incident_type, {sanction_col}, {points_col}, {observation_col}
                 FROM StudentDiscipline
-                WHERE student_id=?
+                WHERE student_id=%s
                 ORDER BY incident_date DESC
                 LIMIT 5
             """, (student_id,))
@@ -220,35 +280,38 @@ class GradeCalculator:
             'appreciation': self.get_conduct_appreciation(conduct_score, base_conduct_score)
         }
 
+    # ===== تعديل مهم: جلب الطلاب من جدول التسجيل (SCN) بناءً على سنة الفترة الدراسية =====
     def get_student_averages(self, class_id, period_id, include_conduct=False):
         db = DatabaseManager()
-        
-        # This calls get_class_context which creates its own connection. That is fine.
         is_primary, max_score = self.get_class_context(class_id)
 
         with db.get_connection() as conn:
             cursor = conn.cursor()
             year_id = self._get_period_year_id(cursor, period_id)
 
-            # Students
-            cursor.execute("SELECT id, first_name_fr, last_name_fr, first_name_ar, last_name_ar FROM Students WHERE class_id=? AND status='Active'", (class_id,))
+            cursor.execute("""
+                SELECT S.id, S.first_name_fr, S.last_name_fr, S.first_name_ar, S.last_name_ar, COALESCE(SCN.class_number, 0)
+                FROM Students S
+                JOIN StudentClassNumbers SCN ON S.id = SCN.student_id
+                WHERE SCN.class_id=%s AND SCN.year_id=%s AND S.status='Active'
+                ORDER BY COALESCE(SCN.class_number, 9999), S.last_name_fr, S.first_name_fr
+            """, (class_id, year_id))
             students = cursor.fetchall()
             
-            # Subjects (prefer timetable/class-specific subjects, fallback to cycle)
             subjects = self.get_class_subjects(cursor, class_id)
             if not subjects:
                 return []
 
-            # Assessments
-            cursor.execute("SELECT id, name_fr, type_code, weight_percentage FROM AssessmentTypes WHERE period_id=?", (period_id,))
+            cursor.execute("SELECT id, name_fr, type_code, weight_percentage FROM AssessmentTypes WHERE period_id=%s", (period_id,))
             assessments = cursor.fetchall()
 
             class_results = []
 
             for std in students:
-                std_id, fname, lname, fname_ar, lname_ar = std
+                std_id, fname, lname, fname_ar, lname_ar, class_number = std
                 student_data = {
                     'id': std_id,
+                    'class_number': class_number if class_number else None,
                     'name': f"{fname} {lname}",
                     'name_ar': f"{fname_ar} {lname_ar}" if fname_ar or lname_ar else "",
                     'subjects': [],
@@ -317,7 +380,7 @@ class GradeCalculator:
                     student_data['total_coef'] += sub_coef
 
                 if include_conduct:
-                    discipline_data = self._get_discipline_data(cursor, std_id, year_id, is_primary)
+                    discipline_data = self._get_discipline_data(cursor, std_id, year_id, is_primary, period_id)
                     discipline_coef = 1
                     discipline_points = (discipline_data['conduct_score'] / discipline_data['base_score']) * max_score * discipline_coef
                     student_data['discipline'] = discipline_data
@@ -329,7 +392,6 @@ class GradeCalculator:
                 
                 class_results.append(student_data)
 
-        # conn.close() removed as we use context manager
         return self.calculate_rank(class_results, 'general_average')
 
     def get_student_bulletin_data(self, student_id, class_id, period_id):
@@ -342,46 +404,53 @@ class GradeCalculator:
         with db.get_connection() as conn:
             cursor = conn.cursor()
             
-            cursor.execute("SELECT first_name_fr, last_name_fr, first_name_ar, last_name_ar, birth_date, birth_place, parent_name FROM Students WHERE id=?", (student_id,))
+            cursor.execute("SELECT first_name_fr, last_name_fr, first_name_ar, last_name_ar, birth_date, birth_place, parent_name FROM Students WHERE id=%s", (student_id,))
             target_student['info'] = cursor.fetchone()
             
-            # الحصول على السنة الدراسية من خلال الفترة الدراسية
             year_id = self._get_period_year_id(cursor, period_id)
+
+            cursor.execute(
+                "SELECT COUNT(*) FROM StudentClassNumbers WHERE class_id=%s AND year_id=%s",
+                (class_id, year_id)
+            )
+            class_size = int(cursor.fetchone()[0] or 0)
             
-            abs_cnt = self._get_attendance_count(cursor, student_id, 'Absent', year_id)
-            ret_cnt = self._get_attendance_count(cursor, student_id, 'Retard', year_id)
+            abs_cnt = self._get_attendance_count(cursor, student_id, 'Absent', year_id, period_id)
+            ret_cnt = self._get_attendance_count(cursor, student_id, 'Retard', year_id, period_id)
             target_student['attendance'] = {'abs': abs_cnt, 'ret': ret_cnt}
             
             if 'discipline' not in target_student:
                 target_student['discipline'] = self._get_discipline_data(
-                    cursor,
-                    student_id,
-                    year_id,
-                    target_student['is_primary']
+                    cursor, student_id, year_id, target_student['is_primary'], period_id
                 )
             
             target_student['mention'] = self.get_mention(target_student['general_average'], target_student['max_score'])
             target_student['observation'] = self.get_observation(target_student['general_average'], target_student['max_score'])
 
             # Annual Logic
-            cursor.execute("SELECT year_id, cycle_id FROM AcademicPeriods WHERE id=?", (period_id,))
+            cursor.execute("SELECT year_id, cycle_id FROM AcademicPeriods WHERE id=%s", (period_id,))
             meta = cursor.fetchone()
             target_student['annual'] = None
             
             if meta:
                 y_id, c_id = meta
-                cursor.execute("SELECT id, period_name_fr, period_name_ar FROM AcademicPeriods WHERE year_id=? AND cycle_id=? ORDER BY sort_order", (y_id, c_id))
+                cursor.execute("SELECT id, period_name_fr, period_name_ar FROM AcademicPeriods WHERE year_id=%s AND cycle_id=%s ORDER BY sort_order", (y_id, c_id))
                 all_periods = cursor.fetchall()
                 
                 if all_periods and all_periods[-1][0] == period_id:
                     annual_avgs = []
                     
-                    # Cache results for performance
                     period_results_cache = {}
                     for pid, _, _ in all_periods:
                         period_results_cache[pid] = self.get_student_averages(class_id, pid)
 
-                    cursor.execute("SELECT id FROM Students WHERE class_id=? AND status='Active'", (class_id,))
+                    # ===== تعديل مهم: جلب الطلاب من جدول التسجيل SCN =====
+                    cursor.execute("""
+                        SELECT S.id 
+                        FROM Students S
+                        JOIN StudentClassNumbers SCN ON S.id = SCN.student_id
+                        WHERE SCN.class_id=%s AND SCN.year_id=%s AND S.status='Active'
+                    """, (class_id, y_id))
                     all_ids = [r[0] for r in cursor.fetchall()]
                     
                     class_annual_avgs = {}
@@ -412,15 +481,19 @@ class GradeCalculator:
                         'periods': annual_avgs,
                         'annual_average': ann_avg,
                         'annual_rank': annual_rank,
+                        'class_size': class_size,
                         'annual_mention': self.get_mention(ann_avg, target_student['max_score']),
                         'verdict': verdict
                     }
 
+        required_points = target_student['total_coef'] * target_student['max_score']
         target_student['stats'] = {
             'total_points': target_student['total_points'],
+            'required_points': required_points,
             'total_coef': target_student['total_coef'],
             'average': target_student['general_average'],
             'rank': target_student['rank'], 
+            'class_size': class_size,
             'mention': target_student['mention'],
             'observation': target_student['observation']
         }
@@ -472,7 +545,6 @@ class GradeCalculator:
         return "Excellent travail. Tableau d'Honneur. Félicitations. / عمل متميز جداً وجدير بلوحة الشرف."
     
     def get_conduct_appreciation(self, score, max_s=20):
-        """تقييم السلوك بناءً على الدرجة"""
         ratio = 20 / max_s
         n = score * ratio
         if n >= 18: return "Excellent / ممتاز"
@@ -493,27 +565,63 @@ class CertificatePDF(FPDF):
         if _register_arabic_font(self):
             self.font_name = "ArabicFont"
             self.arabic_font_ready = True
+        self.printed_at = datetime.now().strftime('%d/%m/%Y %H:%M')
 
     def sanitize(self, text):
         if self.arabic_font_ready:
             return _prepare_pdf_text(text)
         return _sanitize_latin(text)
 
-    def create_certificate(self, student_name, class_name, avg, rank, mention):
+    def _draw_official_header(self):
+        left_x, left_y = 14, 14
+        self.set_xy(left_x, left_y)
+        self.set_font(self.font_name, '', 8)
+
+        if self.school_info:
+            republic = self.sanitize(self.school_info[1])
+            self.cell(90, 3, f"{republic}", 0, 1, 'L')
+            ia_text = self.sanitize(self.school_info[2])
+            self.cell(90, 3, f"    {ia_text}", 0, 1, 'L')
+            ief_text = self.sanitize(self.school_info[3])
+            self.cell(90, 3, f"    {ief_text}", 0, 1, 'L')
+            school_name = self.sanitize(self.school_info[4])
+            self.cell(90, 3, f"    {school_name}", 0, 1, 'L')
+            auth_text = self.sanitize(self.school_info[5])
+            self.cell(90, 3, f"    Auto N: {auth_text}", 0, 1, 'L')
+            addr_text = self.sanitize(self.school_info[6])
+            self.cell(90, 3, f"    Lieu: {addr_text}", 0, 1, 'L')
+            phone_text = self.sanitize(self.school_info[7])
+            self.cell(90, 3, f"    Tel: {phone_text}", 0, 1, 'L')
+
+        right_x = 262
+        logo_path = self.school_info[8] if self.school_info and len(self.school_info) > 8 else None
+        if logo_path and os.path.exists(logo_path):
+            try:
+                self.image(logo_path, x=right_x, y=left_y, w=18, h=20)
+            except Exception:
+                pass
+
+        self.set_draw_color(0, 0, 0)
+        self.set_xy(right_x, left_y + 22)
+        self.set_y(self.get_y() + 2)
+        self.line(10, self.get_y(), self.w - 10, self.get_y())
+        self.ln(5)
+
+
+    def footer(self):
+        self.set_y(-10)
+        self.set_font(self.font_name, 'I', 9)
+        self.cell(0, 6, self.sanitize(f"Date d'impression: {self.printed_at}"), 0, 0, 'C')
+
+    def create_certificate(self, student_name, class_name, avg, rank, mention, period_name=""):
         self.add_page()
         self.set_line_width(2)
-        self.set_draw_color(211, 84, 0)
+        self.set_draw_color(0, 0, 0)
         self.rect(10, 10, 277, 190)
         self.set_line_width(0.5)
         self.set_draw_color(0, 0, 0)
-        
-        self.set_font(self.font_name, 'B', 16)
-        school_name = self.sanitize(self.school_info[4]).upper() if self.school_info else "ECOLE"
-        self.cell(0, 15, school_name, 0, 1, 'C')
-        
-        self.set_font(self.font_name, 'I', 12)
-        self.cell(0, 10, f"Annee Scolaire: {self.year_label}", 0, 1, 'C')
-        self.ln(10)
+
+        self._draw_official_header()
         
         self.set_font(self.font_name, 'B', 40)
         self.set_text_color(25, 25, 112)
@@ -529,7 +637,20 @@ class CertificatePDF(FPDF):
         
         self.set_font(self.font_name, '', 16)
         self.cell(0, 15, self.sanitize(f"De la classe de / القسم: {class_name}"), 0, 1, 'C')
-        self.cell(0, 15, self.sanitize("Pour ses excellents resultats scolaires / لتفوقه الدراسي."), 0, 1, 'C')
+        period_text = period_name.strip() if isinstance(period_name, str) else ""
+        period_fr = period_text
+        period_ar = period_text
+        if "/" in period_text:
+            parts = [p.strip() for p in period_text.split("/") if p.strip()]
+            if len(parts) >= 2:
+                period_fr = parts[0]
+                period_ar = " / ".join(parts[1:])
+        line_fr = f"Pour ses excellents resultats scolaires en {period_fr} de l'annee scolaire {self.year_label}." if period_fr else f"Pour ses excellents resultats scolaires de l'annee scolaire {self.year_label}."
+        line_ar = f"لتفوقه الدراسي في {period_ar} في السنة الدراسية {self.year_label}." if period_ar else f"لتفوقه الدراسي في السنة الدراسية {self.year_label}."
+
+        self.set_font(self.font_name, '', 13)
+        self.cell(260, 8, self.sanitize(line_fr), 0, 1, 'C')
+        self.cell(260, 8, self.sanitize(line_ar), 0, 1, 'C')
         
         self.ln(5)
         self.set_font(self.font_name, 'B', 14)
@@ -587,8 +708,7 @@ class BulletinPDF(FPDF):
         if logo_path and os.path.exists(logo_path):
             try:
                 self.image(logo_path, x=right_x, y=left_y, w=20, h=22)
-            except: pass
-        
+            except Exception: pass
         self.set_xy(right_x, left_y + 22)
         self.set_y(self.get_y() + 2)
         self.line(10, self.get_y(), 200, self.get_y())
@@ -631,18 +751,20 @@ class BulletinPDF(FPDF):
         self.set_fill_color(240, 240, 240)
         birth_date = data['info'][4] if data['info'][4] else "N/A"
         birth_place = data['info'][5] if data['info'][5] else "-"
+        class_number = data.get('class_number')
+        class_number_txt = str(class_number) if class_number is not None else "-"
 
         self.cell(47, 6, self.sanitize(f"ELEVE: {full_name}"), 0, 0, 'L', True)
         self.cell(46, 6, self.sanitize(f"الطالب: {full_name_ar}" if full_name_ar else "الطالب:"), 0, 0, 'R', True)
         self.cell(3, 6, self.sanitize(f""), 0, 0, 'L', True)
         self.cell(47, 6, self.sanitize(f"Ne(e) le: {birth_date} à {birth_place}"), 0, 0, 'L', True)
-        self.cell(47, 6, self.sanitize(f"المولود في: {birth_date} بـ {birth_place}"), 0, 1, 'R', True)
+        self.cell(47, 6, self.sanitize(f"المولود في: {birth_date} بـ "), 0, 1, 'R', True)
 
-        self.cell(47, 6, self.sanitize(f"MATRICULE: {data['id']}"), 0, 0, 'L', True)
-        self.cell(46, 6, self.sanitize(f"الرقم: {data['id']}"), 0, 0, 'R', True)
+        self.cell(47, 6, self.sanitize(f"N° ELEVE: {class_number_txt}"), 0, 0, 'L', True)
+        self.cell(46, 6, self.sanitize(f"رقم الطالب: {class_number_txt}"), 0, 0, 'R', True)
         self.cell(3, 6, self.sanitize(f""), 0, 0, 'L', True)
         self.cell(47, 6, self.sanitize(f"CLASSE: {class_name_fr}"), 0, 0, 'L', True)
-        self.cell(47, 6, self.sanitize(f"القسم: {class_name_ar}" if class_name_ar else "القسم:"), 0, 1, 'R', True)
+        self.cell(47, 6, self.sanitize(f"الفصل: {class_name_ar}" if class_name_ar else "الفصل:"), 0, 1, 'R', True)
 
         self.cell(47, 6, self.sanitize(f"RETARDS: {data['attendance']['ret']}"), 0, 0, 'L', True)
         self.cell(46, 6, self.sanitize(f"تأخر: {data['attendance']['ret']}"), 0, 0, 'R', True)
@@ -650,7 +772,6 @@ class BulletinPDF(FPDF):
         self.cell(47, 6, self.sanitize(f"ABSENCES: {data['attendance']['abs']}"), 0, 0, 'L', True)
         self.cell(47, 6, self.sanitize(f"غياب: {data['attendance']['abs']}"), 0, 1, 'R', True)
         
-        # إضافة بيانات السلوك
         if 'discipline' in data:
             disc = data['discipline']
             self.cell(47, 6, self.sanitize(f"CONDUITE: {disc['conduct_score']:.2f}/{int(disc['base_score'])}"), 0, 0, 'L', True)
@@ -705,15 +826,12 @@ class BulletinPDF(FPDF):
 
             self.set_font(self.font_name, 'B', 9)
         
-        # إضافة صف السلوك قبل TOTAL
         if 'discipline' in data:
             disc = data['discipline']
-            discipline_coef = 1  # معامل السلوك
-            # تحويل الدرجة بناءً على المرحلة: 10 للابتدائي، 20 للإعدادي/ثانوي
+            discipline_coef = 1 
             discipline_points = (disc['conduct_score'] / disc['base_score']) * max_s * discipline_coef
             
             if not is_primary:
-                # للإعدادي/ثانوي
                 self.set_font(self.font_name, '', 9)
                 self.cell(cols[0], h, self.sanitize("Conduite / السلوك"), 1)
                 self.cell(cols[1], h, "-", 1, 0, 'C')
@@ -725,7 +843,6 @@ class BulletinPDF(FPDF):
                 self.cell(cols[5], h, f"{discipline_points:.1f}", 1, 0, 'C')
                 self.cell(cols[6], h, self.sanitize(disc['appreciation']), 1, 1, 'C')
             else:
-                # للابتدائي
                 self.set_font(self.font_name, '', 9)
                 self.cell(cols[0], h, self.sanitize("Conduite / السلوك"), 1)
                 self.cell(cols[1], h, f"{disc['conduct_score']:.2f}", 1, 0, 'C')
@@ -742,13 +859,13 @@ class BulletinPDF(FPDF):
             self.cell(cols[2], h, "", 1, 0, 'C')
             self.cell(cols[3], h, f"{data['stats']['average']:.2f}", 1, 0, 'C')
             self.cell(cols[4], h, str(data['stats']['total_coef']), 1, 0, 'C')
-            self.cell(cols[5], h, f"{data['stats']['total_points']:.1f}", 1, 0, 'C')
+            self.cell(cols[5], h, f"{data['stats']['total_points']:.1f}/{data['stats']['required_points']:.1f}", 1, 0, 'C')
             self.cell(cols[6], h, "", 1, 1, 'C')
         else:
             self.cell(cols[0], h, "TOTAL", 1)
             self.cell(cols[1], h, "", 1, 0, 'C')
             self.cell(cols[2], h, str(data['stats']['total_coef']), 1, 0, 'C')
-            self.cell(cols[3], h, f"{data['stats']['total_points']:.1f}", 1, 0, 'C')
+            self.cell(cols[3], h, f"{data['stats']['total_points']:.1f}/{data['stats']['required_points']:.1f}", 1, 0, 'C')
             self.cell(cols[4], h, "", 1, 1, 'C')
 
         self.ln(3)
@@ -762,22 +879,25 @@ class BulletinPDF(FPDF):
         
         self.cell(w_lbl+w_val, h_row, self.sanitize("RESUME PERIODE / ملخص"), 1, 1, 'C', True)
         self.set_x(140); self.cell(w_lbl, h_row, self.sanitize("Moyenne / معدل:"), 1); self.cell(w_val, h_row, f"{stats['average']:.2f}/{int(max_s)}", 1, 1, 'R')
-        self.set_x(140); self.cell(w_lbl, h_row, self.sanitize("Rang / ترتيب:"), 1); self.cell(w_val, h_row, f"{stats['rank']} eme", 1, 1, 'R')
+        self.set_x(140); self.cell(w_lbl, h_row, self.sanitize("Rang / ترتيب:"), 1); self.cell(w_val, h_row, f"{stats['rank']}/{stats.get('class_size', '-')}", 1, 1, 'R')
         self.set_x(140); self.cell(w_lbl, h_row, self.sanitize("Mention / تقدير:"), 1); self.cell(w_val, h_row, self.sanitize(stats['mention']), 1, 1, 'R')
         
         self.set_xy(10, y_start_footer)
-        self.cell(120, h_row, self.sanitize("OBSERVATION / ملاحظة:"), 1, 1, 'L', True)
+        self.cell(125, h_row, self.sanitize("OBSERVATION / ملاحظة:"), 1, 1, 'L', True)
         self.set_font(self.font_name, 'I', 9)
-        self.cell(120, h_row*3, self.sanitize(stats['observation']), 1, 1, 'C')
+        self.cell(125, h_row*3, self.sanitize(stats['observation']), 1, 1, 'C')
 
+        
         if data['annual']:
             self.set_xy(10, y_start_footer + (h_row*4) + 2)
             self.set_fill_color(220, 220, 220)
-            self.set_font(self.font_name, 'B', 9)
+            period_count = len(data['annual']['periods'])
+            self.set_font(self.font_name, 'B', 7 if period_count >= 4 else 8)
             
             periods = data['annual']['periods']
-            col_w = 120 / (len(periods) + 3)
+            col_w = 190 / (len(periods) + 3)
             
+            self.cell(190, h_row, self.sanitize("RESUME ANNUEL / ملخص السنة"), 1, 1, 'C', True)
             for pname, _ in periods:
                 self.cell(col_w, 6, self.sanitize(pname).replace("Trimestre", "T").replace("Semestre", "S"), 1, 0, 'C', True)
             self.cell(col_w, 6, self.sanitize("MOY ANN"), 1, 0, 'C', True)
@@ -786,16 +906,16 @@ class BulletinPDF(FPDF):
             
             self.set_y(self.get_y())
             self.set_x(10)
-            self.set_font(self.font_name, '', 9)
+            self.set_font(self.font_name, '', 7 if period_count >= 4 else 8)
             for _, avg in periods:
                 self.cell(col_w, 6, f"{avg:.2f}", 1, 0, 'C')
             
-            self.set_font(self.font_name, 'B', 9)
+            self.set_font(self.font_name, 'B', 7 if period_count >= 4 else 8)
             self.cell(col_w, 6, f"{data['annual']['annual_average']:.2f}", 1, 0, 'C')
-            self.cell(col_w, 6, f"{data['annual']['annual_rank']}", 1, 0, 'C')
+            self.cell(col_w, 6, f"{data['annual']['annual_rank']}/{data['annual'].get('class_size', '-')}", 1, 0, 'C')
             self.cell(col_w, 6, data['annual']['verdict'], 1, 1, 'C')
 
-        self.set_y(y_start_footer + 40)
+        self.set_y(y_start_footer + (h_row*8) + 2)
         self.set_font(self.font_name, 'I', 9)
         self.cell(50, 8, self.sanitize("Cachet du Parent / توقيع الولي"), 0, 0, 'C')
         self.cell(50, 8, "", 0, 0, 'C')
@@ -814,34 +934,33 @@ class BulletinGenerationWindow(QMainWindow):
             ThemeManager.apply_theme(self)
         else:
             colors = Colors()
-            # تطبيق نمط Deep Slate
             self.setStyleSheet(f"""
-                QMainWindow {
-                    background-color: {colors.BG_MAIN};
-                }
-                QLabel {
-                    font-family: 'Segoe UI', 'Cairo', sans-serif;
-                    color: {colors.TEXT_PRIMARY};
-                }
-                QGroupBox {
-                    border: 1px solid {colors.BORDER};
-                    border-radius: 8px;
-                    margin-top: 10px;
-                    background-color: {colors.BG_CARD};
-                    font-weight: bold;
-                    color: {colors.TEXT_SECONDARY};
-                }
-                QGroupBox::title {
-                    subcontrol-origin: margin;
-                    subcontrol-position: top left;
-                    padding: 0 5px;
-                    left: 10px;
-                }
+                QMainWindow {{ background-color: {colors.BG_MAIN}; }}
+                QLabel {{ font-family: 'Segoe UI', 'Cairo', sans-serif; color: {colors.TEXT_PRIMARY}; }}
+                QGroupBox {{
+                    border: 1px solid {colors.BORDER}; border-radius: 8px; margin-top: 10px;
+                    background-color: {colors.BG_CARD}; font-weight: bold; color: {colors.TEXT_SECONDARY};
+                }}
+                QGroupBox::title {{ subcontrol-origin: margin; subcontrol-position: top left; padding: 0 5px; left: 10px; }}
             """)
         
         self.init_ui()
         self.load_filters()
         self.batch_results = []
+
+    def get_active_year_id(self):
+        try:
+            db = DatabaseManager()
+            with db.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT id FROM AcademicYears WHERE is_active=1 LIMIT 1")
+                row = cursor.fetchone()
+                if not row:
+                    cursor.execute("SELECT id FROM AcademicYears ORDER BY id DESC LIMIT 1")
+                    row = cursor.fetchone()
+                return row[0] if row else -1
+        except Exception:
+            return -1
 
     def init_ui(self):
         self.central_widget = QWidget()
@@ -854,21 +973,7 @@ class BulletinGenerationWindow(QMainWindow):
 
         # Header Frame
         header_frame = QFrame()
-        if THEME_AVAILABLE:
-            colors = ThemeManager.get_colors()
-            header_frame.setStyleSheet(f"""
-                QFrame {{
-                    background-color: {colors.BG_HEADER};
-                    border-radius: 10px;
-                }}
-            """)
-        else:
-            header_frame.setStyleSheet(f"""
-                QFrame {{
-                    background-color: {colors.BG_HEADER};
-                    border-radius: 10px;
-                }}
-            """)
+        header_frame.setStyleSheet(f"QFrame {{ background-color: {colors.BG_HEADER}; border-radius: 10px; }}")
         header_frame.setMaximumHeight(80)
         
         shadow = QGraphicsDropShadowEffect()
@@ -886,17 +991,11 @@ class BulletinGenerationWindow(QMainWindow):
         title_layout = QVBoxLayout()
         header_lbl = QLabel("BULLETINS & RÉSULTATS")
         header_lbl.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
-        if THEME_AVAILABLE:
-            header_lbl.setStyleSheet(f"color: {ThemeManager.get_colors().HEADER_TEXT}; background: transparent;")
-        else:
-            header_lbl.setStyleSheet(f"color: {colors.HEADER_TEXT}; background: transparent;")
+        header_lbl.setStyleSheet(f"color: {colors.HEADER_TEXT}; background: transparent;")
         
         sub_lbl = QLabel("توليد الكشوف، لوحات الشرف، والنتائج السنوية")
         sub_lbl.setFont(QFont("Cairo", 11))
-        if THEME_AVAILABLE:
-            sub_lbl.setStyleSheet(f"color: {ThemeManager.get_colors().TEXT_SECONDARY}; background: transparent;")
-        else:
-            sub_lbl.setStyleSheet(f"color: {colors.TEXT_SECONDARY}; background: transparent;")
+        sub_lbl.setStyleSheet(f"color: {colors.TEXT_SECONDARY}; background: transparent;")
         
         title_layout.addWidget(header_lbl)
         title_layout.addWidget(sub_lbl)
@@ -914,29 +1013,10 @@ class BulletinGenerationWindow(QMainWindow):
             self.tabs.setStyleSheet(get_tabs_style())
         else:
             self.tabs.setStyleSheet(f"""
-                QTabWidget::pane { 
-                    border: 1px solid {colors.BORDER}; 
-                    background: {colors.BG_CARD}; 
-                    border-radius: 12px; 
-                    margin-top: 15px; 
-                }
-                QTabBar::tab { 
-                    background: {colors.BG_MAIN}; 
-                    color: {colors.TEXT_SECONDARY}; 
-                    padding: 12px 30px; 
-                    margin-right: 6px; 
-                    border-top-left-radius: 8px; 
-                    border-top-right-radius: 8px; 
-                    font-weight: bold; 
-                    font-family: 'Segoe UI', 'Cairo';
-                }
-                QTabBar::tab:selected { 
-                    background: {colors.BG_HEADER}; 
-                    color: {colors.HEADER_TEXT}; 
-                }
-                QTabBar::tab:hover {
-                    background: {colors.BORDER}; 
-                }
+                QTabWidget::pane {{ border: 1px solid {colors.BORDER}; background: {colors.BG_CARD}; border-radius: 12px; margin-top: 15px; }}
+                QTabBar::tab {{ background: {colors.BG_MAIN}; color: {colors.TEXT_SECONDARY}; padding: 12px 30px; margin-right: 6px; border-top-left-radius: 8px; border-top-right-radius: 8px; font-weight: bold; font-family: 'Segoe UI', 'Cairo'; }}
+                QTabBar::tab:selected {{ background: {colors.BG_HEADER}; color: {colors.HEADER_TEXT}; }}
+                QTabBar::tab:hover {{ background: {colors.BORDER}; }}
             """)
         
         self.setup_batch_tab()
@@ -951,13 +1031,7 @@ class BulletinGenerationWindow(QMainWindow):
             apply_shadow_to_widget(frame)
         else:
             colors = Colors()
-            frame.setStyleSheet(f"""
-                QFrame {{
-                    background-color: {colors.BG_CARD}; 
-                    border-radius: 12px; 
-                    border: 1px solid {colors.BORDER};
-                }}
-            """)
+            frame.setStyleSheet(f"QFrame {{ background-color: {colors.BG_CARD}; border-radius: 12px; border: 1px solid {colors.BORDER}; }}")
             shadow = QGraphicsDropShadowEffect()
             shadow.setBlurRadius(20)
             shadow.setColor(QColor(15, 23, 42, 15))
@@ -967,30 +1041,8 @@ class BulletinGenerationWindow(QMainWindow):
 
     def styled_combo(self):
         combo = QComboBox()
-        if THEME_AVAILABLE:
-            colors = ThemeManager.get_colors()
-            combo.setStyleSheet(f"""
-                QComboBox {{
-                    padding: 6px 10px;
-                    border: 1px solid {colors.BORDER};
-                    border-radius: 6px;
-                    background: {colors.INPUT_BG};
-                    color: {colors.TEXT_PRIMARY};
-                }}
-                QComboBox:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}
-            """)
-        else:
-            colors = Colors()
-            combo.setStyleSheet(f"""
-                QComboBox {{
-                    padding: 6px 10px;
-                    border: 1px solid {colors.BORDER};
-                    border-radius: 6px;
-                    background: {colors.INPUT_BG};
-                    color: {colors.TEXT_PRIMARY};
-                }}
-                QComboBox:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}
-            """)
+        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+        combo.setStyleSheet(f"QComboBox {{ padding: 6px 10px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }} QComboBox:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}")
         combo.setMinimumHeight(38)
         return combo
 
@@ -1003,29 +1055,11 @@ class BulletinGenerationWindow(QMainWindow):
         else:
             colors = Colors()
             table.setStyleSheet(f"""
-                QTableWidget {{
-                    background-color: {colors.BG_CARD};
-                    border: 1px solid {colors.BORDER};
-                    border-radius: 8px;
-                    gridline-color: {colors.BORDER};
-                    font-size: 13px;
-                    color: {colors.TEXT_PRIMARY};
-                }}
-                QTableWidget::item {{
-                    padding: 6px;
-                    border-bottom: 1px solid {colors.BG_MAIN};
-                }}
-                QTableWidget::item:selected {{
-                    background-color: {colors.PRIMARY};
-                    color: white;
-                }}
-                QHeaderView::section {{
-                    background-color: {colors.BG_HEADER};
-                    color: {colors.HEADER_TEXT};
-                    padding: 8px;
-                    border: none;
-                    font-weight: bold;
-                }}
+                QTableWidget {{ background-color: {colors.BG_CARD}; border: 1px solid {colors.BORDER}; border-radius: 8px; gridline-color: {colors.BORDER}; font-size: 13px; color: {colors.TEXT_PRIMARY}; }}
+                QTableWidget::item {{ padding: 6px; border-bottom: 1px solid {colors.BG_MAIN}; color: {colors.TEXT_PRIMARY}; }}
+                QTableWidget::item:alternate {{ background-color: {colors.BG_MAIN}; }}
+                QTableWidget::item:selected {{ background-color: {colors.PRIMARY}; color: white; }}
+                QHeaderView::section {{ background-color: {colors.BG_HEADER}; color: {colors.HEADER_TEXT}; padding: 8px; border: none; font-weight: bold; }}
             """)
 
     def styled_spinbox(self, prefix="", min_val=0, max_val=1000):
@@ -1033,18 +1067,8 @@ class BulletinGenerationWindow(QMainWindow):
         spin.setRange(min_val, max_val)
         if prefix:
             spin.setPrefix(prefix)
-        if THEME_AVAILABLE:
-            colors = ThemeManager.get_colors()
-            spin.setStyleSheet(f"""
-                QSpinBox {{ padding: 6px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }}
-                QSpinBox:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}
-            """)
-        else:
-            colors = Colors()
-            spin.setStyleSheet(f"""
-                QSpinBox {{ padding: 6px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }}
-                QSpinBox:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}
-            """)
+        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+        spin.setStyleSheet(f"QSpinBox {{ padding: 6px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }} QSpinBox:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}")
         spin.setMinimumHeight(38)
         return spin
 
@@ -1054,7 +1078,6 @@ class BulletinGenerationWindow(QMainWindow):
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(15)
         
-        # Filters Group
         filter_card = self.create_card()
         hlay = QHBoxLayout(filter_card)
         hlay.setContentsMargins(15, 15, 15, 15)
@@ -1065,18 +1088,8 @@ class BulletinGenerationWindow(QMainWindow):
         
         btn_calc_batch = QPushButton("1. Calculer & Aperçu")
         btn_calc_batch.setCursor(Qt.CursorShape.PointingHandCursor)
-        if THEME_AVAILABLE:
-            colors = ThemeManager.get_colors()
-            btn_calc_batch.setStyleSheet(f"""
-                QPushButton {{ background-color: {colors.PRIMARY}; color: white; font-weight: bold; padding: 10px; border-radius: 6px; border: none; }}
-                QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}
-            """)
-        else:
-            colors = Colors()
-            btn_calc_batch.setStyleSheet(f"""
-                QPushButton {{ background-color: {colors.PRIMARY}; color: white; font-weight: bold; padding: 10px; border-radius: 6px; border: none; }}
-                QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}
-            """)
+        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+        btn_calc_batch.setStyleSheet(f"QPushButton {{ background-color: {colors.PRIMARY}; color: white; font-weight: bold; padding: 10px; border-radius: 6px; border: none; }} QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}")
         btn_calc_batch.clicked.connect(self.calculate_batch_results)
         
         hlay.addWidget(QLabel("Classe:"))
@@ -1086,47 +1099,23 @@ class BulletinGenerationWindow(QMainWindow):
         hlay.addWidget(btn_calc_batch)
         layout.addWidget(filter_card)
         
-        # Batch Preview Table
         layout.addWidget(QLabel("Aperçu Rapide / معاينة النتائج:"))
         self.table_batch = QTableWidget()
         self.style_table(self.table_batch)
-        self.table_batch.setColumnCount(5)
-        self.table_batch.setHorizontalHeaderLabels(["Rang", "Nom et Prénom", "Moyenne", "Mention", "Décision"])
+        self.table_batch.setColumnCount(6)
+        self.table_batch.setHorizontalHeaderLabels(["Rang", "N°", "Nom et Prénom", "Moyenne", "Mention", "Décision"])
         self.table_batch.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         layout.addWidget(self.table_batch)
 
-        # Actions
         btn_layout = QHBoxLayout()
         btn_print_list = QPushButton("🖨️ Liste Récapitulative")
         btn_print_list.setCursor(Qt.CursorShape.PointingHandCursor)
-        if THEME_AVAILABLE:
-            colors = ThemeManager.get_colors()
-            btn_print_list.setStyleSheet(f"""
-                QPushButton {{ background-color: {colors.BG_CARD}; color: {colors.TEXT_PRIMARY}; padding: 12px; font-weight: bold; border-radius: 8px; border: 1px solid {colors.BORDER}; }}
-                QPushButton:hover {{ background-color: {colors.BG_MAIN}; }}
-            """)
-        else:
-            colors = Colors()
-            btn_print_list.setStyleSheet(f"""
-                QPushButton {{ background-color: {colors.BG_CARD}; color: {colors.TEXT_PRIMARY}; padding: 12px; font-weight: bold; border-radius: 8px; border: 1px solid {colors.BORDER}; }}
-                QPushButton:hover {{ background-color: {colors.BG_MAIN}; }}
-            """)
+        btn_print_list.setStyleSheet(f"QPushButton {{ background-color: {colors.BG_CARD}; color: {colors.TEXT_PRIMARY}; padding: 12px; font-weight: bold; border-radius: 8px; border: 1px solid {colors.BORDER}; }} QPushButton:hover {{ background-color: {colors.BG_MAIN}; }}")
         btn_print_list.clicked.connect(self.print_summary_list)
 
         btn_print_all = QPushButton("🖨️ Imprimer TOUS les Bulletins")
         btn_print_all.setCursor(Qt.CursorShape.PointingHandCursor)
-        if THEME_AVAILABLE:
-            colors = ThemeManager.get_colors()
-            btn_print_all.setStyleSheet(f"""
-                QPushButton {{ background-color: {colors.SUCCESS}; color: white; padding: 12px; font-weight: bold; border-radius: 8px; border: none; }}
-                QPushButton:hover {{ background-color: {colors.SUCCESS_HOVER}; }}
-            """)
-        else:
-            colors = Colors()
-            btn_print_all.setStyleSheet(f"""
-                QPushButton {{ background-color: {colors.SUCCESS}; color: white; padding: 12px; font-weight: bold; border-radius: 8px; border: none; }}
-                QPushButton:hover {{ background-color: {colors.SUCCESS_HOVER}; }}
-            """)
+        btn_print_all.setStyleSheet(f"QPushButton {{ background-color: {colors.SUCCESS}; color: white; padding: 12px; font-weight: bold; border-radius: 8px; border: none; }} QPushButton:hover {{ background-color: {colors.SUCCESS_HOVER}; }}")
         btn_print_all.clicked.connect(self.print_all_bulletins)
         
         btn_layout.addWidget(btn_print_list)
@@ -1154,34 +1143,13 @@ class BulletinGenerationWindow(QMainWindow):
         
         btn_view = QPushButton("👁️ Afficher")
         btn_view.setCursor(Qt.CursorShape.PointingHandCursor)
-        if THEME_AVAILABLE:
-            colors = ThemeManager.get_colors()
-            btn_view.setStyleSheet(f"""
-                QPushButton {{ background-color: {colors.PRIMARY}; color: white; font-weight: bold; padding: 10px; border-radius: 6px; border: none; }}
-                QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}
-            """)
-        else:
-            colors = Colors()
-            btn_view.setStyleSheet(f"""
-                QPushButton {{ background-color: {colors.PRIMARY}; color: white; font-weight: bold; padding: 10px; border-radius: 6px; border: none; }}
-                QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}
-            """)
+        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+        btn_view.setStyleSheet(f"QPushButton {{ background-color: {colors.PRIMARY}; color: white; font-weight: bold; padding: 10px; border-radius: 6px; border: none; }} QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}")
         btn_view.clicked.connect(self.view_individual)
         
         btn_print = QPushButton("🖨️ Imprimer")
         btn_print.setCursor(Qt.CursorShape.PointingHandCursor)
-        if THEME_AVAILABLE:
-            colors = ThemeManager.get_colors()
-            btn_print.setStyleSheet(f"""
-                QPushButton {{ background-color: {colors.SUCCESS}; color: white; font-weight: bold; padding: 10px; border-radius: 6px; border: none; }}
-                QPushButton:hover {{ background-color: {colors.SUCCESS_HOVER}; }}
-            """)
-        else:
-            colors = Colors()
-            btn_print.setStyleSheet(f"""
-                QPushButton {{ background-color: {colors.SUCCESS}; color: white; font-weight: bold; padding: 10px; border-radius: 6px; border: none; }}
-                QPushButton:hover {{ background-color: {colors.SUCCESS_HOVER}; }}
-            """)
+        btn_print.setStyleSheet(f"QPushButton {{ background-color: {colors.SUCCESS}; color: white; font-weight: bold; padding: 10px; border-radius: 6px; border: none; }} QPushButton:hover {{ background-color: {colors.SUCCESS_HOVER}; }}")
         btn_print.clicked.connect(self.print_individual)
 
         glay.addWidget(QLabel("1. Classe:"), 0, 0)
@@ -1195,33 +1163,15 @@ class BulletinGenerationWindow(QMainWindow):
         
         layout.addWidget(filter_card)
 
-        # Info Frame
         info_frame = QFrame()
-        if THEME_AVAILABLE:
-            colors = ThemeManager.get_colors()
-            info_frame.setStyleSheet(f"""
-                QFrame {{ background-color: {colors.BG_MAIN}; border-radius: 8px; border: 1px dashed {colors.BORDER}; }}
-                QLabel {{ font-weight: bold; font-size: 13px; color: {colors.TEXT_PRIMARY}; }}
-            """)
-        else:
-            colors = Colors()
-            info_frame.setStyleSheet(f"""
-                QFrame {{ background-color: {colors.BG_MAIN}; border-radius: 8px; border: 1px dashed {colors.BORDER}; }}
-                QLabel {{ font-weight: bold; font-size: 13px; color: {colors.TEXT_PRIMARY}; }}
-            """)
+        info_frame.setStyleSheet(f"QFrame {{ background-color: {colors.BG_MAIN}; border-radius: 8px; border: 1px dashed {colors.BORDER}; }} QLabel {{ font-weight: bold; font-size: 13px; color: {colors.TEXT_PRIMARY}; }}")
         ilayout = QHBoxLayout(info_frame)
         
         self.lbl_attendance = QLabel("Absences: -- | Retards: --")
-        if THEME_AVAILABLE:
-            self.lbl_attendance.setStyleSheet(f"color: {ThemeManager.get_colors().DANGER};")
-        else:
-            self.lbl_attendance.setStyleSheet(f"color: {Colors().DANGER};")
+        self.lbl_attendance.setStyleSheet(f"color: {colors.DANGER};")
         
         self.lbl_final_stats = QLabel("Moyenne: -- | Rang: -- | Mention: --")
-        if THEME_AVAILABLE:
-            self.lbl_final_stats.setStyleSheet(f"color: {ThemeManager.get_colors().SUCCESS};")
-        else:
-            self.lbl_final_stats.setStyleSheet(f"color: {Colors().SUCCESS};")
+        self.lbl_final_stats.setStyleSheet(f"color: {colors.SUCCESS};")
         
         ilayout.addWidget(self.lbl_attendance)
         ilayout.addStretch()
@@ -1229,7 +1179,6 @@ class BulletinGenerationWindow(QMainWindow):
         
         layout.addWidget(info_frame)
 
-        # Preview Area
         layout.addWidget(QLabel("Détails des Notes / تفاصيل الدرجات:"))
         self.table_preview = QTableWidget()
         self.style_table(self.table_preview)
@@ -1259,18 +1208,8 @@ class BulletinGenerationWindow(QMainWindow):
         
         btn_calc = QPushButton("Afficher Liste")
         btn_calc.setCursor(Qt.CursorShape.PointingHandCursor)
-        if THEME_AVAILABLE:
-            colors = ThemeManager.get_colors()
-            btn_calc.setStyleSheet(f"""
-                QPushButton {{ background-color: {colors.SECONDARY}; color: white; font-weight: bold; padding: 10px; border-radius: 6px; border: none; }}
-                QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}
-            """)
-        else:
-            colors = Colors()
-            btn_calc.setStyleSheet(f"""
-                QPushButton {{ background-color: {colors.SECONDARY}; color: white; font-weight: bold; padding: 10px; border-radius: 6px; border: none; }}
-                QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}
-            """)
+        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+        btn_calc.setStyleSheet(f"QPushButton {{ background-color: {colors.SECONDARY}; color: white; font-weight: bold; padding: 10px; border-radius: 6px; border: none; }} QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}")
         btn_calc.clicked.connect(self.calculate_honor_roll)
         
         hlay.addWidget(QLabel("Classe:")); hlay.addWidget(self.combo_class_honor, 1)
@@ -1287,76 +1226,124 @@ class BulletinGenerationWindow(QMainWindow):
         
         btn_cert = QPushButton("🏆 Imprimer Attestations d'Excellence")
         btn_cert.setCursor(Qt.CursorShape.PointingHandCursor)
-        if THEME_AVAILABLE:
-            colors = ThemeManager.get_colors()
-            btn_cert.setStyleSheet(f"""
-                QPushButton {{ background-color: {colors.WARNING}; color: white; padding: 12px; font-weight: bold; border-radius: 8px; border: none; }}
-                QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}
-            """)
-        else:
-            colors = Colors()
-            btn_cert.setStyleSheet(f"""
-                QPushButton {{ background-color: {colors.WARNING}; color: white; padding: 12px; font-weight: bold; border-radius: 8px; border: none; }}
-                QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}
-            """)
+        btn_cert.setStyleSheet(f"QPushButton {{ background-color: {colors.WARNING}; color: white; padding: 12px; font-weight: bold; border-radius: 8px; border: none; }} QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}")
         btn_cert.clicked.connect(self.print_certificates)
         layout.addWidget(btn_cert)
         
         self.tabs.addTab(tab, "  🏆 Excellence / التميز  ")
 
     def load_filters(self):
-        db = DatabaseManager()
-        with db.get_connection() as conn:
-            cursor = conn.cursor()
-            
-            cursor.execute("SELECT id, class_name_fr, class_name_ar FROM Classes")
-            classes = cursor.fetchall()
-            
-            cursor.execute("SELECT id, period_name_fr, period_name_ar FROM AcademicPeriods")
-            periods = cursor.fetchall()
-        
-        for c in classes:
-            class_label = f"{c[1]} / {c[2]}" if c[2] else c[1]
-            self.combo_class_batch.addItem(class_label, c[0])
-            self.combo_class_indiv.addItem(class_label, c[0])
-            self.combo_class_honor.addItem(class_label, c[0])
-            
-        seen_periods = set()
-        for p in periods:
-            if p[1] not in seen_periods:
-                period_label = f"{p[1]} / {p[2]}" if p[2] else p[1]
-                self.combo_period_batch.addItem(period_label, p[1])
-                self.combo_period_indiv.addItem(period_label, p[1])
-                self.combo_period_honor.addItem(period_label, p[1])
-                seen_periods.add(p[1])
+        try:
+            db = DatabaseManager()
+            with db.get_connection() as conn:
+                cursor = conn.cursor()
+                active_year = self.get_active_year_id()
+                
+                cursor.execute("SELECT id, class_name_fr, class_name_ar FROM Classes")
+                classes = cursor.fetchall()
 
+                if active_year != -1:
+                    cursor.execute(
+                        "SELECT id, period_name_fr, period_name_ar FROM AcademicPeriods WHERE year_id=%s ORDER BY sort_order",
+                        (active_year,)
+                    )
+                else:
+                    cursor.execute("SELECT id, period_name_fr, period_name_ar FROM AcademicPeriods ORDER BY sort_order")
+                periods = cursor.fetchall()
+
+            self.combo_class_batch.clear()
+            self.combo_class_indiv.clear()
+            self.combo_class_honor.clear()
+            self.combo_period_batch.clear()
+            self.combo_period_indiv.clear()
+            self.combo_period_honor.clear()
+
+            for c in classes:
+                name_fr = str(c[1] or "-")
+                name_ar = str(c[2] or "").strip()
+                class_label = f"{name_fr} / {name_ar}" if name_ar else name_fr
+                self.combo_class_batch.addItem(class_label, c[0])
+                self.combo_class_indiv.addItem(class_label, c[0])
+                self.combo_class_honor.addItem(class_label, c[0])
+                
+            seen_periods = set()
+            for p in periods:
+                if p[1] not in seen_periods:
+                    period_label = f"{p[1]} / {p[2]}" if p[2] else p[1]
+                    self.combo_period_batch.addItem(period_label, p[1])
+                    self.combo_period_indiv.addItem(period_label, p[1])
+                    self.combo_period_honor.addItem(period_label, p[1])
+                    seen_periods.add(p[1])
+        except Exception as e:
+            AppLogger.error("BulletinGeneration", f"Error loading filters: {e}")
+
+    # ===== تعديل مهم: جلب الطلاب للمنسدلة بناءً على SCN =====
     def load_students_indiv(self):
         class_id = self.combo_class_indiv.currentData()
         self.combo_student_indiv.clear()
         if not class_id: return
-        db = DatabaseManager()
-        with db.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT id, first_name_fr, last_name_fr, first_name_ar, last_name_ar FROM Students WHERE class_id=?", (class_id,))
-            for s in cursor.fetchall():
-                name_fr = f"{s[1]} {s[2]}"
-                name_ar = f"{s[3]} {s[4]}" if s[3] or s[4] else ""
-                label = f"{name_fr} / {name_ar}" if name_ar else name_fr
-                self.combo_student_indiv.addItem(label, s[0])
+        
+        active_year = self.get_active_year_id()
+        if active_year == -1: return
+
+        try:
+            db = DatabaseManager()
+            with db.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT S.id, S.first_name_fr, S.last_name_fr, S.first_name_ar, S.last_name_ar 
+                    FROM Students S
+                    JOIN StudentClassNumbers SCN ON S.id = SCN.student_id
+                    WHERE SCN.class_id=%s AND SCN.year_id=%s AND S.status='Active'
+                """, (class_id, active_year))
+                for s in cursor.fetchall():
+                    first_fr = str(s[1] or "").strip()
+                    last_fr = str(s[2] or "").strip()
+                    first_ar = str(s[3] or "").strip()
+                    last_ar = str(s[4] or "").strip()
+
+                    name_fr = f"{first_fr} {last_fr}".strip() or "[Élève]"
+                    name_ar = f"{first_ar} {last_ar}".strip()
+                    label = f"{name_fr} / {name_ar}" if name_ar else name_fr
+                    self.combo_student_indiv.addItem(label, s[0])
+        except Exception as e:
+            AppLogger.error("BulletinGeneration", f"Error loading students indiv: {e}")
 
     def get_real_period_id(self, class_id, period_name):
         if isinstance(period_name, str) and "/" in period_name:
             period_name = period_name.split("/")[0].strip()
-        db = DatabaseManager()
-        with db.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT cycle_id FROM Classes WHERE id=?", (class_id,))
-            res = cursor.fetchone()
-            if not res: return None
-            cycle_id = res[0]
-            cursor.execute("SELECT id FROM AcademicPeriods WHERE period_name_fr=? AND cycle_id=?", (period_name, cycle_id))
-            res = cursor.fetchone()
-        return res[0] if res else None
+        try:
+            db = DatabaseManager()
+            with db.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT cycle_id FROM Classes WHERE id=%s", (class_id,))
+                res = cursor.fetchone()
+                if not res: return None
+                cycle_id = res[0]
+                active_year = self.get_active_year_id()
+                if active_year != -1:
+                    cursor.execute(
+                        "SELECT id FROM AcademicPeriods WHERE period_name_fr=%s AND cycle_id=%s AND year_id=%s ORDER BY sort_order LIMIT 1",
+                        (period_name, cycle_id, active_year)
+                    )
+                    res = cursor.fetchone()
+                    if res:
+                        return res[0]
+
+                cursor.execute(
+                    "SELECT id FROM AcademicPeriods WHERE period_name_fr=%s AND cycle_id=%s ORDER BY id DESC LIMIT 1",
+                    (period_name, cycle_id)
+                )
+                res = cursor.fetchone()
+            return res[0] if res else None
+        except Exception:
+            return None
+
+    def _filename_safe_slug(self, text, fallback="NA"):
+        value = str(text or "").strip().replace(" ", "_")
+        value = value.encode("ascii", "ignore").decode("ascii")
+        clean = "".join(ch for ch in value if ch.isalnum() or ch in "-_")
+        return clean or fallback
 
     def calculate_batch_results(self):
         class_id = self.combo_class_batch.currentData()
@@ -1367,21 +1354,29 @@ class BulletinGenerationWindow(QMainWindow):
             QMessageBox.warning(self, "Erreur", "Période invalide pour cette classe.")
             return
 
-        calc = GradeCalculator()
-        self.batch_results = calc.get_student_averages(class_id, real_period_id, include_conduct=True)
-        is_primary, max_score = calc.get_class_context(class_id)
-        
-        self.table_batch.setRowCount(0)
-        for row_data in self.batch_results:
-            idx = self.table_batch.rowCount()
-            self.table_batch.insertRow(idx)
-            self.table_batch.setItem(idx, 0, QTableWidgetItem(str(row_data['rank'])))
-            self.table_batch.setItem(idx, 1, QTableWidgetItem(row_data['name']))
-            self.table_batch.setItem(idx, 2, QTableWidgetItem(f"{row_data['general_average']:.2f}"))
-            mention = calc.get_mention(row_data['general_average'], max_score)
-            self.table_batch.setItem(idx, 3, QTableWidgetItem(mention))
-            dec = calc.get_decision(row_data['general_average'], is_primary, max_score)
-            self.table_batch.setItem(idx, 4, QTableWidgetItem(dec))
+        try:
+            calc = GradeCalculator()
+            self.batch_results = calc.get_student_averages(class_id, real_period_id, include_conduct=True)
+            is_primary, max_score = calc.get_class_context(class_id)
+            class_size = len(self.batch_results)
+            
+            self.table_batch.setRowCount(0)
+            for row_data in self.batch_results:
+                idx = self.table_batch.rowCount()
+                self.table_batch.insertRow(idx)
+                self.table_batch.setItem(idx, 0, QTableWidgetItem(str(row_data['rank'])))
+                self.table_batch.setItem(idx, 1, QTableWidgetItem(str(row_data.get('class_number') or "-")))
+                self.table_batch.setItem(idx, 2, QTableWidgetItem(row_data['name']))
+                self.table_batch.setItem(idx, 3, QTableWidgetItem(f"{row_data['general_average']:.2f}"))
+                mention = calc.get_mention(row_data['general_average'], max_score)
+                self.table_batch.setItem(idx, 4, QTableWidgetItem(mention))
+                dec = calc.get_decision(row_data['general_average'], is_primary, max_score)
+                self.table_batch.setItem(idx, 5, QTableWidgetItem(dec))
+
+            for row_data in self.batch_results:
+                row_data['class_size'] = class_size
+        except Exception as e:
+            QMessageBox.critical(self, "Erreur", f"Erreur de calcul: {e}")
 
     def print_summary_list(self):
         if _get_arabic_font_path() is None and not self._arabic_font_warned:
@@ -1390,9 +1385,6 @@ class BulletinGenerationWindow(QMainWindow):
         if not self.batch_results:
             QMessageBox.warning(self, "Vide", "Calculez d'abord les résultats.")
             return
-            
-        file_path, _ = QFileDialog.getSaveFileName(self, "Save PDF", "Liste_Recap.pdf", "PDF Files (*.pdf)")
-        if not file_path: return
 
         try:
             pdf = FPDF()
@@ -1405,41 +1397,108 @@ class BulletinGenerationWindow(QMainWindow):
                 except Exception:
                     font_name = "Arial"
             pdf.add_page()
+
+            school_info = None
+            try:
+                db = DatabaseManager()
+                with db.get_connection() as conn:
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT * FROM SchoolInfo LIMIT 1")
+                    school_info = cursor.fetchone()
+            except Exception:
+                school_info = None
+
+            left_x, left_y = 10, 5
+            pdf.set_xy(left_x, left_y)
+            pdf.set_font(font_name, '', 8)
+            if school_info:
+                republic = str(school_info[1] or "")
+                ia_text = str(school_info[2] or "")
+                ief_text = str(school_info[3] or "")
+                school_name = str(school_info[4] or "")
+                auth_text = str(school_info[5] or "")
+                addr_text = str(school_info[6] or "")
+                phone_text = str(school_info[7] or "")
+
+                pdf.cell(80, 3, _prepare_pdf_text(republic) if font_name == "ArabicFont" else _sanitize_latin(republic), 0, 1, 'L')
+                pdf.cell(80, 3, _prepare_pdf_text(ia_text) if font_name == "ArabicFont" else _sanitize_latin(ia_text), 0, 1, 'L')
+                pdf.cell(80, 3, _prepare_pdf_text(ief_text) if font_name == "ArabicFont" else _sanitize_latin(ief_text), 0, 1, 'L')
+                pdf.cell(80, 3, _prepare_pdf_text(school_name) if font_name == "ArabicFont" else _sanitize_latin(school_name), 0, 1, 'L')
+                pdf.cell(80, 3, _prepare_pdf_text(f"Auto N: {auth_text}") if font_name == "ArabicFont" else _sanitize_latin(f"Auto N: {auth_text}"), 0, 1, 'L')
+                pdf.cell(80, 3, _prepare_pdf_text(f"Lieu: {addr_text}") if font_name == "ArabicFont" else _sanitize_latin(f"Lieu: {addr_text}"), 0, 1, 'L')
+                pdf.cell(80, 3, _prepare_pdf_text(f"Tel: {phone_text}") if font_name == "ArabicFont" else _sanitize_latin(f"Tel: {phone_text}"), 0, 1, 'L')
+
+                logo_path = school_info[8] if len(school_info) > 8 else None
+                if logo_path and os.path.exists(logo_path):
+                    try:
+                        pdf.image(logo_path, x=175, y=left_y, w=20, h=22)
+                    except Exception:
+                        pass
+
+            pdf.set_xy(175, left_y + 22)
+            pdf.set_y(pdf.get_y() + 2)
+            pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+            pdf.ln(4)
+
             title_style = '' if font_name == "ArabicFont" else 'B'
-            pdf.set_font(font_name, title_style, 11)
+            pdf.set_font(font_name, title_style, 12)
+            pdf.set_text_color(15, 23, 42)
             
-            title = f"LISTE RECAPITULATIVE / لائحة ملخصة - {self.combo_class_batch.currentText()} - {self.combo_period_batch.currentText()}"
+            title = f"Liste Récapitulative des Résultats - {self.combo_period_batch.currentText()} - {self.combo_class_batch.currentText()}"
             pdf.cell(0, 10, _prepare_pdf_text(title) if font_name == "ArabicFont" else _sanitize_latin(title), 0, 1, 'C')
             
             pdf.set_font(font_name, title_style, 9)
-            pdf.cell(15, 8, _prepare_pdf_text("Rang / ترتيب") if font_name == "ArabicFont" else _sanitize_latin("Rang / ترتيب"), 1, 0, 'C')
-            pdf.cell(80, 8, _prepare_pdf_text("Nom & Prénom / الاسم الكامل") if font_name == "ArabicFont" else _sanitize_latin("Nom & Prénom / الاسم الكامل"), 1)
-            pdf.cell(30, 8, _prepare_pdf_text("Moyenne / معدل") if font_name == "ArabicFont" else _sanitize_latin("Moyenne / معدل"), 1, 0, 'C')
-            pdf.cell(40, 8, _prepare_pdf_text("Mention / تقدير") if font_name == "ArabicFont" else _sanitize_latin("Mention / تقدير"), 1, 0, 'C')
-            pdf.cell(25, 8, _prepare_pdf_text("Décision / قرار") if font_name == "ArabicFont" else _sanitize_latin("Décision / قرار"), 1, 1, 'C')
+            pdf.set_fill_color(30, 58, 95)
+            pdf.set_text_color(255, 255, 255)
+            pdf.cell(20, 8, _prepare_pdf_text("Rang") if font_name == "ArabicFont" else _sanitize_latin("Rang"), 1, 0, 'C', True)
+            pdf.cell(12, 8, _prepare_pdf_text("N°") if font_name == "ArabicFont" else _sanitize_latin("N°"), 1, 0, 'C', True)
+            pdf.cell(68, 8, _prepare_pdf_text("Nom & Prénom") if font_name == "ArabicFont" else _sanitize_latin("Nom & Prénom"), 1, 0, 'C', True)
+            pdf.cell(25, 8, _prepare_pdf_text("Moyenne") if font_name == "ArabicFont" else _sanitize_latin("Moyenne"), 1, 0, 'C', True)
+            pdf.cell(40, 8, _prepare_pdf_text("Mention") if font_name == "ArabicFont" else _sanitize_latin("Mention"), 1, 0, 'C', True)
+            pdf.cell(25, 8, _prepare_pdf_text("Décision") if font_name == "ArabicFont" else _sanitize_latin("Décision"), 1, 1, 'C', True)
             
             pdf.set_font(font_name, '', 9)
+            pdf.set_text_color(15, 23, 42)
             calc = GradeCalculator()
             class_id = self.combo_class_batch.currentData()
             is_primary, max_score = calc.get_class_context(class_id)
+            class_size = len(self.batch_results)
             
-            for res in self.batch_results:
+            for idx, res in enumerate(self.batch_results):
                 name_fr = _sanitize_latin(res['name'])
                 name_ar = res.get('name_ar', '') or ""
-                name = f"{name_fr} / {name_ar}" if name_ar else name_fr
+                class_number = str(res.get('class_number') or "-")
+                name = f"[{class_number}] {name_fr} / {name_ar}" if name_ar else f"[{class_number}] {name_fr}"
                 name_out = _prepare_pdf_text(name) if font_name == "ArabicFont" else _sanitize_latin(name)
                 avg = f"{res['general_average']:.2f}"
                 mention = calc.get_mention(res['general_average'], max_score)
                 dec = calc.get_decision(res['general_average'], is_primary, max_score)
+
+                if idx % 2 == 0:
+                    pdf.set_fill_color(241, 245, 249)
+                else:
+                    pdf.set_fill_color(255, 255, 255)
                 
-                pdf.cell(15, 8, str(res['rank']), 1, 0, 'C')
-                pdf.cell(80, 8, name_out, 1)
-                pdf.cell(30, 8, avg, 1, 0, 'C')
-                pdf.cell(40, 8, _prepare_pdf_text(mention) if font_name == "ArabicFont" else _sanitize_latin(mention), 1, 0, 'C')
-                pdf.cell(25, 8, _prepare_pdf_text(dec) if font_name == "ArabicFont" else _sanitize_latin(dec), 1, 1, 'C')
-            
-            pdf.output(file_path)
-            QMessageBox.information(self, "Terminé", "Liste récapitulative générée.")
+                pdf.cell(20, 8, f"{res['rank']}/{class_size}", 1, 0, 'C', True)
+                pdf.cell(12, 8, class_number, 1, 0, 'C', True)
+                pdf.cell(68, 8, name_out, 1, 0, 'L', True)
+                pdf.cell(25, 8, avg, 1, 0, 'C', True)
+                pdf.cell(40, 8, _prepare_pdf_text(mention) if font_name == "ArabicFont" else _sanitize_latin(mention), 1, 0, 'C', True)
+                pdf.cell(25, 8, _prepare_pdf_text(dec) if font_name == "ArabicFont" else _sanitize_latin(dec), 1, 1, 'C', True)
+
+            class_slug = "".join(ch for ch in (self.combo_class_batch.currentText() or "Toutes_Classes").replace(" ", "_") if ch.isalnum() or ch in "-_") or "Classe"
+            period_slug = "".join(ch for ch in (self.combo_period_batch.currentText() or "Periode").replace(" ", "_") if ch.isalnum() or ch in "-_") or "Periode"
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+            output_pdf(
+                pdf,
+                self,
+                f"Liste_Recap_{class_slug}_{period_slug}_{timestamp}.pdf",
+                mode=BULLETIN_SUMMARY_OUTPUT_MODE,
+                dialog_title="Save PDF",
+                success_save_message="Liste récapitulative générée.",
+                success_print_message="Liste récapitulative envoyée à l'imprimante.",
+            )
         except Exception as e:
             QMessageBox.critical(self, "Erreur", str(e))
 
@@ -1465,50 +1524,54 @@ class BulletinGenerationWindow(QMainWindow):
             QMessageBox.warning(self, "Erreur", "Veuillez sélectionner un élève.")
             return
 
-        calc = GradeCalculator()
-        is_primary, max_score = calc.get_class_context(class_id)
-        
-        batch_results = calc.get_student_averages(class_id, real_period_id, include_conduct=True)
-        rank = "--"
-        mention = "--"
-        for res in batch_results:
-            if res['id'] == student_id:
-                rank = res['rank']
-                mention = calc.get_mention(res['general_average'], max_score)
-                break
-        
-        data = calc.get_student_bulletin_data(student_id, class_id, real_period_id)
-        
-        if data:
-            absences = data['attendance']['abs']
-            retards = data['attendance']['ret']
-            avg = data['stats']['average']
+        try:
+            calc = GradeCalculator()
+            is_primary, max_score = calc.get_class_context(class_id)
             
-            self.lbl_attendance.setText(f"Absences / غياب: {absences} | Retards / تأخر: {retards}")
-            self.lbl_final_stats.setText(f"Moyenne / معدل: {avg:.2f} | Rang / ترتيب: {rank} | Mention / تقدير: {mention}")
+            batch_results = calc.get_student_averages(class_id, real_period_id, include_conduct=True)
+            rank = "--"
+            mention = "--"
+            for res in batch_results:
+                if res['id'] == student_id:
+                    rank = res['rank']
+                    mention = calc.get_mention(res['general_average'], max_score)
+                    break
             
-            self.table_preview.setRowCount(0)
-            for sub in data['transcript']:
-                idx = self.table_preview.rowCount()
-                self.table_preview.insertRow(idx)
-                self.table_preview.setItem(idx, 0, QTableWidgetItem(sub['subject']))
+            data = calc.get_student_bulletin_data(student_id, class_id, real_period_id)
+            
+            if data:
+                absences = data['attendance']['abs']
+                retards = data['attendance']['ret']
+                avg = data['stats']['average']
                 
-                details = ""
-                if not data['is_primary']:
-                    if sub['moy_devoir'] is not None:
-                        details = f"Dev / فرض: {sub['moy_devoir']:.2f} | Compo / اختبار: {sub['note_compo']:.2f}"
+                self.lbl_attendance.setText(f"Absences / غياب: {absences} | Retards / تأخر: {retards}")
+                class_size = len(batch_results)
+                self.lbl_final_stats.setText(f"Moyenne / معدل: {avg:.2f} | Rang / ترتيب: {rank}/{class_size} | Mention / تقدير: {mention}")
+                
+                self.table_preview.setRowCount(0)
+                for sub in data['transcript']:
+                    idx = self.table_preview.rowCount()
+                    self.table_preview.insertRow(idx)
+                    self.table_preview.setItem(idx, 0, QTableWidgetItem(sub['subject']))
+                    
+                    details = ""
+                    if not data['is_primary']:
+                        if sub['moy_devoir'] is not None:
+                            details = f"Dev / فرض: {sub['moy_devoir']:.2f} | Compo / اختبار: {sub['note_compo']:.2f}"
+                        else:
+                            details = f"Compo / اختبار: {sub['note_compo']:.2f}"
                     else:
-                        details = f"Compo / اختبار: {sub['note_compo']:.2f}"
-                else:
-                    details = f"Composition / اختبار: {sub['note_compo']:.2f}"
-                
-                self.table_preview.setItem(idx, 1, QTableWidgetItem(details))
-                self.table_preview.setItem(idx, 2, QTableWidgetItem(str(sub['coef'])))
-                self.table_preview.setItem(idx, 3, QTableWidgetItem(f"{sub['avg']:.2f}"))
-                self.table_preview.setItem(idx, 4, QTableWidgetItem(f"{sub['points']:.2f}"))
-                self.table_preview.setItem(idx, 5, QTableWidgetItem(sub['appreciation']))
-        else:
-            QMessageBox.warning(self, "Info", "Aucune donnée trouvée.")
+                        details = f"Composition / اختبار: {sub['note_compo']:.2f}"
+                    
+                    self.table_preview.setItem(idx, 1, QTableWidgetItem(details))
+                    self.table_preview.setItem(idx, 2, QTableWidgetItem(str(sub['coef'])))
+                    self.table_preview.setItem(idx, 3, QTableWidgetItem(f"{sub['avg']:.2f}"))
+                    self.table_preview.setItem(idx, 4, QTableWidgetItem(f"{sub['points']:.2f}"))
+                    self.table_preview.setItem(idx, 5, QTableWidgetItem(sub['appreciation']))
+            else:
+                QMessageBox.warning(self, "Info", "Aucune donnée trouvée.")
+        except Exception as e:
+            QMessageBox.critical(self, "Erreur", f"Erreur d'affichage: {e}")
 
     def generate_bulletins(self, class_id, period_name, specific_ids=None):
         if _get_arabic_font_path() is None and not self._arabic_font_warned:
@@ -1528,16 +1591,19 @@ class BulletinGenerationWindow(QMainWindow):
                 cursor = conn.cursor()
                 cursor.execute("SELECT * FROM SchoolInfo LIMIT 1")
                 school_info = cursor.fetchone()
-                cursor.execute("SELECT year_label FROM AcademicYears WHERE is_active=1 LIMIT 1")
+                
+                # Fetch active year label based on period's year
+                year_id = GradeCalculator()._get_period_year_id(cursor, real_period_id)
+                cursor.execute("SELECT year_label FROM AcademicYears WHERE id=%s", (year_id,))
                 yr = cursor.fetchone()
                 if yr:
                     year_label = yr[0]
                 else:
-                    # جلب آخر سنة موجودة إن لم توجد سنة نشطة
                     cursor.execute("SELECT year_label FROM AcademicYears ORDER BY id DESC LIMIT 1")
                     yr_alt = cursor.fetchone()
-                    year_label = yr_alt[0] if yr_alt else "2025-2026"
-                cursor.execute("SELECT class_name_fr, class_name_ar FROM Classes WHERE id=?", (class_id,))
+                    year_label = yr_alt[0] if yr_alt else "202X-202X"
+                    
+                cursor.execute("SELECT class_name_fr, class_name_ar FROM Classes WHERE id=%s", (class_id,))
                 class_res = cursor.fetchone()
                 if class_res:
                     class_name = f"{class_res[0]} / {class_res[1]}" if class_res[1] else class_res[0]
@@ -1546,6 +1612,10 @@ class BulletinGenerationWindow(QMainWindow):
 
             calc = GradeCalculator()
             all_ranks = calc.get_student_averages(class_id, real_period_id, include_conduct=True)
+            class_slug = self._filename_safe_slug(class_name, "Classe")
+            period_slug = self._filename_safe_slug(period_name, "Periode")
+            year_slug = self._filename_safe_slug(year_label, "Annee")
+            batch_stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             
             count = 0
             for std_rank_data in all_ranks:
@@ -1561,8 +1631,13 @@ class BulletinGenerationWindow(QMainWindow):
                 pdf = BulletinPDF(school_info, period_name, year_label)
                 pdf.draw_bulletin(full_data, class_name)
                 
-                clean_name = str(full_data['info'][0]).replace(" ", "_")
-                pdf.output(os.path.join(folder, f"Bulletin_{clean_name}.pdf"))
+                student_name = full_data['info'][0] if full_data and full_data.get('info') else std_rank_data.get('name', 'Eleve')
+                student_slug = self._filename_safe_slug(student_name, f"Eleve_{std_rank_data.get('id', 'NA')}")
+                bulletin_name = (
+                    f"Bulletin_{class_slug}_{period_slug}_{year_slug}_"
+                    f"{student_slug}_R{std_rank_data['rank']}_{batch_stamp}.pdf"
+                )
+                pdf.output(os.path.join(folder, bulletin_name))
                 count += 1
 
             QMessageBox.information(self, "Terminé", f"{count} bulletins générés avec succès.")
@@ -1577,24 +1652,27 @@ class BulletinGenerationWindow(QMainWindow):
         
         if not pid: return
         
-        calc = GradeCalculator()
-        all_results = calc.get_student_averages(cid, pid, include_conduct=True)
-        _, max_s = calc.get_class_context(cid)
-        
-        self.honor_list = [s for s in all_results if s['rank'] <= threshold_rank]
-        
-        self.table_honor.setRowCount(0)
-        for s in self.honor_list:
-            idx = self.table_honor.rowCount()
-            self.table_honor.insertRow(idx)
-            self.table_honor.setItem(idx, 0, QTableWidgetItem(str(s['rank'])))
-            name_fr = s['name']
-            name_ar = s.get('name_ar', '')
-            display_name = f"{name_fr} / {name_ar}" if name_ar else name_fr
-            self.table_honor.setItem(idx, 1, QTableWidgetItem(display_name))
-            self.table_honor.setItem(idx, 2, QTableWidgetItem(f"{s['general_average']:.2f}"))
-            mention = calc.get_mention(s['general_average'], max_s)
-            self.table_honor.setItem(idx, 3, QTableWidgetItem(mention))
+        try:
+            calc = GradeCalculator()
+            all_results = calc.get_student_averages(cid, pid, include_conduct=True)
+            _, max_s = calc.get_class_context(cid)
+            
+            self.honor_list = [s for s in all_results if s['rank'] <= threshold_rank]
+            
+            self.table_honor.setRowCount(0)
+            for s in self.honor_list:
+                idx = self.table_honor.rowCount()
+                self.table_honor.insertRow(idx)
+                self.table_honor.setItem(idx, 0, QTableWidgetItem(str(s['rank'])))
+                name_fr = s['name']
+                name_ar = s.get('name_ar', '')
+                display_name = f"{name_fr} / {name_ar}" if name_ar else name_fr
+                self.table_honor.setItem(idx, 1, QTableWidgetItem(display_name))
+                self.table_honor.setItem(idx, 2, QTableWidgetItem(f"{s['general_average']:.2f}"))
+                mention = calc.get_mention(s['general_average'], max_s)
+                self.table_honor.setItem(idx, 3, QTableWidgetItem(mention))
+        except Exception as e:
+            QMessageBox.critical(self, "Erreur", f"Erreur de calcul honor roll: {e}")
 
     def print_certificates(self):
         if _get_arabic_font_path() is None and not self._arabic_font_warned:
@@ -1604,42 +1682,58 @@ class BulletinGenerationWindow(QMainWindow):
         folder = QFileDialog.getExistingDirectory(self, "Sauvegarder Certificats")
         if not folder: return
         
-        db = DatabaseManager()
-        with db.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM SchoolInfo LIMIT 1")
-            school_info = cursor.fetchone()
-            cursor.execute("SELECT year_label FROM AcademicYears WHERE is_active=1 LIMIT 1")
-            yr = cursor.fetchone()
-            if yr:
-                year_label = yr[0]
-            else:
-                # جلب آخر سنة موجودة إن لم توجد سنة نشطة
-                cursor.execute("SELECT year_label FROM AcademicYears ORDER BY id DESC LIMIT 1")
-                yr_alt = cursor.fetchone()
-                year_label = yr_alt[0] if yr_alt else "2025-2026"
+        try:
+            db = DatabaseManager()
+            with db.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT * FROM SchoolInfo LIMIT 1")
+                school_info = cursor.fetchone()
+                
+                # Fetch active year from period
+                cid = self.combo_class_honor.currentData()
+                pname = self.combo_period_honor.currentText()
+                pid = self.get_real_period_id(cid, pname)
+                
+                if pid:
+                    year_id = GradeCalculator()._get_period_year_id(cursor, pid)
+                    cursor.execute("SELECT year_label FROM AcademicYears WHERE id=%s", (year_id,))
+                    yr = cursor.fetchone()
+                    year_label = yr[0] if yr else "202X-202X"
+                else:
+                    year_label = "202X-202X"
         
-        cid = self.combo_class_honor.currentData()
-        class_name = self.combo_class_honor.currentText()
-        calc = GradeCalculator()
-        _, max_s = calc.get_class_context(cid)
-        
-        count = 0
-        for s in self.honor_list:
-            cert = CertificatePDF(school_info, year_label)
-            mention = calc.get_mention(s['general_average'], max_s)
-            name_fr = s['name']
-            name_ar = s.get('name_ar', '')
-            display_name = f"{name_fr} / {name_ar}" if name_ar else name_fr
-            cert.create_certificate(display_name, class_name, s['general_average'], s['rank'], mention)
-            clean_name = str(name_fr).replace(" ", "_")
-            cert.output(os.path.join(folder, f"Certificat_{clean_name}.pdf"))
-            count += 1
+            class_name = self.combo_class_honor.currentText()
+            period_name = self.combo_period_honor.currentText()
+            calc = GradeCalculator()
+            _, max_s = calc.get_class_context(cid)
+            class_slug = self._filename_safe_slug(class_name, "Classe")
+            period_slug = self._filename_safe_slug(period_name, "Periode")
+            year_slug = self._filename_safe_slug(year_label, "Annee")
+            batch_stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             
-        QMessageBox.information(self, "Succès", f"{count} certificats générés.")
+            count = 0
+            for s in self.honor_list:
+                cert = CertificatePDF(school_info, year_label)
+                mention = calc.get_mention(s['general_average'], max_s)
+                name_fr = s['name']
+                name_ar = s.get('name_ar', '')
+                display_name = f"{name_fr} / {name_ar}" if name_ar else name_fr
+                cert.create_certificate(display_name, class_name, s['general_average'], s['rank'], mention, period_name=period_name)
+                student_slug = self._filename_safe_slug(name_fr, "Eleve")
+                cert_name = (
+                    f"Certificat_Honneur_{class_slug}_{period_slug}_{year_slug}_"
+                    f"{student_slug}_R{s['rank']}_{batch_stamp}.pdf"
+                )
+                cert.output(os.path.join(folder, cert_name))
+                count += 1
+                
+            QMessageBox.information(self, "Succès", f"{count} certificats générés.")
+        except Exception as e:
+            QMessageBox.critical(self, "Erreur", f"Erreur de génération des certificats: {e}")
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     window = BulletinGenerationWindow()
     window.show()
     sys.exit(app.exec())
+
