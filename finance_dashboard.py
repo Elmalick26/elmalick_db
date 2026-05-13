@@ -1,24 +1,35 @@
 import sys
+import psycopg2
 from datetime import datetime
+from fpdf import FPDF
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                              QHBoxLayout, QLabel, QFrame, QTableWidget, 
-                             QTableWidgetItem, QHeaderView, QGraphicsDropShadowEffect)
+                             QTableWidgetItem, QHeaderView, QGraphicsDropShadowEffect,
+                             QPushButton)
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QFont, QColor, QIcon
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from database_setup import DatabaseManager
+from print_export_service import output_pdf, get_report_output_mode
+from pdf_report_style import apply_grades_sheet_header, apply_table_header_style, apply_table_body_style, set_zebra_row_fill, get_school_info_row
 
 from ui_styles import ThemeManager, Colors, rgba, get_table_style
+from app_logger import AppLogger
 
 THEME_AVAILABLE = True
-
+FINANCE_DASHBOARD_REPORT_MODE = get_report_output_mode("finance_dashboard_report_mode", "save")
 
 class ModernFinanceDashboard(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Tableau de Bord Financier / لوحة التحكم المالية")
         self.setMinimumSize(1100, 700)
+        self.last_income = 0.0
+        self.last_expenses = 0.0
+        self.last_balance = 0.0
+        self.last_inventory = 0.0
+        self.last_recent_transactions = []
 
         if THEME_AVAILABLE:
             ThemeManager.apply_theme(self)
@@ -96,6 +107,26 @@ class ModernFinanceDashboard(QMainWindow):
         header_layout.addSpacing(15)
         header_layout.addLayout(title_box)
         header_layout.addStretch()
+
+        btn_export = QPushButton("📄 Rapport Exécutif")
+        btn_export.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_export.setMinimumHeight(36)
+        if THEME_AVAILABLE:
+            btn_export.setStyleSheet(f"""
+                QPushButton {{
+                    background-color: {ThemeManager.get_colors().SUCCESS};
+                    color: white;
+                    font-weight: bold;
+                    border-radius: 6px;
+                    border: none;
+                    padding: 6px 14px;
+                }}
+                QPushButton:hover {{ background-color: {ThemeManager.get_colors().SUCCESS_HOVER}; }}
+            """)
+        btn_export.clicked.connect(self.export_executive_report_pdf)
+
+        header_layout.addWidget(btn_export)
+        header_layout.addSpacing(10)
         header_layout.addWidget(date_label)
 
         self.main_layout.addWidget(header_frame)
@@ -272,36 +303,47 @@ class ModernFinanceDashboard(QMainWindow):
                 conn = db_manager.get_connection()
                 cursor = conn.cursor()
 
-                # Income (using 'Payments' table created in finance_payments.py)
+                def _to_float(value):
+                    try:
+                        return float(value)
+                    except Exception:
+                        return 0.0
+
+                # Income
                 try:
                     cursor.execute("SELECT SUM(amount_paid) FROM Payments")
                     res_inc = cursor.fetchone()[0]
-                    inc = res_inc if res_inc else 0.0
+                    inc = _to_float(res_inc)
                 except Exception:
-                    inc = 0.0 # Table might not exist yet
+                    inc = 0.0 
                 
                 # Expenses
                 try:
                     cursor.execute("SELECT SUM(amount) FROM Expenses")
                     res_exp = cursor.fetchone()[0]
-                    exp = res_exp if res_exp else 0.0
+                    exp = _to_float(res_exp)
                 except Exception:
                     exp = 0.0
 
                 solde = inc - exp
+                self.last_income = float(inc)
+                self.last_expenses = float(exp)
+                self.last_balance = float(solde)
 
                 # Update Labels
                 self.card_income.findChild(QLabel, "val_label").setText(f"{inc:,.0f} FCFA")
                 self.card_expenses.findChild(QLabel, "val_label").setText(f"{exp:,.0f} FCFA")
                 self.card_profit.findChild(QLabel, "val_label").setText(f"{solde:,.0f} FCFA")
                 
-                # حساب قيمة المخزون
+                # Inventory Value
                 try:
                     cursor.execute("SELECT SUM(quantity * unit_price) FROM InventoryItems")
                     res_inv = cursor.fetchone()[0]
-                    inventory_val = res_inv if res_inv else 0.0
+                    inventory_val = _to_float(res_inv)
+                    self.last_inventory = float(inventory_val)
                     self.card_inventory.findChild(QLabel, "val_label").setText(f"{inventory_val:,.0f} FCFA")
                 except Exception:
+                    self.last_inventory = 0.0
                     self.card_inventory.findChild(QLabel, "val_label").setText("0 FCFA")
 
                 # Chart
@@ -329,19 +371,25 @@ class ModernFinanceDashboard(QMainWindow):
                 
                 self.canvas.draw()
 
-                # Table (Union of Income and Expenses)
+                # Table (Union of Income and Expenses - Date formatted for PostgreSQL safe ordering)
                 self.table_recent.setRowCount(0)
                 try:
                     query = """
-                        SELECT 'Entrée', S.last_name_fr || ' ' || S.first_name_fr, P.amount_paid, P.transaction_date 
-                        FROM Payments P JOIN Students S ON P.student_id = S.id 
+                        SELECT 'Entrée',
+                               TRIM(COALESCE(S.last_name_fr, '') || ' ' || COALESCE(S.first_name_fr, '')),
+                               COALESCE(P.amount_paid, 0),
+                               CAST(P.transaction_date AS VARCHAR(10)) AS t_date
+                        FROM Payments P LEFT JOIN Students S ON P.student_id = S.id 
                         UNION ALL
-                        SELECT 'Sortie', description, amount, expense_date FROM Expenses
-                        ORDER BY 4 DESC LIMIT 15
+                        SELECT 'Sortie', COALESCE(description, '-'), COALESCE(amount, 0), CAST(expense_date AS VARCHAR(10)) AS t_date 
+                        FROM Expenses
+                        ORDER BY t_date DESC LIMIT 15
                     """
                     cursor.execute(query)
+                    recent_rows = cursor.fetchall()
+                    self.last_recent_transactions = recent_rows
                     
-                    for row in cursor.fetchall():
+                    for row in recent_rows:
                         r_idx = self.table_recent.rowCount()
                         self.table_recent.insertRow(r_idx)
                         
@@ -352,22 +400,90 @@ class ModernFinanceDashboard(QMainWindow):
                                 type_item.setForeground(QColor(ThemeManager.get_colors().SUCCESS))
                             else:
                                 type_item.setForeground(QColor(Colors().SUCCESS))
-                            type_item.setIcon(QIcon()) 
                         else:
                             if THEME_AVAILABLE:
                                 type_item.setForeground(QColor(ThemeManager.get_colors().DANGER))
                             else:
                                 type_item.setForeground(QColor(Colors().DANGER))
                         
+                        source_text = (str(row[1] or "-")).strip() or "-"
+                        amount_val = _to_float(row[2])
+                        date_text = str(row[3] or "-")
+
                         self.table_recent.setItem(r_idx, 0, type_item)
-                        self.table_recent.setItem(r_idx, 1, QTableWidgetItem(str(row[1])))
-                        self.table_recent.setItem(r_idx, 2, QTableWidgetItem(f"{row[2]:,.0f}"))
-                        self.table_recent.setItem(r_idx, 3, QTableWidgetItem(str(row[3])))
+                        self.table_recent.setItem(r_idx, 1, QTableWidgetItem(source_text))
+                        self.table_recent.setItem(r_idx, 2, QTableWidgetItem(f"{amount_val:,.0f}"))
+                        self.table_recent.setItem(r_idx, 3, QTableWidgetItem(date_text))
                 except Exception as e:
-                    print(f"Dashboard Recent Transactions Error: {e}")
+                    self.last_recent_transactions = []
+                    AppLogger.error("FinanceDashboard", f"Dashboard Recent Transactions Error: {e}")
 
         except Exception as e:
-            print(f"Dashboard Error: {e}")
+            AppLogger.error("FinanceDashboard", f"Dashboard Error: {e}")
+
+    def export_executive_report_pdf(self):
+        pdf = FPDF()
+        pdf.add_page()
+
+        school_info = get_school_info_row()
+        apply_grades_sheet_header(pdf, school_info, "RAPPORT EXECUTIF FINANCIER")
+
+        pdf.set_font("Arial", '', 10)
+        pdf.set_text_color(51, 65, 85)
+        pdf.cell(0, 7, f"Généré le: {datetime.now().strftime('%Y-%m-%d %H:%M')}", 0, 1, 'C')
+        pdf.ln(2)
+
+        apply_table_header_style(pdf, "Arial", 10)
+        pdf.cell(0, 8, "Indicateurs Financiers", 1, 1, 'L', True)
+        apply_table_body_style(pdf, "Arial", 10)
+
+        kpis = [
+            ("Total Revenus", f"{self.last_income:,.0f} FCFA"),
+            ("Total Dépenses", f"{self.last_expenses:,.0f} FCFA"),
+            ("Solde Net", f"{self.last_balance:,.0f} FCFA"),
+            ("Valeur du Stock", f"{self.last_inventory:,.0f} FCFA"),
+        ]
+        for idx, (label, value) in enumerate(kpis):
+            set_zebra_row_fill(pdf, idx)
+            pdf.cell(100, 8, label, 1, 0, 'L', True)
+            pdf.cell(90, 8, value, 1, 1, 'R', True)
+
+        pdf.ln(3)
+        apply_table_header_style(pdf, "Arial", 10)
+        pdf.cell(0, 8, "Transactions Récentes", 1, 1, 'L', True)
+
+        headers = ["Type", "Source/Desc", "Montant", "Date"]
+        widths = [30, 85, 35, 40]
+        apply_table_header_style(pdf, "Arial", 9)
+        for i, h in enumerate(headers):
+            pdf.cell(widths[i], 8, h, 1, 0, 'C', True)
+        pdf.ln()
+
+        apply_table_body_style(pdf, "Arial", 8)
+        for idx, row in enumerate(self.last_recent_transactions[:12]):
+            set_zebra_row_fill(pdf, idx)
+            entry_type = "Recette" if row[0] == 'Entrée' else "Dépense"
+            source = str(row[1] or "-")
+            amount = f"{float(row[2] or 0):,.0f}"
+            date_str = str(row[3] or "-")
+
+            values = [entry_type, source, amount, date_str]
+            for i, val in enumerate(values):
+                text = str(val).encode('latin-1', 'ignore').decode('latin-1')
+                align = 'R' if i == 2 else 'L'
+                pdf.cell(widths[i], 7, text, 1, 0, align, True)
+            pdf.ln()
+
+        mode = get_report_output_mode("finance_dashboard_report_mode", FINANCE_DASHBOARD_REPORT_MODE)
+        output_pdf(
+            pdf,
+            self,
+            default_name=f"Rapport_Executif_Finance_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
+            mode=mode,
+            dialog_title="Exporter Rapport Exécutif",
+            success_save_message="Rapport exécutif exporté.",
+            success_print_message="Rapport exécutif envoyé à l'imprimante.",
+        )
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
