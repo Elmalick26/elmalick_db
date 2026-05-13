@@ -1,5 +1,6 @@
 import sys
 import os
+import psycopg2
 from datetime import datetime, timedelta
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                              QHBoxLayout, QPushButton, QLabel, QComboBox, 
@@ -11,16 +12,18 @@ from PyQt6.QtGui import QFont, QColor
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
-import matplotlib.dates as mdates
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
-from openpyxl.chart import BarChart, LineChart, Reference
 from fpdf import FPDF
 from database_setup import DatabaseManager
+from pdf_report_style import apply_grades_sheet_header, apply_table_header_style, apply_table_body_style, set_zebra_row_fill, get_school_info_row
+from print_export_service import output_pdf, get_report_output_mode
+from app_logger import AppLogger
 
 from ui_styles import ThemeManager, get_card_style, apply_shadow_to_widget, Colors, get_tabs_style
 
 THEME_AVAILABLE = True
+ADVANCED_COMPREHENSIVE_PDF_MODE = get_report_output_mode("advanced_comprehensive_pdf_mode", "save")
 
 # --- Worker Thread for Heavy Report Generation ---
 class ReportWorker(QThread):
@@ -46,6 +49,25 @@ class ReportWorker(QThread):
 
         return None, "N/A"
 
+    # ===== تم التعديل: جلب أعمدة الجدول بالطريقة القياسية لـ PostgreSQL =====
+    def _student_name_sql_expr(self, cursor, alias='s'):
+        cursor.execute("SELECT column_name FROM information_schema.columns WHERE table_name = 'students'")
+        columns = {row[0].lower() for row in cursor.fetchall()}
+
+        parts = []
+        if {'first_name_fr', 'last_name_fr'}.issubset(columns):
+            parts.append(f"TRIM(NULLIF({alias}.first_name_fr, '') || ' ' || NULLIF({alias}.last_name_fr, ''))")
+        if 'student_name' in columns:
+            parts.append(f"NULLIF({alias}.student_name, '')")
+        if 'first_name_fr' in columns:
+            parts.append(f"NULLIF({alias}.first_name_fr, '')")
+        if 'last_name_fr' in columns:
+            parts.append(f"NULLIF({alias}.last_name_fr, '')")
+
+        if not parts:
+            return "'N/A'"
+        return f"COALESCE({', '.join(parts)}, 'N/A')"
+
     def run(self):
         try:
             if self.report_type == "excel_financial":
@@ -56,13 +78,12 @@ class ReportWorker(QThread):
                 result = self.generate_attendance_excel()
             elif self.report_type == "excel_grades":
                 result = self.generate_grades_excel()
-            elif self.report_type == "pdf_comprehensive":
-                result = self.generate_comprehensive_pdf()
             else:
                 result = "Type de rapport inconnu"
             
             self.finished.emit(result)
         except Exception as e:
+            AppLogger.error("ReportWorker", f"Erreur lors de la génération du rapport {self.report_type}", e)
             self.error.emit(str(e))
 
     def generate_financial_excel(self):
@@ -72,11 +93,9 @@ class ReportWorker(QThread):
         ws.title = "Rapport Financier"
         selected_period = self.params.get("period", "12 derniers mois") if self.params else "12 derniers mois"
         
-        # Header styling
         header_fill = PatternFill(start_color="1E293B", end_color="1E293B", fill_type="solid")
         header_font = Font(color="FFFFFF", bold=True, size=12)
         
-        # Title
         ws['A1'] = "RAPPORT FINANCIER COMPLET"
         ws['A1'].font = Font(bold=True, size=16, color="1E293B")
         ws.merge_cells('A1:F1')
@@ -88,7 +107,6 @@ class ReportWorker(QThread):
         
         self.progress.emit(20)
         
-        # Income Section
         ws['A4'] = "RECETTES (Paiements Étudiants)"
         ws['A4'].font = Font(bold=True, size=14)
         
@@ -108,22 +126,22 @@ class ReportWorker(QThread):
             income_params = []
             expense_params = []
 
+            # ===== تم التعديل: استخدام DATE_TRUNC و INTERVAL في PostgreSQL =====
             if selected_period == "6 derniers mois":
-                income_filter += " AND date(transaction_date) >= date('now', 'start of month', '-5 months')"
-                expense_filter += " AND date(expense_date) >= date('now', 'start of month', '-5 months')"
+                income_filter += " AND CAST(transaction_date AS DATE) >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '5 months'"
+                expense_filter += " AND CAST(expense_date AS DATE) >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '5 months'"
             elif selected_period == "12 derniers mois":
-                income_filter += " AND date(transaction_date) >= date('now', 'start of month', '-11 months')"
-                expense_filter += " AND date(expense_date) >= date('now', 'start of month', '-11 months')"
+                income_filter += " AND CAST(transaction_date AS DATE) >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '11 months'"
+                expense_filter += " AND CAST(expense_date AS DATE) >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '11 months'"
             elif selected_period == "Année en cours":
                 current_year = datetime.now().strftime('%Y')
-                income_filter += " AND strftime('%Y', transaction_date) = ?"
-                expense_filter += " AND strftime('%Y', expense_date) = ?"
+                income_filter += " AND TO_CHAR(CAST(transaction_date AS TIMESTAMP), 'YYYY') = %s"
+                expense_filter += " AND TO_CHAR(CAST(expense_date AS TIMESTAMP), 'YYYY') = %s"
                 income_params.append(current_year)
                 expense_params.append(current_year)
             
-            # Get monthly income
             cursor.execute(f"""
-                SELECT strftime('%Y-%m', transaction_date) as month,
+                SELECT TO_CHAR(CAST(transaction_date AS TIMESTAMP), 'YYYY-MM') as month,
                     COUNT(*) as count,
                     SUM(amount_paid) as total
                 FROM Payments
@@ -148,7 +166,6 @@ class ReportWorker(QThread):
             
             self.progress.emit(50)
             
-            # Expenses Section
             ws[f'A{row+2}'] = "DÉPENSES"
             ws[f'A{row+2}'].font = Font(bold=True, size=14)
             
@@ -161,7 +178,7 @@ class ReportWorker(QThread):
                 ws[cell].font = header_font
             
             cursor.execute(f"""
-                SELECT strftime('%Y-%m', expense_date) as month,
+                SELECT TO_CHAR(CAST(expense_date AS TIMESTAMP), 'YYYY-MM') as month,
                     COUNT(*) as count,
                     SUM(amount) as total
                 FROM Expenses
@@ -186,23 +203,19 @@ class ReportWorker(QThread):
             
             self.progress.emit(80)
             
-            # Balance
             balance = total_income - total_expenses
             ws[f'A{exp_row+2}'] = "SOLDE NET"
             ws[f'A{exp_row+2}'].font = Font(bold=True, size=14)
             ws[f'C{exp_row+2}'] = f"{balance:,.0f} FCFA"
             ws[f'C{exp_row+2}'].font = Font(bold=True, size=14, color="10B981" if balance >= 0 else "EF4444")
             
-            # Adjust column widths
             ws.column_dimensions['A'].width = 15
             ws.column_dimensions['B'].width = 15
             ws.column_dimensions['C'].width = 20
         
-        # Save file
         safe_period = selected_period.encode('ascii', 'ignore').decode('ascii')
         safe_period = safe_period.replace(" ", "_").replace("'", "").replace("/", "-")
-        if not safe_period:
-            safe_period = "periode"
+        if not safe_period: safe_period = "periode"
         filename = f"Rapport_Financier_{safe_period}_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.xlsx"
         filepath = self.params.get("output_path") if self.params else None
         if not filepath:
@@ -213,12 +226,10 @@ class ReportWorker(QThread):
         return filepath
 
     def generate_students_excel(self):
-        """Generate student list with statistics"""
         wb = Workbook()
         ws = wb.active
         ws.title = "Liste Étudiants"
         
-        # Header
         header_fill = PatternFill(start_color="1E293B", end_color="1E293B", fill_type="solid")
         header_font = Font(color="FFFFFF", bold=True)
         
@@ -226,56 +237,75 @@ class ReportWorker(QThread):
         with db.get_connection() as conn:
             cursor = conn.cursor()
             active_year_id, active_year_label = self._get_active_year_context(cursor)
+            student_name_expr = self._student_name_sql_expr(cursor, alias='s')
+            
+            # جلب الأعمدة لمعرفة المتوفر منها
+            cursor.execute("SELECT column_name FROM information_schema.columns WHERE table_name = 'students'")
+            student_cols = {row[0].lower() for row in cursor.fetchall()}
 
         ws['A1'] = "LISTE DES ÉTUDIANTS"
         ws['A1'].font = Font(bold=True, size=16, color="1E293B")
-        ws.merge_cells('A1:F1')
+        ws.merge_cells('A1:L1')
         ws['A2'] = f"Année scolaire: {active_year_label}"
-        ws.merge_cells('A2:F2')
+        ws.merge_cells('A2:L2')
 
-        headers = ["ID", "Nom Complet", "Classe", "Sexe", "Date Naissance", "Statut"]
+        headers = [
+            "ID", "N° Classe", "Nom Complet", "Classe", "Sexe",
+            "Date Naissance", "Lieu Naissance", "Parent/Tuteur",
+            "Téléphone", "Adresse", "Date Inscription", "Statut"
+        ]
         for col, header in enumerate(headers, 1):
             cell = ws.cell(row=4, column=col, value=header)
             cell.fill = header_fill
             cell.font = header_font
         
         self.progress.emit(30)
+
+        birth_place_expr = "s.birth_place" if "birth_place" in student_cols else "''"
+        parent_expr = "s.parent_name" if "parent_name" in student_cols else "''"
+        phone_expr = "s.phone" if "phone" in student_cols else "''"
+        address_expr = "s.address" if "address" in student_cols else "''"
+        enroll_expr = "s.registration_date" if "registration_date" in student_cols else "''"
         
-        # Get students
         with db.get_connection() as conn:
             cursor = conn.cursor()
             if active_year_id:
-                cursor.execute("SELECT COUNT(*) FROM StudentClassNumbers WHERE year_id=?", (active_year_id,))
-                has_year_rows = cursor.fetchone()[0] > 0
-            else:
-                has_year_rows = False
-
-            if has_year_rows:
-                cursor.execute("""
+                cursor.execute(f"""
                     SELECT s.id,
-                        s.first_name_fr || ' ' || s.last_name_fr as name,
+                        COALESCE(CAST(scn.class_number AS VARCHAR), ''),
+                        {student_name_expr} as name,
                         c.class_name_fr,
-                        CASE WHEN s.gender=0 THEN 'M' ELSE 'F' END as gender,
-                        s.birth_date,
+                        CASE WHEN s.gender='0' OR s.gender='M' THEN 'M' ELSE 'F' END as gender,
+                        CAST(s.birth_date AS VARCHAR),
+                        {birth_place_expr} as birth_place,
+                        {parent_expr} as parent_name,
+                        {phone_expr} as phone,
+                        {address_expr} as address,
+                        CAST({enroll_expr} AS VARCHAR) as registration_date,
                         s.status
                     FROM Students s
-                    LEFT JOIN Classes c ON s.class_id = c.id
-                    JOIN StudentClassNumbers scn ON scn.student_id = s.id AND scn.year_id = ?
+                    JOIN StudentClassNumbers scn ON scn.student_id = s.id AND scn.year_id = %s
+                    JOIN Classes c ON scn.class_id = c.id
                     WHERE s.status='Active'
-                    ORDER BY c.class_name_fr, name
+                    ORDER BY c.sort_order, COALESCE(scn.class_number, 9999), name
                 """, (active_year_id,))
             else:
-                cursor.execute("""
+                cursor.execute(f"""
                     SELECT s.id,
-                        s.first_name_fr || ' ' || s.last_name_fr as name,
-                        c.class_name_fr,
-                        CASE WHEN s.gender=0 THEN 'M' ELSE 'F' END as gender,
-                        s.birth_date,
+                        '',
+                        {student_name_expr} as name,
+                        'N/A',
+                        CASE WHEN s.gender='0' OR s.gender='M' THEN 'M' ELSE 'F' END as gender,
+                        CAST(s.birth_date AS VARCHAR),
+                        {birth_place_expr} as birth_place,
+                        {parent_expr} as parent_name,
+                        {phone_expr} as phone,
+                        {address_expr} as address,
+                        CAST({enroll_expr} AS VARCHAR) as registration_date,
                         s.status
                     FROM Students s
-                    LEFT JOIN Classes c ON s.class_id = c.id
                     WHERE s.status='Active'
-                    ORDER BY c.class_name_fr, name
+                    ORDER BY name
                 """)
             rows = cursor.fetchall()
             
@@ -284,17 +314,21 @@ class ReportWorker(QThread):
                 ws.cell(row=row, column=col, value=value)
             
             if row % 20 == 0:
-                self.progress.emit(30 + (row * 60 // 200))
+                self.progress.emit(30 + (row * 60 // max(1, len(rows))))
         
-        # Adjust widths
         ws.column_dimensions['A'].width = 8
-        ws.column_dimensions['B'].width = 30
-        ws.column_dimensions['C'].width = 20
-        ws.column_dimensions['D'].width = 10
-        ws.column_dimensions['E'].width = 15
-        ws.column_dimensions['F'].width = 12
+        ws.column_dimensions['B'].width = 10
+        ws.column_dimensions['C'].width = 28
+        ws.column_dimensions['D'].width = 18
+        ws.column_dimensions['E'].width = 10
+        ws.column_dimensions['F'].width = 15
+        ws.column_dimensions['G'].width = 18
+        ws.column_dimensions['H'].width = 22
+        ws.column_dimensions['I'].width = 16
+        ws.column_dimensions['J'].width = 24
+        ws.column_dimensions['K'].width = 16
+        ws.column_dimensions['L'].width = 12
         
-        # Save
         filename = f"Liste_Etudiants_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.xlsx"
         filepath = self.params.get("output_path") if self.params else None
         if not filepath:
@@ -305,7 +339,6 @@ class ReportWorker(QThread):
         return filepath
 
     def generate_attendance_excel(self):
-        """Generate attendance report grouped by class"""
         wb = Workbook()
         ws = wb.active
         ws.title = "Assiduite"
@@ -336,32 +369,23 @@ class ReportWorker(QThread):
             ws.merge_cells('A3:G3')
 
             if active_year_id:
-                cursor.execute("SELECT COUNT(*) FROM StudentAttendance WHERE year_id=?", (active_year_id,))
-                has_year_rows = cursor.fetchone()[0] > 0
+                cursor.execute("""
+                    SELECT C.class_name_fr,
+                           COUNT(DISTINCT S.id) AS students_count,
+                           SUM(CASE WHEN SA.status='Présent' THEN 1 ELSE 0 END) AS presents,
+                           SUM(CASE WHEN SA.status='Absent' THEN 1 ELSE 0 END) AS absents,
+                           SUM(CASE WHEN SA.status='Retard' THEN 1 ELSE 0 END) AS lates,
+                           COUNT(SA.id) AS attendance_rows
+                    FROM Classes C
+                    LEFT JOIN StudentClassNumbers SCN ON SCN.class_id = C.id AND SCN.year_id = %s
+                    LEFT JOIN Students S ON S.id = SCN.student_id AND S.status='Active'
+                    LEFT JOIN StudentAttendance SA ON SA.student_id = S.id AND SA.year_id = %s
+                    GROUP BY C.id, C.class_name_fr
+                    ORDER BY C.sort_order, C.class_name_fr
+                """, (active_year_id, active_year_id))
+                rows = cursor.fetchall()
             else:
-                has_year_rows = False
-
-            attendance_join_filter = "AND SA.year_id=?"
-            attendance_params = [active_year_id]
-
-            if not has_year_rows:
-                attendance_join_filter = "AND (SA.year_id IS NULL OR SA.year_id=?)" if active_year_id else ""
-                attendance_params = [active_year_id] if active_year_id else []
-
-            cursor.execute(f"""
-                SELECT C.class_name_fr,
-                       COUNT(DISTINCT S.id) AS students_count,
-                       SUM(CASE WHEN SA.status='Present' THEN 1 ELSE 0 END) AS presents,
-                       SUM(CASE WHEN SA.status='Absent' THEN 1 ELSE 0 END) AS absents,
-                       SUM(CASE WHEN SA.status='Retard' THEN 1 ELSE 0 END) AS lates,
-                       COUNT(SA.id) AS attendance_rows
-                FROM Classes C
-                LEFT JOIN Students S ON S.class_id = C.id AND S.status='Active'
-                LEFT JOIN StudentAttendance SA ON SA.student_id = S.id {attendance_join_filter}
-                GROUP BY C.id, C.class_name_fr
-                ORDER BY C.sort_order, C.class_name_fr
-            """, attendance_params)
-            rows = cursor.fetchall()
+                rows = []
 
         row_idx = 5
         for idx, row in enumerate(rows, 1):
@@ -370,7 +394,7 @@ class ReportWorker(QThread):
             absents = absents or 0
             lates = lates or 0
             attendance_rows = attendance_rows or 0
-            absence_rate = (absents / attendance_rows * 100) if attendance_rows else 0
+            absence_rate = (absents / attendance_rows * 100) if attendance_rows > 0 else 0
 
             ws.cell(row=row_idx, column=1, value=class_name or "-")
             ws.cell(row=row_idx, column=2, value=students_count or 0)
@@ -397,7 +421,6 @@ class ReportWorker(QThread):
         return filepath
 
     def generate_grades_excel(self):
-        """Generate grade summary report grouped by class"""
         wb = Workbook()
         ws = wb.active
         ws.title = "Notes"
@@ -428,32 +451,23 @@ class ReportWorker(QThread):
             ws.merge_cells('A3:F3')
 
             if active_year_id:
-                cursor.execute("SELECT COUNT(*) FROM Grades WHERE year_id=?", (active_year_id,))
-                has_year_rows = cursor.fetchone()[0] > 0
+                cursor.execute("""
+                    SELECT C.class_name_fr,
+                           COUNT(DISTINCT S.id) AS students_count,
+                           COUNT(G.id) AS grades_count,
+                           MIN(G.score) AS min_score,
+                           AVG(G.score) AS avg_score,
+                           MAX(G.score) AS max_score
+                    FROM Classes C
+                    LEFT JOIN StudentClassNumbers SCN ON SCN.class_id = C.id AND SCN.year_id = %s
+                    LEFT JOIN Students S ON S.id = SCN.student_id AND S.status='Active'
+                    LEFT JOIN Grades G ON G.student_id = S.id AND G.score IS NOT NULL AND G.year_id = %s
+                    GROUP BY C.id, C.class_name_fr
+                    ORDER BY C.sort_order, C.class_name_fr
+                """, (active_year_id, active_year_id))
+                rows = cursor.fetchall()
             else:
-                has_year_rows = False
-
-            grades_join_filter = "AND G.year_id=?"
-            grades_params = [active_year_id]
-
-            if not has_year_rows:
-                grades_join_filter = "AND (G.year_id IS NULL OR G.year_id=?)" if active_year_id else ""
-                grades_params = [active_year_id] if active_year_id else []
-
-            cursor.execute(f"""
-                SELECT C.class_name_fr,
-                       COUNT(DISTINCT S.id) AS students_count,
-                       COUNT(G.id) AS grades_count,
-                       MIN(G.score) AS min_score,
-                       AVG(G.score) AS avg_score,
-                       MAX(G.score) AS max_score
-                FROM Classes C
-                LEFT JOIN Students S ON S.class_id = C.id AND S.status='Active'
-                LEFT JOIN Grades G ON G.student_id = S.id AND G.score IS NOT NULL {grades_join_filter}
-                GROUP BY C.id, C.class_name_fr
-                ORDER BY C.sort_order, C.class_name_fr
-            """, grades_params)
-            rows = cursor.fetchall()
+                rows = []
 
         row_idx = 5
         for idx, row in enumerate(rows, 1):
@@ -481,61 +495,22 @@ class ReportWorker(QThread):
         self.progress.emit(100)
         return filepath
 
-    def generate_comprehensive_pdf(self):
-        """Generate PDF with embedded charts"""
-        return "Génération PDF en développement... Veuillez utiliser l'export Excel pour le moment."
-
-
 class AdvancedReportsWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Rapports Avancés / التقارير المتقدمة")
         self.setMinimumSize(1100, 700)
         
-        # Apply theme
         if THEME_AVAILABLE:
             ThemeManager.apply_theme(self)
         else:
             colors = Colors()
             self.setStyleSheet(f"""
-                QMainWindow {{
-                    background-color: {colors.BG_MAIN};
-                }}
-                QLabel {{
-                    font-family: 'Segoe UI', 'Cairo', sans-serif;
-                    color: {colors.TEXT_PRIMARY};
-                }}
+                QMainWindow {{ background-color: {colors.BG_MAIN}; }}
+                QLabel {{ font-family: 'Segoe UI', 'Cairo', sans-serif; color: {colors.TEXT_PRIMARY}; }}
                 QGroupBox {{
-                    border: 1px solid {colors.BORDER};
-                    border-radius: 8px;
-                    margin-top: 10px;
-                    background-color: {colors.BG_CARD};
-                    font-weight: bold;
-                    color: {colors.TEXT_SECONDARY};
-                }}
-                QGroupBox::title {{
-                    subcontrol-origin: margin;
-                    subcontrol-position: top left;
-                    padding: 0 5px;
-                    left: 10px;
-                }}
-                QTabWidget::pane {{
-                    border: 1px solid {colors.BORDER};
-                    border-radius: 8px;
-                    background: {colors.BG_CARD};
-                }}
-                QTabBar::tab {{
-                    background: {colors.BG_MAIN};
-                    color: {colors.TEXT_SECONDARY};
-                    padding: 12px 20px;
-                    margin-right: 2px;
-                    border-top-left-radius: 8px;
-                    border-top-right-radius: 8px;
-                    font-weight: bold;
-                }}
-                QTabBar::tab:selected {{
-                    background: {colors.BG_HEADER};
-                    color: {colors.HEADER_TEXT};
+                    border: 1px solid {colors.BORDER}; border-radius: 8px; margin-top: 10px;
+                    background-color: {colors.BG_CARD}; font-weight: bold; color: {colors.TEXT_SECONDARY};
                 }}
             """)
         
@@ -555,6 +530,124 @@ class AdvancedReportsWindow(QMainWindow):
 
         return None, "N/A"
 
+    def _sanitize_latin(self, text):
+        if text is None:
+            return ""
+        if not isinstance(text, str):
+            text = str(text)
+        return text.encode('latin-1', 'ignore').decode('latin-1')
+
+    def _get_class_max_score(self, cursor, class_id):
+        cursor.execute("""
+            SELECT COALESCE(CY.name_fr, '')
+            FROM Classes CL
+            LEFT JOIN Cycles CY ON CL.cycle_id = CY.id
+            WHERE CL.id = %s
+        """, (class_id,))
+        row = cursor.fetchone()
+        cycle_name = (row[0] or "").lower() if row else ""
+        return 10 if ("elem" in cycle_name or "prim" in cycle_name) else 20
+
+    def _build_comprehensive_pdf(self, selected_period):
+        pdf = FPDF()
+        pdf.add_page()
+
+        school_info = get_school_info_row()
+        apply_grades_sheet_header(pdf, school_info, "RAPPORT COMPREHENSIF")
+
+        period_text = self._sanitize_latin(
+            f"Période: {selected_period} | Généré le: {datetime.now().strftime('%d/%m/%Y %H:%M')}"
+        )
+        pdf.set_font("Arial", '', 10)
+        pdf.set_text_color(51, 65, 85)
+        pdf.cell(0, 7, period_text, 0, 1, 'C')
+        pdf.ln(2)
+
+        db = DatabaseManager()
+        with db.get_connection() as conn:
+            cursor = conn.cursor()
+            active_year_id, active_year_label = self._get_active_year_context(cursor)
+
+            income_filter = "transaction_date IS NOT NULL"
+            expense_filter = "expense_date IS NOT NULL"
+            income_params = []
+            expense_params = []
+
+            # ===== تم التعديل: استخدام DATE_TRUNC للتواريخ =====
+            if selected_period == "6 derniers mois":
+                income_filter += " AND CAST(transaction_date AS DATE) >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '5 months'"
+                expense_filter += " AND CAST(expense_date AS DATE) >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '5 months'"
+            elif selected_period == "12 derniers mois":
+                income_filter += " AND CAST(transaction_date AS DATE) >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '11 months'"
+                expense_filter += " AND CAST(expense_date AS DATE) >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '11 months'"
+            elif selected_period == "Année en cours":
+                current_year = datetime.now().strftime('%Y')
+                income_filter += " AND TO_CHAR(CAST(transaction_date AS TIMESTAMP), 'YYYY') = %s"
+                expense_filter += " AND TO_CHAR(CAST(expense_date AS TIMESTAMP), 'YYYY') = %s"
+                income_params.append(current_year)
+                expense_params.append(current_year)
+
+            cursor.execute(f"SELECT COALESCE(SUM(amount_paid), 0) FROM Payments WHERE {income_filter}", income_params)
+            total_income = float(cursor.fetchone()[0] or 0)
+            cursor.execute(f"SELECT COALESCE(SUM(amount), 0) FROM Expenses WHERE {expense_filter}", expense_params)
+            total_expenses = float(cursor.fetchone()[0] or 0)
+            balance = total_income - total_expenses
+
+            if active_year_id:
+                cursor.execute("""
+                    SELECT COUNT(DISTINCT S.id) 
+                    FROM Students S
+                    JOIN StudentClassNumbers SCN ON S.id = SCN.student_id
+                    WHERE S.status='Active' AND SCN.year_id=%s
+                """, (active_year_id,))
+                active_students = int(cursor.fetchone()[0] or 0)
+            else:
+                active_students = 0
+                
+            cursor.execute("SELECT COUNT(*) FROM Classes")
+            total_classes = int(cursor.fetchone()[0] or 0)
+
+            cursor.execute("SELECT COUNT(*) FROM StudentAttendance WHERE status='Présent' AND (year_id=%s OR %s IS NULL)", (active_year_id, active_year_id))
+            presents = int(cursor.fetchone()[0] or 0)
+            cursor.execute("SELECT COUNT(*) FROM StudentAttendance WHERE status='Absent' AND (year_id=%s OR %s IS NULL)", (active_year_id, active_year_id))
+            absents = int(cursor.fetchone()[0] or 0)
+            cursor.execute("SELECT COUNT(*) FROM StudentAttendance WHERE status='Retard' AND (year_id=%s OR %s IS NULL)", (active_year_id, active_year_id))
+            lates = int(cursor.fetchone()[0] or 0)
+
+        apply_table_header_style(pdf, "Arial", 10)
+        pdf.cell(0, 8, self._sanitize_latin("Résumé Financier"), 1, 1, 'L', True)
+        apply_table_body_style(pdf, "Arial", 10)
+
+        fin_rows = [
+            ("Total Recettes", f"{total_income:,.0f} FCFA"),
+            ("Total Dépenses", f"{total_expenses:,.0f} FCFA"),
+            ("Solde Net", f"{balance:,.0f} FCFA"),
+        ]
+        for idx, (label, value) in enumerate(fin_rows):
+            set_zebra_row_fill(pdf, idx)
+            pdf.cell(110, 8, self._sanitize_latin(label), 1, 0, 'L', True)
+            pdf.cell(80, 8, self._sanitize_latin(value), 1, 1, 'R', True)
+
+        pdf.ln(3)
+        apply_table_header_style(pdf, "Arial", 10)
+        pdf.cell(0, 8, self._sanitize_latin("Résumé Académique"), 1, 1, 'L', True)
+        apply_table_body_style(pdf, "Arial", 10)
+
+        acad_rows = [
+            ("Année scolaire active", active_year_label),
+            ("Classes", str(total_classes)),
+            ("Étudiants actifs", str(active_students)),
+            ("Présences", str(presents)),
+            ("Absences", str(absents)),
+            ("Retards", str(lates)),
+        ]
+        for idx, (label, value) in enumerate(acad_rows):
+            set_zebra_row_fill(pdf, idx)
+            pdf.cell(110, 8, self._sanitize_latin(label), 1, 0, 'L', True)
+            pdf.cell(80, 8, self._sanitize_latin(value), 1, 1, 'R', True)
+
+        return pdf
+
     def init_ui(self):
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
@@ -566,27 +659,13 @@ class AdvancedReportsWindow(QMainWindow):
         header_frame = QFrame()
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
 
-        if THEME_AVAILABLE:
-            header_frame.setStyleSheet(f"""
-                QFrame {{
-                    background-color: {ThemeManager.get_colors().BG_HEADER};
-                    border-radius: 12px;
-                }}
-            """)
-        else:
-            header_frame.setStyleSheet(f"""
-                QFrame {{
-                    background-color: {colors.BG_HEADER};
-                    border-radius: 12px;
-                }}
-            """)
+        header_frame.setStyleSheet(f"""
+            QFrame {{ background-color: {colors.BG_HEADER}; border-radius: 12px; }}
+        """)
         header_frame.setFixedHeight(80)
         
-        # Shadow
         shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(15)
-        shadow.setColor(QColor(15, 23, 42, 40))
-        shadow.setOffset(0, 4)
+        shadow.setBlurRadius(15); shadow.setColor(QColor(15, 23, 42, 40)); shadow.setOffset(0, 4)
         header_frame.setGraphicsEffect(shadow)
         
         header_layout = QHBoxLayout(header_frame)
@@ -597,16 +676,10 @@ class AdvancedReportsWindow(QMainWindow):
         
         title_box = QVBoxLayout()
         title = QLabel("RAPPORTS AVANCÉS & ANALYSES")
-        if THEME_AVAILABLE:
-            title.setStyleSheet(f"color: {ThemeManager.get_colors().HEADER_TEXT}; font-size: 20px; font-weight: bold; background: transparent;")
-        else:
-            title.setStyleSheet(f"color: {colors.HEADER_TEXT}; font-size: 20px; font-weight: bold; background: transparent;")
+        title.setStyleSheet(f"color: {colors.HEADER_TEXT}; font-size: 20px; font-weight: bold; background: transparent;")
         
         subtitle = QLabel("Visualisations, Graphiques & Export Excel")
-        if THEME_AVAILABLE:
-            subtitle.setStyleSheet(f"color: {ThemeManager.get_colors().TEXT_SECONDARY}; font-size: 14px; background: transparent;")
-        else:
-            subtitle.setStyleSheet(f"color: {colors.TEXT_SECONDARY}; font-size: 14px; background: transparent;")
+        subtitle.setStyleSheet(f"color: {colors.TEXT_SECONDARY}; font-size: 14px; background: transparent;")
         
         title_box.addWidget(title)
         title_box.addWidget(subtitle)
@@ -623,76 +696,38 @@ class AdvancedReportsWindow(QMainWindow):
         if THEME_AVAILABLE:
             tabs.setStyleSheet(get_tabs_style())
         
-        # Tab 1: Financial Charts
         tabs.addTab(self.create_financial_charts_tab(), "📊 Graphiques Financiers")
-        
-        # Tab 2: Student Performance
         tabs.addTab(self.create_student_reports_tab(), "📈 Performance Étudiants")
-        
-        # Tab 3: Excel Exports
         tabs.addTab(self.create_excel_exports_tab(), "📑 Export Excel")
         
         layout.addWidget(tabs)
 
     def create_card(self):
-        """Helper to create a white card"""
         frame = QFrame()
         if THEME_AVAILABLE:
             frame.setStyleSheet(get_card_style())
             apply_shadow_to_widget(frame)
         else:
             colors = Colors()
-            frame.setStyleSheet(f"""
-                QFrame {{
-                    background-color: {colors.BG_CARD}; 
-                    border-radius: 12px; 
-                    border: 1px solid {colors.BORDER};
-                }}
-            """)
-            shadow = QGraphicsDropShadowEffect()
-            shadow.setBlurRadius(20)
-            shadow.setColor(QColor(15, 23, 42, 10))
-            shadow.setOffset(0, 4)
-            frame.setGraphicsEffect(shadow)
+            frame.setStyleSheet(f"QFrame {{ background-color: {colors.BG_CARD}; border-radius: 12px; border: 1px solid {colors.BORDER}; }}")
         return frame
         
     def styled_combo(self):
         combo = QComboBox()
-        if THEME_AVAILABLE:
-            colors = ThemeManager.get_colors()
-            combo.setStyleSheet(f"""
-                QComboBox {{
-                    padding: 6px 12px;
-                    border: 1px solid {colors.BORDER};
-                    border-radius: 6px;
-                    background: {colors.INPUT_BG};
-                    color: {colors.TEXT_PRIMARY};
-                }}
-                QComboBox:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}
-            """)
-        else:
-            colors = Colors()
-            combo.setStyleSheet(f"""
-                QComboBox {{
-                    padding: 6px 12px;
-                    border: 1px solid {colors.BORDER};
-                    border-radius: 6px;
-                    background: {colors.INPUT_BG};
-                    color: {colors.TEXT_PRIMARY};
-                }}
-                QComboBox:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}
-            """)
+        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+        combo.setStyleSheet(f"""
+            QComboBox {{ padding: 6px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }}
+            QComboBox:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}
+        """)
         combo.setMinimumHeight(38)
         return combo
 
     def create_financial_charts_tab(self):
-        """Financial visualizations with matplotlib"""
         widget = QWidget()
         layout = QVBoxLayout(widget)
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(15)
         
-        # Controls Card
         control_card = self.create_card()
         controls_layout = QHBoxLayout(control_card)
         controls_layout.setContentsMargins(15, 15, 15, 15)
@@ -704,59 +739,31 @@ class AdvancedReportsWindow(QMainWindow):
         
         btn_generate = QPushButton("🔄 Actualiser Graphique")
         btn_generate.setCursor(Qt.CursorShape.PointingHandCursor)
-        if THEME_AVAILABLE:
-            colors = ThemeManager.get_colors()
-            btn_generate.setStyleSheet(f"""
-                QPushButton {{
-                    background-color: {colors.PRIMARY};
-                    color: white;
-                    padding: 8px 20px;
-                    border-radius: 6px;
-                    font-weight: bold;
-                    border: none;
-                }}
-                QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}
-            """)
-        else:
-            colors = Colors()
-            btn_generate.setStyleSheet(f"""
-                QPushButton {{
-                    background-color: {colors.PRIMARY};
-                    color: white;
-                    padding: 8px 20px;
-                    border-radius: 6px;
-                    font-weight: bold;
-                    border: none;
-                }}
-                QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}
-            """)
+        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+        btn_generate.setStyleSheet(f"""
+            QPushButton {{ background-color: {colors.PRIMARY}; color: white; padding: 8px 20px; border-radius: 6px; font-weight: bold; border: none; }}
+            QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}
+        """)
         btn_generate.clicked.connect(self.generate_financial_chart)
         controls_layout.addWidget(btn_generate)
         controls_layout.addStretch()
         
         layout.addWidget(control_card)
         
-        # Chart Card
         chart_card = self.create_card()
         c_layout = QVBoxLayout(chart_card)
         
         self.financial_figure = Figure(figsize=(10, 6))
-        if THEME_AVAILABLE:
-            self.financial_figure.patch.set_facecolor(ThemeManager.get_colors().BG_CARD)
-        else:
-            self.financial_figure.patch.set_facecolor(Colors().BG_CARD)
+        self.financial_figure.patch.set_facecolor(colors.BG_CARD)
         self.financial_canvas = FigureCanvas(self.financial_figure)
         c_layout.addWidget(self.financial_canvas)
         
         layout.addWidget(chart_card)
-        
-        # Generate initial chart
         self.generate_financial_chart()
         
         return widget
 
     def generate_financial_chart(self):
-        """Generate income vs expenses chart"""
         self.financial_figure.clear()
         ax = self.financial_figure.add_subplot(111)
         selected_period = self.period_combo.currentText() if hasattr(self, 'period_combo') else "12 derniers mois"
@@ -767,93 +774,64 @@ class AdvancedReportsWindow(QMainWindow):
         expense_params = []
 
         if selected_period == "6 derniers mois":
-            income_filter += " AND date(transaction_date) >= date('now', 'start of month', '-5 months')"
-            expense_filter += " AND date(expense_date) >= date('now', 'start of month', '-5 months')"
+            income_filter += " AND CAST(transaction_date AS DATE) >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '5 months'"
+            expense_filter += " AND CAST(expense_date AS DATE) >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '5 months'"
         elif selected_period == "12 derniers mois":
-            income_filter += " AND date(transaction_date) >= date('now', 'start of month', '-11 months')"
-            expense_filter += " AND date(expense_date) >= date('now', 'start of month', '-11 months')"
+            income_filter += " AND CAST(transaction_date AS DATE) >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '11 months'"
+            expense_filter += " AND CAST(expense_date AS DATE) >= DATE_TRUNC('month', CURRENT_DATE) - INTERVAL '11 months'"
         elif selected_period == "Année en cours":
             current_year = datetime.now().strftime('%Y')
-            income_filter += " AND strftime('%Y', transaction_date) = ?"
-            expense_filter += " AND strftime('%Y', expense_date) = ?"
+            income_filter += " AND TO_CHAR(CAST(transaction_date AS TIMESTAMP), 'YYYY') = %s"
+            expense_filter += " AND TO_CHAR(CAST(expense_date AS TIMESTAMP), 'YYYY') = %s"
             income_params.append(current_year)
             expense_params.append(current_year)
         
-        # Get data from database
         db = DatabaseManager()
         with db.get_connection() as conn:
             cursor = conn.cursor()
-            
-            # Get monthly income
             cursor.execute(f"""
-                SELECT strftime('%Y-%m', transaction_date) as month,
-                    SUM(amount_paid) as total
-                FROM Payments
-                WHERE {income_filter}
-                GROUP BY month
-                ORDER BY month
+                SELECT TO_CHAR(CAST(transaction_date AS TIMESTAMP), 'YYYY-MM') as month, SUM(amount_paid) as total
+                FROM Payments WHERE {income_filter} GROUP BY month ORDER BY month
             """, income_params)
             income_data = cursor.fetchall()
             
-            # Get monthly expenses
             cursor.execute(f"""
-                SELECT strftime('%Y-%m', expense_date) as month,
-                    SUM(amount) as total
-                FROM Expenses
-                WHERE {expense_filter}
-                GROUP BY month
-                ORDER BY month
+                SELECT TO_CHAR(CAST(expense_date AS TIMESTAMP), 'YYYY-MM') as month, SUM(amount) as total
+                FROM Expenses WHERE {expense_filter} GROUP BY month ORDER BY month
             """, expense_params)
             expense_data = cursor.fetchall()
         
-        # Prepare data
         income_dict = {item[0]: item[1] if item[1] else 0 for item in income_data}
         expense_dict = {item[0]: item[1] if item[1] else 0 for item in expense_data}
         months = sorted(set(income_dict.keys()) | set(expense_dict.keys()))
         income = [income_dict.get(month, 0) for month in months]
         expenses = [expense_dict.get(month, 0) for month in months]
         
+        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+        
         if not months:
-            text_color = ThemeManager.get_colors().TEXT_SECONDARY if THEME_AVAILABLE else Colors().TEXT_SECONDARY
-            ax.text(0.5, 0.5, 'Aucune donnée disponible', 
-                    ha='center', va='center', fontsize=14, color=text_color)
+            ax.text(0.5, 0.5, 'Aucune donnée disponible', ha='center', va='center', fontsize=14, color=colors.TEXT_SECONDARY)
             ax.axis('off')
         else:
-            if THEME_AVAILABLE:
-                colors = ThemeManager.get_colors()
-                income_color = colors.SUCCESS
-                expense_color = colors.DANGER
-                text_color = colors.TEXT_SECONDARY
-                title_color = colors.TEXT_PRIMARY
-                ax.set_facecolor(colors.BG_CARD)
-            else:
-                colors = Colors()
-                income_color = colors.SUCCESS
-                expense_color = colors.DANGER
-                text_color = colors.TEXT_SECONDARY
-                title_color = colors.TEXT_PRIMARY
+            ax.set_facecolor(colors.BG_CARD)
             x = range(len(months))
             width = 0.35
             
-            ax.bar([i - width/2 for i in x], income, width, label='Recettes', color=income_color)
-            ax.bar([i + width/2 for i in x], expenses, width, label='Dépenses', color=expense_color)
+            ax.bar([i - width/2 for i in x], income, width, label='Recettes', color=colors.SUCCESS)
+            ax.bar([i + width/2 for i in x], expenses, width, label='Dépenses', color=colors.DANGER)
             
-            ax.set_xlabel('Mois', fontsize=10, fontweight='bold', color=text_color)
-            ax.set_ylabel('Montant (FCFA)', fontsize=10, fontweight='bold', color=text_color)
-            ax.set_title('Évolution Financière Mensuelle', fontsize=12, fontweight='bold', pad=15, color=title_color)
+            ax.set_xlabel('Mois', fontsize=10, fontweight='bold', color=colors.TEXT_SECONDARY)
+            ax.set_ylabel('Montant (FCFA)', fontsize=10, fontweight='bold', color=colors.TEXT_SECONDARY)
+            ax.set_title('Évolution Financière Mensuelle', fontsize=12, fontweight='bold', pad=15, color=colors.TEXT_PRIMARY)
             ax.set_xticks(x)
             ax.set_xticklabels(months, rotation=45, ha='right')
             legend = ax.legend(loc='upper left', frameon=True)
             ax.grid(axis='y', alpha=0.2, linestyle='--')
-            ax.tick_params(axis='x', colors=text_color)
-            ax.tick_params(axis='y', colors=text_color)
-            for spine in ax.spines.values():
-                spine.set_color(colors.BORDER)
+            ax.tick_params(axis='x', colors=colors.TEXT_SECONDARY)
+            ax.tick_params(axis='y', colors=colors.TEXT_SECONDARY)
+            for spine in ax.spines.values(): spine.set_color(colors.BORDER)
             if legend:
-                for text in legend.get_texts():
-                    text.set_color(text_color)
-            
-            # Remove top and right spines
+                for text in legend.get_texts(): text.set_color(colors.TEXT_SECONDARY)
             ax.spines['top'].set_visible(False)
             ax.spines['right'].set_visible(False)
         
@@ -861,13 +839,11 @@ class AdvancedReportsWindow(QMainWindow):
         self.financial_canvas.draw()
 
     def create_student_reports_tab(self):
-        """Student performance analytics"""
         widget = QWidget()
         layout = QVBoxLayout(widget)
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(15)
         
-        # Controls Card
         control_card = self.create_card()
         controls_layout = QHBoxLayout(control_card)
         controls_layout.setContentsMargins(15, 15, 15, 15)
@@ -877,155 +853,83 @@ class AdvancedReportsWindow(QMainWindow):
         self.load_classes_combo()
         controls_layout.addWidget(self.class_combo)
         
+        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
         btn_analyze = QPushButton("📈 Analyser Performance")
         btn_analyze.setCursor(Qt.CursorShape.PointingHandCursor)
-        if THEME_AVAILABLE:
-            colors = ThemeManager.get_colors()
-            btn_analyze.setStyleSheet(f"""
-                QPushButton {{
-                    background-color: {colors.SUCCESS};
-                    color: white;
-                    padding: 8px 20px;
-                    border-radius: 6px;
-                    font-weight: bold;
-                    border: none;
-                }}
-                QPushButton:hover {{ background-color: {colors.SUCCESS_HOVER}; }}
-            """)
-        else:
-            colors = Colors()
-            btn_analyze.setStyleSheet(f"""
-                QPushButton {{
-                    background-color: {colors.SUCCESS};
-                    color: white;
-                    padding: 8px 20px;
-                    border-radius: 6px;
-                    font-weight: bold;
-                    border: none;
-                }}
-                QPushButton:hover {{ background-color: {colors.SUCCESS_HOVER}; }}
-            """)
+        btn_analyze.setStyleSheet(f"""
+            QPushButton {{ background-color: {colors.SUCCESS}; color: white; padding: 8px 20px; border-radius: 6px; font-weight: bold; border: none; }}
+            QPushButton:hover {{ background-color: {colors.SUCCESS_HOVER}; }}
+        """)
         btn_analyze.clicked.connect(self.generate_student_chart)
         controls_layout.addWidget(btn_analyze)
-        
         controls_layout.addStretch()
         layout.addWidget(control_card)
         
-        # Chart Card
         chart_card = self.create_card()
         c_layout = QVBoxLayout(chart_card)
-        
         self.student_figure = Figure(figsize=(10, 6))
-        if THEME_AVAILABLE:
-            self.student_figure.patch.set_facecolor(ThemeManager.get_colors().BG_CARD)
-        else:
-            self.student_figure.patch.set_facecolor(Colors().BG_CARD)
+        self.student_figure.patch.set_facecolor(colors.BG_CARD)
         self.student_canvas = FigureCanvas(self.student_figure)
         c_layout.addWidget(self.student_canvas)
-        
         layout.addWidget(chart_card)
         
         return widget
 
     def generate_student_chart(self):
-        """Generate student performance chart"""
         self.student_figure.clear()
         ax = self.student_figure.add_subplot(111)
+        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
         
         class_id = self.class_combo.currentData()
         if not class_id:
-            text_color = ThemeManager.get_colors().TEXT_SECONDARY if THEME_AVAILABLE else Colors().TEXT_SECONDARY
-            ax.text(0.5, 0.5, 'Veuillez sélectionner une classe', 
-                ha='center', va='center', fontsize=14, color=text_color)
+            ax.text(0.5, 0.5, 'Veuillez sélectionner une classe', ha='center', va='center', fontsize=14, color=colors.TEXT_SECONDARY)
             ax.axis('off')
             self.student_canvas.draw()
             return
         
-        # Get grades distribution
         db = DatabaseManager()
         grades = []
+        max_score = 20
         active_year_label = "N/A"
         with db.get_connection() as conn:
             cursor = conn.cursor()
             active_year_id, active_year_label = self._get_active_year_context(cursor)
+            max_score = self._get_class_max_score(cursor, class_id)
 
             if active_year_id:
-                cursor.execute("SELECT COUNT(*) FROM Grades WHERE year_id=?", (active_year_id,))
-                has_year_rows = cursor.fetchone()[0] > 0
-            else:
-                has_year_rows = False
-            
-            # Note: Assuming 'Grades' table has 'score' column
-            if has_year_rows:
                 cursor.execute("""
                     SELECT g.score
                     FROM Grades g
                     JOIN Students s ON g.student_id = s.id
-                    WHERE s.class_id = ? AND g.score IS NOT NULL AND g.year_id = ?
-                """, (class_id, active_year_id))
-            else:
-                if active_year_id:
-                    cursor.execute("""
-                        SELECT g.score
-                        FROM Grades g
-                        JOIN Students s ON g.student_id = s.id
-                        WHERE s.class_id = ? AND g.score IS NOT NULL
-                        AND (g.year_id = ? OR g.year_id IS NULL)
-                    """, (class_id, active_year_id))
-                else:
-                    cursor.execute("""
-                        SELECT g.score
-                        FROM Grades g
-                        JOIN Students s ON g.student_id = s.id
-                        WHERE s.class_id = ? AND g.score IS NOT NULL
-                    """, (class_id,))
-            
-            grades = [row[0] for row in cursor.fetchall()]
+                    JOIN StudentClassNumbers scn ON scn.student_id = s.id AND scn.year_id = %s
+                    WHERE scn.class_id = %s AND g.score IS NOT NULL AND g.year_id = %s
+                """, (active_year_id, class_id, active_year_id))
+                grades = [row[0] for row in cursor.fetchall()]
         
         if not grades:
-            text_color = ThemeManager.get_colors().TEXT_SECONDARY if THEME_AVAILABLE else Colors().TEXT_SECONDARY
-            ax.text(0.5, 0.5, 'Aucune note disponible pour cette classe', 
-                    ha='center', va='center', fontsize=14, color=text_color)
+            ax.text(0.5, 0.5, 'Aucune note disponible pour cette classe', ha='center', va='center', fontsize=14, color=colors.TEXT_SECONDARY)
             ax.axis('off')
         else:
-            if THEME_AVAILABLE:
-                colors = ThemeManager.get_colors()
-                hist_color = colors.PRIMARY
-                text_color = colors.TEXT_SECONDARY
-                title_color = colors.TEXT_PRIMARY
-                avg_color = colors.DANGER
-                ax.set_facecolor(colors.BG_CARD)
-            else:
-                colors = Colors()
-                hist_color = colors.PRIMARY
-                text_color = colors.TEXT_SECONDARY
-                title_color = colors.TEXT_PRIMARY
-                avg_color = colors.DANGER
-            # Create histogram
-            bins = [0, 5, 10, 12, 14, 16, 20]
-            ax.hist(grades, bins=bins, color=hist_color, edgecolor='white', alpha=0.8, rwidth=0.9)
-            ax.set_xlabel('Notes (Intervalle)', fontsize=10, fontweight='bold', color=text_color)
-            ax.set_ylabel("Nombre d'étudiants", fontsize=10, fontweight='bold', color=text_color)
-            ax.set_title(f'Distribution des Notes - {self.class_combo.currentText()}', 
-                         fontsize=12, fontweight='bold', pad=20, color=title_color)
-            subtitle = f"Année scolaire: {active_year_label}"
-            ax.text(0.5, 1.01, subtitle, transform=ax.transAxes, ha='center', va='bottom', fontsize=9, color=text_color)
+            ax.set_facecolor(colors.BG_CARD)
+            grades = [max(0, min(float(g), float(max_score))) for g in grades]
+            step = max_score / 5
+            bins = [round(i * step, 2) for i in range(6)]
+            ax.hist(grades, bins=bins, color=colors.PRIMARY, edgecolor='white', alpha=0.8, rwidth=0.9)
+            ax.set_xlim(0, max_score)
+            ax.set_xlabel(f'Notes sur {int(max_score)} (Intervalle)', fontsize=10, fontweight='bold', color=colors.TEXT_SECONDARY)
+            ax.set_ylabel("Nombre d'étudiants", fontsize=10, fontweight='bold', color=colors.TEXT_SECONDARY)
+            ax.set_title(f'Distribution des Notes sur {int(max_score)} - {self.class_combo.currentText()}', fontsize=12, fontweight='bold', pad=20, color=colors.TEXT_PRIMARY)
+            ax.text(0.5, 1.01, f"Année scolaire: {active_year_label}", transform=ax.transAxes, ha='center', va='bottom', fontsize=9, color=colors.TEXT_SECONDARY)
             ax.grid(axis='y', alpha=0.3, linestyle='--')
             
-            # Add average line
             avg = sum(grades) / len(grades)
-            ax.axvline(avg, color=avg_color, linestyle='--', linewidth=2, 
-                       label=f'Moyenne Classe: {avg:.1f}')
+            ax.axvline(avg, color=colors.DANGER, linestyle='--', linewidth=2, label=f'Moyenne Classe: {avg:.1f}/{int(max_score)}')
             legend = ax.legend()
-            ax.tick_params(axis='x', colors=text_color)
-            ax.tick_params(axis='y', colors=text_color)
-            for spine in ax.spines.values():
-                spine.set_color(colors.BORDER)
+            ax.tick_params(axis='x', colors=colors.TEXT_SECONDARY)
+            ax.tick_params(axis='y', colors=colors.TEXT_SECONDARY)
+            for spine in ax.spines.values(): spine.set_color(colors.BORDER)
             if legend:
-                for text in legend.get_texts():
-                    text.set_color(text_color)
-            
-            # Remove spines
+                for text in legend.get_texts(): text.set_color(colors.TEXT_SECONDARY)
             ax.spines['top'].set_visible(False)
             ax.spines['right'].set_visible(False)
         
@@ -1033,144 +937,66 @@ class AdvancedReportsWindow(QMainWindow):
         self.student_canvas.draw()
 
     def create_excel_exports_tab(self):
-        """Excel export features"""
         widget = QWidget()
         layout = QVBoxLayout(widget)
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(15)
         
-        # Grid for cards
         grid = QGridLayout()
         grid.setSpacing(20)
         
-        # Financial Report
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-        btn_financial = self.create_export_button(
-            "💰 Rapport Financier",
-            "Export complet des recettes et dépenses",
-            colors.SUCCESS
-        )
+        
+        btn_financial = self.create_export_button("💰 Rapport Financier", "Export complet des recettes et dépenses", colors.SUCCESS)
         btn_financial.clicked.connect(lambda: self.export_excel("financial"))
         grid.addWidget(btn_financial, 0, 0)
         
-        # Student List
-        btn_students = self.create_export_button(
-            "👨‍🎓 Liste des Étudiants",
-            "Export de tous les élèves inscrits",
-            colors.PRIMARY
-        )
+        btn_students = self.create_export_button("👨‍🎓 Liste des Étudiants", "Export de tous les élèves inscrits", colors.PRIMARY)
         btn_students.clicked.connect(lambda: self.export_excel("students"))
         grid.addWidget(btn_students, 0, 1)
         
-        # Attendance Report
-        btn_attendance = self.create_export_button(
-            "📅 Rapport d'Assiduité",
-            "Statistiques de présence par classe",
-            colors.WARNING
-        )
+        btn_attendance = self.create_export_button("📅 Rapport d'Assiduité", "Statistiques de présence par classe", colors.WARNING)
         btn_attendance.clicked.connect(lambda: self.export_excel("attendance"))
         grid.addWidget(btn_attendance, 1, 0)
         
-        # Grade Report
-        btn_grades = self.create_export_button(
-            "📝 Relevé de Notes",
-            "Tableau global des notes et moyennes",
-            colors.SECONDARY if hasattr(colors, "SECONDARY") else Colors().PRIMARY
-        )
+        secondary_color = colors.SECONDARY if hasattr(colors, "SECONDARY") else colors.PRIMARY
+        btn_grades = self.create_export_button("📝 Relevé de Notes", "Tableau global des notes et moyennes", secondary_color)
         btn_grades.clicked.connect(lambda: self.export_excel("grades"))
         grid.addWidget(btn_grades, 1, 1)
+
+        btn_comprehensive_pdf = self.create_export_button("📄 Rapport PDF Global", "Résumé financier et académique avec en-tête officiel", colors.PRIMARY)
+        btn_comprehensive_pdf.clicked.connect(self.export_comprehensive_pdf)
+        grid.addWidget(btn_comprehensive_pdf, 2, 0, 1, 2)
         
         layout.addLayout(grid)
         
-        # Progress bar
         self.progress_bar = QProgressBar()
         self.progress_bar.setFixedHeight(20)
-        if THEME_AVAILABLE:
-            colors = ThemeManager.get_colors()
-            self.progress_bar.setStyleSheet(f"""
-                QProgressBar {{
-                    border: none;
-                    border-radius: 4px;
-                    text-align: center;
-                    background-color: {colors.BG_MAIN};
-                    color: {colors.TEXT_PRIMARY};
-                }}
-                QProgressBar::chunk {{
-                    background-color: {colors.PRIMARY};
-                    border-radius: 4px;
-                }}
-            """)
-        else:
-            colors = Colors()
-            self.progress_bar.setStyleSheet(f"""
-                QProgressBar {{
-                    border: none;
-                    border-radius: 4px;
-                    text-align: center;
-                    background-color: {colors.BG_MAIN};
-                    color: {colors.TEXT_PRIMARY};
-                }}
-                QProgressBar::chunk {{
-                    background-color: {colors.PRIMARY};
-                    border-radius: 4px;
-                }}
-            """)
+        self.progress_bar.setStyleSheet(f"""
+            QProgressBar {{ border: none; border-radius: 4px; text-align: center; background-color: {colors.BG_MAIN}; color: {colors.TEXT_PRIMARY}; }}
+            QProgressBar::chunk {{ background-color: {colors.PRIMARY}; border-radius: 4px; }}
+        """)
         self.progress_bar.hide()
         layout.addWidget(self.progress_bar)
         
-        # Status label
         self.status_label = QLabel("")
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        if THEME_AVAILABLE:
-            self.status_label.setStyleSheet(f"font-size: 13px; color: {ThemeManager.get_colors().TEXT_SECONDARY}; font-weight: bold;")
-        else:
-            self.status_label.setStyleSheet(f"font-size: 13px; color: {Colors().TEXT_SECONDARY}; font-weight: bold;")
+        self.status_label.setStyleSheet(f"font-size: 13px; color: {colors.TEXT_SECONDARY}; font-weight: bold;")
         layout.addWidget(self.status_label)
         
         layout.addStretch()
         return widget
 
     def create_export_button(self, title, description, color):
-        """Create styled export button behaving like a card"""
         btn = QPushButton()
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
         btn.setMinimumHeight(110)
-        if THEME_AVAILABLE:
-            colors = ThemeManager.get_colors()
-            btn.setStyleSheet(f"""
-                QPushButton {{
-                    background-color: {colors.BG_CARD};
-                    border: 1px solid {colors.BORDER};
-                    border-radius: 12px;
-                    text-align: left;
-                    padding: 15px;
-                    border-left: 6px solid {color};
-                }}
-                QPushButton:hover {{
-                    background-color: {colors.BG_MAIN};
-                    border: 1px solid {color};
-                    border-left: 6px solid {color};
-                }}
-            """)
-        else:
-            colors = Colors()
-            btn.setStyleSheet(f"""
-                QPushButton {{
-                    background-color: {colors.BG_CARD};
-                    border: 1px solid {colors.BORDER};
-                    border-radius: 12px;
-                    text-align: left;
-                    padding: 15px;
-                    border-left: 6px solid {color};
-                }}
-                QPushButton:hover {{
-                    background-color: {colors.BG_MAIN};
-                    border: 1px solid {color};
-                    border-left: 6px solid {color};
-                }}
-            """)
+        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+        btn.setStyleSheet(f"""
+            QPushButton {{ background-color: {colors.BG_CARD}; border: 1px solid {colors.BORDER}; border-radius: 12px; text-align: left; padding: 15px; border-left: 6px solid {color}; }}
+            QPushButton:hover {{ background-color: {colors.BG_MAIN}; border: 1px solid {color}; border-left: 6px solid {color}; }}
+        """)
         
-        # Create layout inside button
         layout = QVBoxLayout(btn)
         layout.setContentsMargins(15, 10, 15, 10)
         
@@ -1178,35 +1004,26 @@ class AdvancedReportsWindow(QMainWindow):
         title_label.setStyleSheet(f"font-size: 16px; font-weight: bold; color: {color}; border: none; background: transparent;")
         
         desc_label = QLabel(description)
-        if THEME_AVAILABLE:
-            desc_label.setStyleSheet(f"font-size: 12px; color: {ThemeManager.get_colors().TEXT_SECONDARY}; border: none; background: transparent;")
-        else:
-            desc_label.setStyleSheet(f"font-size: 12px; color: {Colors().TEXT_SECONDARY}; border: none; background: transparent;")
+        desc_label.setStyleSheet(f"font-size: 12px; color: {colors.TEXT_SECONDARY}; border: none; background: transparent;")
         
         layout.addWidget(title_label)
         layout.addWidget(desc_label)
         layout.addStretch()
         
-        # Add shadow to button (Simulated via QGraphicsEffect on the button itself)
         shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(15)
-        shadow.setColor(QColor(0, 0, 0, 10))
-        shadow.setOffset(0, 4)
+        shadow.setBlurRadius(15); shadow.setColor(QColor(0, 0, 0, 10)); shadow.setOffset(0, 4)
         btn.setGraphicsEffect(shadow)
         
         return btn
 
     def export_excel(self, report_type):
-        """Export Excel report in background thread"""
         default_name = f"Rapport_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.xlsx"
         params = {}
 
         if report_type == "financial":
             selected_period = self.period_combo.currentText() if hasattr(self, 'period_combo') else "12 derniers mois"
-            safe_period = selected_period.encode('ascii', 'ignore').decode('ascii')
-            safe_period = safe_period.replace(" ", "_").replace("'", "").replace("/", "-")
-            if not safe_period:
-                safe_period = "periode"
+            safe_period = selected_period.encode('ascii', 'ignore').decode('ascii').replace(" ", "_").replace("'", "").replace("/", "-")
+            if not safe_period: safe_period = "periode"
             default_name = f"Rapport_Financier_{safe_period}_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.xlsx"
             params["period"] = selected_period
         elif report_type == "students":
@@ -1217,29 +1034,19 @@ class AdvancedReportsWindow(QMainWindow):
             default_name = f"Rapport_Notes_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.xlsx"
 
         output_path, _ = QFileDialog.getSaveFileName(self, "Enregistrer le rapport", default_name, "Excel Files (*.xlsx)")
-        if not output_path:
-            self.progress_bar.hide()
-            self.status_label.setText("")
-            return
+        if not output_path: return
 
         params["output_path"] = output_path
-
         self.progress_bar.show()
         self.progress_bar.setValue(0)
         self.status_label.setText("⏳ Génération du rapport en cours...")
         
-        # Create worker
-        if report_type == "financial":
-            self.worker = ReportWorker("excel_financial", params)
-        elif report_type == "students":
-            self.worker = ReportWorker("excel_students", params)
-        elif report_type == "attendance":
-            self.worker = ReportWorker("excel_attendance", params)
-        elif report_type == "grades":
-            self.worker = ReportWorker("excel_grades", params)
+        AppLogger.info("AdvancedReports", f"Début de l'export Excel: {report_type}")
+
+        if report_type in ["financial", "students", "attendance", "grades"]:
+            self.worker = ReportWorker(f"excel_{report_type}", params)
         else:
-            QMessageBox.information(self, "En développement", 
-                                   f"Export '{report_type}' sera disponible prochainement!")
+            QMessageBox.information(self, "En développement", f"Export '{report_type}' sera disponible prochainement!")
             self.progress_bar.hide()
             self.status_label.setText("")
             return
@@ -1249,59 +1056,71 @@ class AdvancedReportsWindow(QMainWindow):
         self.worker.error.connect(self.on_export_error)
         self.worker.start()
 
+    def export_comprehensive_pdf(self):
+        selected_period = self.period_combo.currentText() if hasattr(self, 'period_combo') else "12 derniers mois"
+        try:
+            pdf = self._build_comprehensive_pdf(selected_period)
+            mode = get_report_output_mode("advanced_comprehensive_pdf_mode", ADVANCED_COMPREHENSIVE_PDF_MODE)
+            AppLogger.info("AdvancedReports", "Génération du PDF compréhensif terminée")
+
+            output_pdf(
+                pdf,
+                self,
+                default_name=f"Rapport_Complet_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.pdf",
+                mode=mode,
+                dialog_title="Enregistrer le rapport PDF",
+                success_save_message="Rapport PDF généré avec succès.",
+                success_print_message="Rapport PDF envoyé à l'imprimante.",
+            )
+        except Exception as e:
+            AppLogger.error("AdvancedReports", "Erreur PDF compréhensif", e)
+            QMessageBox.critical(self, "Erreur", f"Échec de la création du PDF: {e}")
+
     def on_export_finished(self, filepath):
-        """Handle successful export"""
         self.progress_bar.hide()
+        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
         self.status_label.setText(f"✅ Export réussi: {os.path.basename(filepath)}")
-        if THEME_AVAILABLE:
-            self.status_label.setStyleSheet(f"color: {ThemeManager.get_colors().SUCCESS}; font-weight: bold;")
-        else:
-            self.status_label.setStyleSheet(f"color: {Colors().SUCCESS}; font-weight: bold;")
+        self.status_label.setStyleSheet(f"color: {colors.SUCCESS}; font-weight: bold;")
         
+        AppLogger.info("AdvancedReports", f"Export Excel terminé: {filepath}")
+
         reply = QMessageBox.question(
-            self,
-            "Export Réussi",
+            self, "Export Réussi",
             f"Le fichier a été généré avec succès!\n\n{filepath}\n\nVoulez-vous l'ouvrir?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
         
         if reply == QMessageBox.StandardButton.Yes:
             try:
-                if os.name == 'nt':
-                    os.startfile(filepath)
+                if os.name == 'nt': os.startfile(filepath)
                 else:
                     import subprocess
                     subprocess.call(('xdg-open', filepath))
-            except:
-                pass
+            except Exception as e:
+                AppLogger.warning("AdvancedReports", f"Impossible d'ouvrir le fichier exporté: {e}")
 
     def on_export_error(self, error):
-        """Handle export error"""
         self.progress_bar.hide()
+        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
         self.status_label.setText("❌ Erreur lors de l'export")
-        if THEME_AVAILABLE:
-            self.status_label.setStyleSheet(f"color: {ThemeManager.get_colors().DANGER}; font-weight: bold;")
-        else:
-            self.status_label.setStyleSheet(f"color: {Colors().DANGER}; font-weight: bold;")
+        self.status_label.setStyleSheet(f"color: {colors.DANGER}; font-weight: bold;")
         QMessageBox.critical(self, "Erreur", f"Erreur lors de l'export:\n{error}")
 
     def load_classes_combo(self):
-        """Load classes into combo box"""
         self.class_combo.clear()
         self.class_combo.addItem("-- Sélectionnez une classe --", None)
-        
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
                 cursor = conn.cursor()
-                cursor.execute("SELECT id, class_name_fr FROM Classes ORDER BY sort_order")
-                rows = cursor.fetchall()
-            
-            for class_id, class_name in rows:
-                self.class_combo.addItem(class_name, class_id)
-            
-        except:
-            pass
+                try:
+                    cursor.execute("SELECT id, COALESCE(class_name_fr, '-') FROM Classes ORDER BY sort_order")
+                except Exception:
+                    cursor.execute("SELECT id, COALESCE(class_name_fr, '-') FROM Classes ORDER BY class_name_fr")
+                for class_id, class_name in cursor.fetchall():
+                    self.class_combo.addItem(str(class_name or "-"), class_id)
+        except Exception as e:
+            AppLogger.error("AdvancedReports", "Erreur lors du chargement des classes", e)
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
