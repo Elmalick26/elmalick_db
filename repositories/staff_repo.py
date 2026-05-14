@@ -202,6 +202,248 @@ class StaffRepository:
 
     def list_classes(self) -> list[tuple]:
         """Return (id, class_name_fr) for all classes."""
+
+    # ── StaffAttendance ────────────────────────────────────
+
+    def list_active_staff_fullname(self) -> list[tuple]:
+        """Return (id, full_name) for all active staff members."""
+        cursor = self.conn.cursor()
+        cursor.execute(
+            """
+            SELECT id,
+                   TRIM(COALESCE(first_name, '') || ' ' || COALESCE(last_name, ''))
+            FROM Staff
+            WHERE status='Actif'
+            """
+        )
+        return cursor.fetchall()
+
+    def list_active_staff_by_role(self, role_filter: str | None = None) -> list[tuple]:
+        """Return (id, full_name, role) for active staff, optionally filtered by role."""
+        cursor = self.conn.cursor()
+        if role_filter:
+            cursor.execute(
+                """
+                SELECT id,
+                       TRIM(COALESCE(last_name, '') || ' ' || COALESCE(first_name, '')),
+                       COALESCE(role, '')
+                FROM Staff
+                WHERE status = 'Actif' AND role = %s
+                """,
+                (role_filter,),
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT id,
+                       TRIM(COALESCE(last_name, '') || ' ' || COALESCE(first_name, '')),
+                       COALESCE(role, '')
+                FROM Staff
+                WHERE status = 'Actif'
+                """
+            )
+        return cursor.fetchall()
+
+    def get_staff_attendance_for_date(
+        self, staff_id: int, attendance_date: str
+    ) -> tuple | None:
+        """Return (status, check_in_time, check_out_time, note) for one staff/date."""
+        cursor = self.conn.cursor()
+        cursor.execute(
+            """
+            SELECT status, check_in_time, check_out_time, note
+            FROM StaffAttendance
+            WHERE staff_id = %s AND attendance_date = %s
+            """,
+            (staff_id, attendance_date),
+        )
+        return cursor.fetchone()
+
+    def upsert_staff_attendance(
+        self,
+        staff_id: int,
+        attendance_date: str,
+        check_in: str,
+        check_out: str,
+        status: str,
+        note: str,
+    ) -> None:
+        """Delete existing record then insert new one (upsert pattern)."""
+        cursor = self.conn.cursor()
+        cursor.execute(
+            "DELETE FROM StaffAttendance WHERE staff_id = %s AND attendance_date = %s",
+            (staff_id, attendance_date),
+        )
+        cursor.execute(
+            """
+            INSERT INTO StaffAttendance
+                (staff_id, attendance_date, check_in_time, check_out_time, status, note)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            """,
+            (staff_id, attendance_date, check_in, check_out, status, note),
+        )
+
+    def get_attendance_report(
+        self, start_date: str, end_date: str, staff_id: int | None = None
+    ) -> list[tuple]:
+        """Return attendance rows for the report table."""
+        cursor = self.conn.cursor()
+        if staff_id:
+            cursor.execute(
+                """
+                SELECT attendance_date, status, check_in_time, check_out_time, note
+                FROM StaffAttendance
+                WHERE staff_id = %s
+                  AND attendance_date >= %s AND attendance_date < %s
+                ORDER BY attendance_date
+                """,
+                (staff_id, start_date, end_date),
+            )
+        else:
+            cursor.execute(
+                """
+                SELECT S.first_name || ' ' || S.last_name,
+                       A.attendance_date, A.status,
+                       A.check_in_time, A.check_out_time, A.note
+                FROM StaffAttendance A
+                JOIN Staff S ON A.staff_id = S.id
+                WHERE A.attendance_date >= %s AND A.attendance_date < %s
+                ORDER BY A.attendance_date DESC, S.last_name
+                """,
+                (start_date, end_date),
+            )
+        return cursor.fetchall()
+
+    def get_attendance_report_for_display(
+        self, start_date: str, end_date: str, staff_id: int | None = None
+    ) -> list[tuple]:
+        """Return attendance rows for the table display widget."""
+        cursor = self.conn.cursor()
+        query = """
+            SELECT S.first_name || ' ' || S.last_name AS staff_name,
+                   A.attendance_date, A.status,
+                   A.check_in_time, A.check_out_time, A.note
+            FROM StaffAttendance A
+            JOIN Staff S ON A.staff_id = S.id
+            WHERE A.attendance_date >= %s AND A.attendance_date < %s
+        """
+        params: list = [start_date, end_date]
+        if staff_id:
+            query += " AND A.staff_id = %s"
+            params.append(staff_id)
+        query += " ORDER BY A.attendance_date DESC, S.last_name"
+        cursor.execute(query, params)
+        return cursor.fetchall()
+
+    def get_school_info(self) -> tuple | None:
+        """Return the single SchoolInfo row."""
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT * FROM SchoolInfo LIMIT 1")
+        return cursor.fetchone()
+
+    # ── StaffLeaves ────────────────────────────────────────
+
+    def insert_leave(
+        self,
+        staff_id: int,
+        leave_type: str,
+        start_date: str,
+        end_date: str,
+        days_count: int,
+        reason: str,
+    ) -> None:
+        cursor = self.conn.cursor()
+        cursor.execute(
+            """
+            INSERT INTO StaffLeaves
+                (staff_id, leave_type, start_date, end_date, days_count, reason)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            """,
+            (staff_id, leave_type, start_date, end_date, days_count, reason),
+        )
+
+    def list_leaves(self) -> list[tuple]:
+        """Return all leaves joined with staff name, ordered by start_date DESC."""
+        cursor = self.conn.cursor()
+        cursor.execute(
+            """
+            SELECT L.id,
+                   TRIM(COALESCE(S.first_name, '') || ' ' || COALESCE(S.last_name, '')),
+                   L.leave_type, L.start_date, L.end_date, L.days_count, L.status
+            FROM StaffLeaves L
+            JOIN Staff S ON L.staff_id = S.id
+            ORDER BY L.start_date DESC
+            """
+        )
+        return cursor.fetchall()
+
+    def update_leave_status(self, leave_id: int, new_status: str) -> None:
+        cursor = self.conn.cursor()
+        cursor.execute(
+            "UPDATE StaffLeaves SET status=%s WHERE id=%s", (new_status, leave_id)
+        )
+
+    def get_leaves_summary_report(
+        self, date_from: str, date_to: str
+    ) -> list[tuple]:
+        """Summary: one row per staff with approved/pending/rejected day counts."""
+        cursor = self.conn.cursor()
+        cursor.execute(
+            """
+            SELECT TRIM(COALESCE(S.first_name, '') || ' ' || COALESCE(S.last_name, '')),
+                   COUNT(L.id),
+                   COALESCE(SUM(CASE WHEN L.status='Approuv\u00e9' THEN L.days_count ELSE 0 END), 0),
+                   COALESCE(SUM(CASE WHEN L.status='En Attente' THEN L.days_count ELSE 0 END), 0),
+                   COALESCE(SUM(CASE WHEN L.status='Rejet\u00e9' THEN L.days_count ELSE 0 END), 0)
+            FROM Staff S
+            LEFT JOIN StaffLeaves L
+                   ON L.staff_id = S.id
+                  AND CAST(L.start_date AS DATE) <= CAST(%s AS DATE)
+                  AND CAST(L.end_date AS DATE) >= CAST(%s AS DATE)
+            WHERE S.status='Actif'
+            GROUP BY S.id, S.first_name, S.last_name
+            ORDER BY 3 DESC, 1
+            """,
+            (date_to, date_from),
+        )
+        return cursor.fetchall()
+
+    def get_leaves_detail_report(
+        self, date_from: str, date_to: str
+    ) -> list[tuple]:
+        """Detail: one row per leave request within the date range."""
+        cursor = self.conn.cursor()
+        cursor.execute(
+            """
+            SELECT TRIM(COALESCE(S.first_name, '') || ' ' || COALESCE(S.last_name, '')),
+                   L.leave_type, L.start_date, L.end_date,
+                   L.days_count, L.status, COALESCE(L.reason, '')
+            FROM StaffLeaves L
+            JOIN Staff S ON S.id = L.staff_id
+            WHERE CAST(L.start_date AS DATE) <= CAST(%s AS DATE)
+              AND CAST(L.end_date AS DATE) >= CAST(%s AS DATE)
+            ORDER BY L.start_date DESC, 1
+            """,
+            (date_to, date_from),
+        )
+        return cursor.fetchall()
+
+    def get_leave_request_by_id(self, leave_id: int) -> tuple | None:
+        """Return full leave request row for PDF export."""
+        cursor = self.conn.cursor()
+        cursor.execute(
+            """
+            SELECT L.id,
+                   TRIM(COALESCE(S.first_name, '') || ' ' || COALESCE(S.last_name, '')),
+                   L.leave_type, L.start_date, L.end_date,
+                   L.days_count, L.status, COALESCE(L.reason, '')
+            FROM StaffLeaves L
+            JOIN Staff S ON S.id = L.staff_id
+            WHERE L.id = %s
+            """,
+            (leave_id,),
+        )
+        return cursor.fetchone()
         cursor = self.conn.cursor()
         cursor.execute("SELECT id, class_name_fr FROM Classes ORDER BY class_name_fr")
         return cursor.fetchall()

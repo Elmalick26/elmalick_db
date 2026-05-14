@@ -16,6 +16,7 @@ from print_export_service import output_pdf, get_report_output_mode
 from pdf_report_style import apply_grades_sheet_header, apply_table_header_style, apply_table_body_style, set_zebra_row_fill, get_school_info_row
 
 from ui_styles import ThemeManager, Colors, get_card_style, apply_shadow_to_widget, get_table_style, get_tabs_style
+from repositories.staff_repo import StaffRepository
 
 THEME_AVAILABLE = True
 STAFF_LEAVES_REPORT_OUTPUT_MODE = get_report_output_mode("staff_leaves_report_mode", "save")
@@ -398,14 +399,7 @@ class StaffLeaveWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT id,
-                           TRIM(COALESCE(first_name, '') || ' ' || COALESCE(last_name, ''))
-                    FROM Staff
-                    WHERE status='Actif'
-                """)
-                rows = cursor.fetchall()
+                rows = StaffRepository(conn).list_active_staff_fullname()
             self.combo_staff.clear()
             for row in rows:
                 self.combo_staff.addItem(row[1] or "-", row[0])
@@ -443,11 +437,12 @@ class StaffLeaveWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    INSERT INTO StaffLeaves (staff_id, leave_type, start_date, end_date, days_count, reason)
-                    VALUES (%s, %s, %s, %s, %s, %s)
-                """, (staff_id, l_type, d1.toString("yyyy-MM-dd"), d2.toString("yyyy-MM-dd"), days, reason))
+                repo = StaffRepository(conn)
+                repo.insert_leave(
+                    staff_id, l_type,
+                    d1.toString("yyyy-MM-dd"), d2.toString("yyyy-MM-dd"),
+                    days, reason
+                )
                 conn.commit()
             
             QMessageBox.information(self, "Succès", "Demande de congé enregistrée.")
@@ -462,16 +457,7 @@ class StaffLeaveWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                query = """
-                    SELECT L.id, TRIM(COALESCE(S.first_name, '') || ' ' || COALESCE(S.last_name, '')), L.leave_type, 
-                        L.start_date, L.end_date, L.days_count, L.status
-                    FROM StaffLeaves L
-                    JOIN Staff S ON L.staff_id = S.id
-                    ORDER BY L.start_date DESC
-                """
-                cursor.execute(query)
-                rows = cursor.fetchall()
+                rows = StaffRepository(conn).list_leaves()
             
             colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
 
@@ -534,8 +520,7 @@ class StaffLeaveWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("UPDATE StaffLeaves SET status=%s WHERE id=%s", (new_status, leave_id))
+                StaffRepository(conn).update_leave_status(leave_id, new_status)
                 conn.commit()
             self.load_leaves()
         except Exception as e:
@@ -553,27 +538,13 @@ class StaffLeaveWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
+                repo = StaffRepository(conn)
 
                 if report_kind == "summary":
                     title = "Rapport Synthèse des Congés par Employé"
                     headers = ["Employé", "Demandes", "Jours Approuvés", "Jours En Attente", "Jours Rejetés"]
-                    cursor.execute("""
-                        SELECT TRIM(COALESCE(S.first_name, '') || ' ' || COALESCE(S.last_name, '')) AS staff_name,
-                               COUNT(L.id) AS requests_count,
-                               COALESCE(SUM(CASE WHEN L.status='Approuvé' THEN L.days_count ELSE 0 END), 0) AS approved_days,
-                               COALESCE(SUM(CASE WHEN L.status='En Attente' THEN L.days_count ELSE 0 END), 0) AS pending_days,
-                               COALESCE(SUM(CASE WHEN L.status='Rejeté' THEN L.days_count ELSE 0 END), 0) AS rejected_days
-                        FROM Staff S
-                        LEFT JOIN StaffLeaves L
-                            ON L.staff_id = S.id
-                           AND CAST(L.start_date AS DATE) <= CAST(%s AS DATE)
-                           AND CAST(L.end_date AS DATE) >= CAST(%s AS DATE)
-                        WHERE S.status='Actif'
-                        GROUP BY S.id, S.first_name, S.last_name
-                        ORDER BY approved_days DESC, staff_name
-                    """, (date_to, date_from))
-                    for staff_name, requests_count, approved_days, pending_days, rejected_days in cursor.fetchall():
+                    for row in repo.get_leaves_summary_report(date_from, date_to):
+                        staff_name, requests_count, approved_days, pending_days, rejected_days = row
                         rows.append([
                             staff_name or "-",
                             int(requests_count or 0),
@@ -584,21 +555,8 @@ class StaffLeaveWindow(QMainWindow):
                 else:
                     title = "Rapport Détail des Demandes de Congés"
                     headers = ["Employé", "Type", "Début", "Fin", "Jours", "Statut", "Motif"]
-                    cursor.execute("""
-                        SELECT TRIM(COALESCE(S.first_name, '') || ' ' || COALESCE(S.last_name, '')) AS staff_name,
-                               L.leave_type,
-                               L.start_date,
-                               L.end_date,
-                               L.days_count,
-                               L.status,
-                               COALESCE(L.reason, '')
-                        FROM StaffLeaves L
-                        JOIN Staff S ON S.id = L.staff_id
-                        WHERE CAST(L.start_date AS DATE) <= CAST(%s AS DATE)
-                          AND CAST(L.end_date AS DATE) >= CAST(%s AS DATE)
-                        ORDER BY L.start_date DESC, staff_name
-                    """, (date_to, date_from))
-                    for staff_name, leave_type, start_date, end_date, days_count, status, reason in cursor.fetchall():
+                    for row in repo.get_leaves_detail_report(date_from, date_to):
+                        staff_name, leave_type, start_date, end_date, days_count, status, reason = row
                         rows.append([
                             staff_name or "-",
                             leave_type or "-",
@@ -681,24 +639,7 @@ class StaffLeaveWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute(
-                    """
-                    SELECT L.id,
-                              TRIM(COALESCE(S.first_name, '') || ' ' || COALESCE(S.last_name, '')) AS staff_name,
-                           L.leave_type,
-                           L.start_date,
-                           L.end_date,
-                           L.days_count,
-                           L.status,
-                           COALESCE(L.reason, '')
-                    FROM StaffLeaves L
-                    JOIN Staff S ON S.id = L.staff_id
-                    WHERE L.id = %s
-                    """,
-                    (leave_id,)
-                )
-                row = cursor.fetchone()
+                row = StaffRepository(conn).get_leave_request_by_id(leave_id)
 
             if not row:
                 QMessageBox.warning(self, "Erreur", "Demande introuvable.")

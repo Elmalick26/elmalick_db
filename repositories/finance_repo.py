@@ -546,3 +546,137 @@ class FinanceRepository:
             (year_id,),
         )
         return cursor.fetchall()
+
+    # --- Expenses ---
+
+    def insert_expense(self, category: str, description: str, amount: float, date_str: str, paid_to: str) -> None:
+        cursor = self.conn.cursor()
+        cursor.execute(
+            "INSERT INTO Expenses (category, description, amount, expense_date, paid_to) VALUES (%s, %s, %s, %s, %s)",
+            (category, description, amount, date_str, paid_to),
+        )
+
+    def list_recent_expenses(self, limit: int = 50) -> list:
+        cursor = self.conn.cursor()
+        cursor.execute(
+            "SELECT id, category, description, paid_to, amount, expense_date FROM Expenses ORDER BY expense_date DESC LIMIT %s",
+            (limit,),
+        )
+        return cursor.fetchall()
+
+    def get_expenses_by_category(self, from_date: str, to_date_full: str) -> list:
+        cursor = self.conn.cursor()
+        cursor.execute(
+            """
+            SELECT category, COUNT(*), COALESCE(SUM(amount), 0)
+            FROM Expenses
+            WHERE CAST(expense_date AS TIMESTAMP) BETWEEN CAST(%s AS TIMESTAMP) AND CAST(%s AS TIMESTAMP)
+            GROUP BY category
+            ORDER BY COALESCE(SUM(amount), 0) DESC
+            """,
+            (from_date, to_date_full),
+        )
+        return cursor.fetchall()
+
+    def get_cashflow_expenses_by_month(self, from_date: str, to_date_full: str) -> list:
+        cursor = self.conn.cursor()
+        cursor.execute(
+            """
+            SELECT TO_CHAR(CAST(expense_date AS TIMESTAMP), 'YYYY-MM') AS period, COALESCE(SUM(amount), 0)
+            FROM Expenses
+            WHERE CAST(expense_date AS TIMESTAMP) BETWEEN CAST(%s AS TIMESTAMP) AND CAST(%s AS TIMESTAMP)
+            GROUP BY period
+            """,
+            (from_date, to_date_full),
+        )
+        return cursor.fetchall()
+
+    def get_cashflow_revenues_by_month(self, from_date: str, to_date_full: str) -> list:
+        cursor = self.conn.cursor()
+        cursor.execute(
+            """
+            SELECT TO_CHAR(CAST(transaction_date AS TIMESTAMP), 'YYYY-MM') AS period, COALESCE(SUM(amount_paid), 0)
+            FROM Payments
+            WHERE CAST(transaction_date AS TIMESTAMP) BETWEEN CAST(%s AS TIMESTAMP) AND CAST(%s AS TIMESTAMP)
+            GROUP BY period
+            """,
+            (from_date, to_date_full),
+        )
+        return cursor.fetchall()
+
+    def get_expense_detail_list(self, from_date: str, to_date_full: str, limit: int = 500) -> list:
+        cursor = self.conn.cursor()
+        cursor.execute(
+            """
+            SELECT expense_date, category, description, paid_to, amount
+            FROM Expenses
+            WHERE CAST(expense_date AS TIMESTAMP) BETWEEN CAST(%s AS TIMESTAMP) AND CAST(%s AS TIMESTAMP)
+            ORDER BY expense_date DESC, id DESC
+            LIMIT %s
+            """,
+            (from_date, to_date_full, limit),
+        )
+        return cursor.fetchall()
+
+    # --- Payroll ---
+
+    def list_active_staff_with_salary(self) -> list:
+        cursor = self.conn.cursor()
+        cursor.execute(
+            """
+            SELECT id,
+                   TRIM(COALESCE(first_name, '') || ' ' || COALESCE(last_name, '')),
+                   role,
+                   contract_type,
+                   salary_base,
+                   hourly_rate
+            FROM Staff
+            WHERE status='Actif'
+            """
+        )
+        return cursor.fetchall()
+
+    def get_salary_slip_exists(self, staff_id: int, month_str: str) -> bool:
+        cursor = self.conn.cursor()
+        cursor.execute(
+            "SELECT id FROM SalarySlips WHERE staff_id=%s AND month_str=%s",
+            (staff_id, month_str),
+        )
+        return cursor.fetchone() is not None
+
+    def get_staff_attendance_times(self, staff_id: int, start_date: str, end_date: str) -> list:
+        cursor = self.conn.cursor()
+        cursor.execute(
+            """
+            SELECT check_in_time, check_out_time
+            FROM StaffAttendance
+            WHERE staff_id=%s AND attendance_date >= %s AND attendance_date < %s
+            """,
+            (staff_id, start_date, end_date),
+        )
+        return cursor.fetchall()
+
+    def insert_salary_slip(self, staff_id: int, month_str: str, basic_amount: float,
+                           hours_worked: float, bonuses: float, deductions: float,
+                           net_amount: float, payment_date: str) -> None:
+        cursor = self.conn.cursor()
+        cursor.execute(
+            """
+            INSERT INTO SalarySlips (staff_id, month_str, basic_amount, hours_worked, bonuses, deductions, net_amount, payment_date)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (staff_id, month_str, basic_amount, hours_worked, bonuses, deductions, net_amount, payment_date),
+        )
+
+    def get_staff_name_role(self, staff_id: int) -> tuple | None:
+        cursor = self.conn.cursor()
+        cursor.execute(
+            "SELECT first_name || ' ' || last_name, role FROM Staff WHERE id=%s",
+            (staff_id,),
+        )
+        return cursor.fetchone()
+
+    def get_school_info(self) -> tuple | None:
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT * FROM SchoolInfo LIMIT 1")
+        return cursor.fetchone()

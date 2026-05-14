@@ -15,6 +15,7 @@ from PyQt6.QtGui import QFont, QColor
 from fpdf import FPDF
 
 from ui_styles import ThemeManager, get_card_style, apply_shadow_to_widget, get_table_style, get_tabs_style, Colors
+from repositories.finance_repo import FinanceRepository
 from print_export_service import output_pdf, get_report_output_mode
 from pdf_report_style import apply_title_style, apply_grades_sheet_header, apply_table_header_style, apply_table_body_style, set_zebra_row_fill, get_school_info_row
 
@@ -506,23 +507,13 @@ class ExpensesWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
+                repo = FinanceRepository(conn)
 
                 if report_key == "monthly_category":
                     title = "Synthèse Mensuelle par Catégorie"
                     headers = ["Catégorie", "Nombre", "Montant Total"]
-                    cursor.execute(
-                        """
-                        SELECT category, COUNT(*), COALESCE(SUM(amount), 0)
-                        FROM Expenses
-                        WHERE CAST(expense_date AS TIMESTAMP) BETWEEN CAST(%s AS TIMESTAMP) AND CAST(%s AS TIMESTAMP)
-                        GROUP BY category
-                        ORDER BY COALESCE(SUM(amount), 0) DESC
-                        """,
-                        (from_date, to_date_full),
-                    )
                     total_expenses = 0.0
-                    for category, count_rows, amount_total in cursor.fetchall():
+                    for category, count_rows, amount_total in repo.get_expenses_by_category(from_date, to_date_full):
                         amount_value = float(amount_total or 0)
                         total_expenses += amount_value
                         rows.append([
@@ -536,28 +527,8 @@ class ExpensesWindow(QMainWindow):
                     title = "Flux de Trésorerie (Dépenses vs Revenus)"
                     headers = ["Mois", "Dépenses (مصاريف)", "Revenus (مداخيل)", "Solde (الصافي)"]
 
-                    # باستخدام دالة TO_CHAR الخاصة بـ PostgreSQL بدلاً من substr الخاصة بـ SQLite
-                    cursor.execute(
-                        """
-                        SELECT TO_CHAR(CAST(expense_date AS TIMESTAMP), 'YYYY-MM') AS period, COALESCE(SUM(amount), 0)
-                        FROM Expenses
-                        WHERE CAST(expense_date AS TIMESTAMP) BETWEEN CAST(%s AS TIMESTAMP) AND CAST(%s AS TIMESTAMP)
-                        GROUP BY period
-                        """,
-                        (from_date, to_date_full),
-                    )
-                    exp_by_month = {period: float(amount or 0) for period, amount in cursor.fetchall()}
-
-                    cursor.execute(
-                        """
-                        SELECT TO_CHAR(CAST(transaction_date AS TIMESTAMP), 'YYYY-MM') AS period, COALESCE(SUM(amount_paid), 0)
-                        FROM Payments
-                        WHERE CAST(transaction_date AS TIMESTAMP) BETWEEN CAST(%s AS TIMESTAMP) AND CAST(%s AS TIMESTAMP)
-                        GROUP BY period
-                        """,
-                        (from_date, to_date_full),
-                    )
-                    inc_by_month = {period: float(amount or 0) for period, amount in cursor.fetchall()}
+                    exp_by_month = {period: float(amount or 0) for period, amount in repo.get_cashflow_expenses_by_month(from_date, to_date_full)}
+                    inc_by_month = {period: float(amount or 0) for period, amount in repo.get_cashflow_revenues_by_month(from_date, to_date_full)}
 
                     periods = sorted(set(exp_by_month.keys()) | set(inc_by_month.keys()))
                     total_expenses = 0.0
@@ -583,21 +554,10 @@ class ExpensesWindow(QMainWindow):
                 else:
                     title = "Détail des Dépenses"
                     headers = ["Date", "Catégorie", "Description", "Bénéficiaire", "Montant"]
-                    cursor.execute(
-                        """
-                        SELECT expense_date, category, description, paid_to, amount
-                        FROM Expenses
-                        WHERE CAST(expense_date AS TIMESTAMP) BETWEEN CAST(%s AS TIMESTAMP) AND CAST(%s AS TIMESTAMP)
-                        ORDER BY expense_date DESC, id DESC
-                        LIMIT 500
-                        """,
-                        (from_date, to_date_full),
-                    )
                     total_expenses = 0.0
-                    for expense_date, category, description, paid_to, amount in cursor.fetchall():
+                    for expense_date, category, description, paid_to, amount in repo.get_expense_detail_list(from_date, to_date_full):
                         amount_value = float(amount or 0)
                         total_expenses += amount_value
-                        # تحويل نوع البيانات إلى String قبل تطبيق Split
                         display_date = str(expense_date).split(" ")[0] if expense_date else ""
                         rows.append([
                             display_date,
@@ -746,11 +706,9 @@ class ExpensesWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("INSERT INTO Expenses (category, description, amount, expense_date, paid_to) VALUES (%s,%s,%s,%s,%s)",
-                            (cat, desc, amt, date_v, ben))
+                FinanceRepository(conn).insert_expense(cat, desc, amt, date_v, ben)
                 conn.commit()
-                
+
             self.txt_desc.clear()
             self.txt_amount.clear()
             self.txt_beneficiary.clear()
@@ -765,20 +723,19 @@ class ExpensesWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cur = conn.cursor()
-                cur.execute("SELECT id, category, description, paid_to, amount, expense_date FROM Expenses ORDER BY expense_date DESC LIMIT 50")
-                for r in cur.fetchall():
-                    idx = self.table_expenses.rowCount()
-                    self.table_expenses.insertRow(idx)
-                    for i, val in enumerate(r):
-                        if i == 4: # Amount column
-                            item = QTableWidgetItem(f"{float(val or 0):,.0f} FCFA")
-                            if THEME_AVAILABLE:
-                                item.setForeground(QColor(ThemeManager.get_colors().DANGER))
-                            item.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
-                        else:
-                            item = QTableWidgetItem(str(val if val is not None else ""))
-                        self.table_expenses.setItem(idx, i, item)
+                rows = FinanceRepository(conn).list_recent_expenses(limit=50)
+            for r in rows:
+                idx = self.table_expenses.rowCount()
+                self.table_expenses.insertRow(idx)
+                for i, val in enumerate(r):
+                    if i == 4: # Amount column
+                        item = QTableWidgetItem(f"{float(val or 0):,.0f} FCFA")
+                        if THEME_AVAILABLE:
+                            item.setForeground(QColor(ThemeManager.get_colors().DANGER))
+                        item.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
+                    else:
+                        item = QTableWidgetItem(str(val if val is not None else ""))
+                    self.table_expenses.setItem(idx, i, item)
         except Exception as e:
             AppLogger.error("FinanceExpenses", f"Error loading expenses history: {e}")
 
@@ -804,41 +761,25 @@ class ExpensesWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cur = conn.cursor()
-                
-                cur.execute("""
-                    SELECT id,
-                           TRIM(COALESCE(first_name, '') || ' ' || COALESCE(last_name, '')),
-                           role,
-                           contract_type,
-                           salary_base,
-                           hourly_rate
-                    FROM Staff
-                    WHERE status='Actif'
-                """)
-                staff_list = cur.fetchall()
-                
+                repo = FinanceRepository(conn)
+
+                staff_list = repo.list_active_staff_with_salary()
+
                 for staff in staff_list:
                     sid, name, role, ctype, base, rate = staff
-                    
-                    cur.execute("SELECT id FROM SalarySlips WHERE staff_id=%s AND month_str=%s", (sid, target_month_str))
-                    is_paid = cur.fetchone() is not None
-                    
+
+                    is_paid = repo.get_salary_slip_exists(sid, target_month_str)
+
                     calc_desc = ""
                     calc_amount = 0.0
                     hours_worked = 0.0
-                    
+
                     if ctype == 'Monthly':
                         calc_desc = "Salaire Fixe"
                         calc_amount = float(base or 0)
                     else:
                         # Account for varying time formats safely
-                        cur.execute("""
-                            SELECT check_in_time, check_out_time 
-                            FROM StaffAttendance 
-                            WHERE staff_id=%s AND attendance_date >= %s AND attendance_date < %s
-                        """, (sid, start_date, end_date))
-                        attendances = cur.fetchall()
+                        attendances = repo.get_staff_attendance_times(sid, start_date, end_date)
                         
                         total_hours = 0
                         for cin, cout in attendances:
@@ -913,20 +854,15 @@ class ExpensesWindow(QMainWindow):
             today = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             
             with db.get_connection() as conn:
-                cursor = conn.cursor()
+                repo = FinanceRepository(conn)
                 # 1. Archive Slip
-                cursor.execute("""
-                    INSERT INTO SalarySlips (staff_id, month_str, basic_amount, hours_worked, bonuses, deductions, net_amount, payment_date)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                """, (staff_id, month_str, p_data['base'], p_data['hours'], p_data['bonus'], p_data['deduction'], p_data['net'], today))
-                
+                repo.insert_salary_slip(
+                    staff_id, month_str, p_data['base'], p_data['hours'],
+                    p_data['bonus'], p_data['deduction'], p_data['net'], today
+                )
                 # 2. Record Expense
                 desc = f"Salaire {month_str} - Staff ID {staff_id}"
-                cursor.execute("""
-                    INSERT INTO Expenses (category, description, amount, expense_date, paid_to)
-                    VALUES ('Salaire', %s, %s, %s, 'Personnel')
-                """, (desc, p_data['net'], today))
-                
+                repo.insert_expense('Salaire', desc, p_data['net'], today, 'Personnel')
                 conn.commit()
             
             # 3. Print PDF
@@ -943,11 +879,9 @@ class ExpensesWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cur = conn.cursor()
-                cur.execute("SELECT first_name || ' ' || last_name, role FROM Staff WHERE id=%s", (staff_id,))
-                staff = cur.fetchone()
-                cur.execute("SELECT * FROM SchoolInfo LIMIT 1")
-                school = cur.fetchone()
+                repo = FinanceRepository(conn)
+                staff = repo.get_staff_name_role(staff_id)
+                school = repo.get_school_info()
             
             pdf = FPDF()
             pdf.add_page()

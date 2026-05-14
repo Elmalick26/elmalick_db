@@ -16,6 +16,7 @@ from fpdf import FPDF
 
 from ui_styles import ThemeManager, Colors, get_card_style, apply_shadow_to_widget, get_table_style, get_tabs_style
 from print_export_service import output_pdf, get_report_output_mode
+from repositories.discipline_repo import DisciplineRepository
 
 THEME_AVAILABLE = True
 DISCIPLINE_OUTPUT_MODE = get_report_output_mode("student_discipline_mode", "print")
@@ -226,13 +227,7 @@ class DisciplineWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT id FROM AcademicYears WHERE is_active=1 LIMIT 1")
-                row = cursor.fetchone()
-                if not row:
-                    cursor.execute("SELECT id FROM AcademicYears ORDER BY id DESC LIMIT 1")
-                    row = cursor.fetchone()
-                return row[0] if row else -1
+                return DisciplineRepository(conn).get_active_year_id()
         except Exception:
             return -1
 
@@ -242,21 +237,7 @@ class DisciplineWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT cycle_id FROM Classes WHERE id=%s", (class_id,))
-                cycle_row = cursor.fetchone()
-                if not cycle_row:
-                    return []
-                cursor.execute(
-                    """
-                    SELECT id, period_name_fr
-                    FROM AcademicPeriods
-                    WHERE year_id=%s AND cycle_id=%s
-                    ORDER BY sort_order, id
-                    """,
-                    (year_id, cycle_row[0])
-                )
-                return cursor.fetchall()
+                return DisciplineRepository(conn).list_periods_for_class(class_id, year_id)
         except Exception:
             return []
 
@@ -266,24 +247,9 @@ class DisciplineWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT cycle_id FROM Classes WHERE id=%s", (class_id,))
-                cycle_row = cursor.fetchone()
-                if not cycle_row:
-                    return None
-                cursor.execute(
-                    """
-                    SELECT id
-                    FROM AcademicPeriods
-                    WHERE year_id=%s AND cycle_id=%s
-                      AND CAST(%s AS DATE) BETWEEN CAST(start_date AS DATE) AND CAST(end_date AS DATE)
-                    ORDER BY sort_order, id
-                    LIMIT 1
-                    """,
-                    (year_id, cycle_row[0], date_str)
+                return DisciplineRepository(conn).resolve_period_id_for_class_date(
+                    class_id, date_str, year_id
                 )
-                row = cursor.fetchone()
-                return row[0] if row else None
         except Exception:
             return None
 
@@ -581,9 +547,7 @@ class DisciplineWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT id, class_name_fr FROM Classes")
-                classes = cursor.fetchall()
+                classes = DisciplineRepository(conn).list_classes()
             
             self.combo_class_entry.clear()
             self.combo_class_hist.clear()
@@ -613,19 +577,11 @@ class DisciplineWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                
-                cursor.execute("""
-                    SELECT CY.name_fr 
-                    FROM Classes CL 
-                    JOIN Cycles CY ON CL.cycle_id = CY.id 
-                    WHERE CL.id = %s
-                """, (cid,))
-                res = cursor.fetchone()
+                repo = DisciplineRepository(conn)
+                cycle_name = repo.get_cycle_name_for_class(cid)
                 
                 is_primary = False
-                if res:
-                    cycle_name = res[0].lower()
+                if cycle_name:
                     if "elem" in cycle_name or "prim" in cycle_name or "ibtida" in cycle_name:
                         is_primary = True
                 
@@ -636,14 +592,8 @@ class DisciplineWindow(QMainWindow):
                     self.spin_points.setRange(0, 20)
                     self.lbl_points_title.setText("Points à déduire (Note Conduite / 20):")
                 
-                cursor.execute("""
-                    SELECT S.id, S.first_name_fr || ' ' || S.last_name_fr 
-                    FROM Students S 
-                    JOIN StudentClassNumbers SCN ON S.id = SCN.student_id
-                    WHERE SCN.class_id=%s AND SCN.year_id=%s AND S.status='Active'
-                """, (cid, active_year))
-                
-                for s in cursor.fetchall():
+                students = repo.list_active_students_fullname(cid, active_year)
+                for s in students:
                     self.combo_student_entry.addItem(s[1], s[0])
         except Exception as e:
             AppLogger.error("StudentDiscipline", f"Error loading students: {e}")
@@ -668,12 +618,15 @@ class DisciplineWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                resolved_period_id = period_id or self.resolve_period_id_for_class_date(cid, date_inc, active_year)
-                cursor.execute("""
-                    INSERT INTO StudentDiscipline (student_id, incident_date, incident_type, sanction, points_deducted, observation, year_id, period_id)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                """, (sid, date_inc, inc_type, sanction, pts, obs, active_year, resolved_period_id))
+                repo = DisciplineRepository(conn)
+                resolved_period_id = (
+                    period_id
+                    or repo.resolve_period_id_for_class_date(cid, date_inc, active_year)
+                )
+                repo.insert_incident(
+                    sid, date_inc, inc_type, sanction, pts, obs,
+                    active_year, resolved_period_id
+                )
                 conn.commit()
             
             self.load_recent()
@@ -691,19 +644,8 @@ class DisciplineWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                query = """
-                    SELECT S.first_name_fr, D.incident_date, D.incident_type, D.points_deducted
-                    FROM StudentDiscipline D 
-                    JOIN Students S ON D.student_id = S.id
-                """
-                params = []
-                if active_year != -1:
-                    query += " WHERE D.year_id = %s"
-                    params.append(active_year)
-                query += " ORDER BY D.id DESC LIMIT 10"
-                cursor.execute(query, params)
-                for r in cursor.fetchall():
+                rows = DisciplineRepository(conn).get_recent_incidents(active_year)
+            for r in rows:
                     idx = self.table_recent.rowCount()
                     self.table_recent.insertRow(idx)
                     self.table_recent.setItem(idx, 0, QTableWidgetItem(str(r[0]) if r[0] else "-"))
@@ -722,42 +664,23 @@ class DisciplineWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT D.id, S.first_name_fr || ' ' || S.last_name_fr, C.class_name_fr, 
-                        SCN.class_id, D.incident_date, D.incident_type, D.sanction, D.points_deducted, D.observation
-                    FROM StudentDiscipline D 
-                    JOIN Students S ON D.student_id = S.id
-                    LEFT JOIN StudentClassNumbers SCN ON S.id = SCN.student_id AND SCN.year_id = D.year_id
-                    LEFT JOIN Classes C ON SCN.class_id = C.id
-                    WHERE D.id = %s
-                """, (incident_id,))
-                row = cursor.fetchone()
-            
-            if not row:
+                result = DisciplineRepository(conn).get_incident_details(incident_id)
+            if not result:
                 return None
-            return {
-                'id': row[0], 'student_name': row[1], 'class_name': row[2] if row[2] else "-", 'class_id': row[3],
-                'date': row[4], 'incident': row[5], 'sanction': row[6], 'points': row[7], 'observation': row[8]
-            }
+            return result
         except Exception as e:
             AppLogger.error("StudentDiscipline", f"Error fetching incident details: {e}")
             return None
 
     def is_primary_class(self, class_id):
-        if not class_id: return False
+        if not class_id:
+            return False
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT CY.name_fr FROM Classes CL 
-                    JOIN Cycles CY ON CL.cycle_id = CY.id WHERE CL.id = %s
-                """, (class_id,))
-                res = cursor.fetchone()
-            
-            if not res: return False
-            cycle_name = res[0].lower()
+                cycle_name = DisciplineRepository(conn).get_cycle_name_for_class(class_id)
+            if not cycle_name:
+                return False
             return "elem" in cycle_name or "prim" in cycle_name or "ibtida" in cycle_name
         except Exception:
             return False
@@ -772,47 +695,9 @@ class DisciplineWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                
-                query = """
-                    SELECT D.id, S.first_name_fr || ' ' || S.last_name_fr, C.class_name_fr, 
-                        D.incident_date, D.incident_type, D.sanction, D.points_deducted, D.observation
-                    FROM StudentDiscipline D 
-                    JOIN Students S ON D.student_id = S.id
-                    LEFT JOIN StudentClassNumbers SCN ON S.id = SCN.student_id AND SCN.year_id = D.year_id
-                    LEFT JOIN Classes C ON SCN.class_id = C.id
-                    WHERE 1=1
-                """
-                params = []
-                if active_year != -1:
-                    query += " AND D.year_id = %s"
-                    params.append(active_year)
-                if pid:
-                    # Keep records visible even if old rows were stored without period_id.
-                    query += """
-                        AND (
-                            D.period_id = %s
-                            OR (
-                                D.period_id IS NULL
-                                AND CAST(D.incident_date AS DATE) BETWEEN
-                                    (SELECT CAST(start_date AS DATE) FROM AcademicPeriods WHERE id = %s)
-                                    AND
-                                    (SELECT CAST(end_date AS DATE) FROM AcademicPeriods WHERE id = %s)
-                            )
-                        )
-                    """
-                    params.extend([pid, pid, pid])
-                if cid:
-                    query += " AND SCN.class_id = %s"
-                    params.append(cid)
-                if search:
-                    query += " AND (S.first_name_fr ILIKE %s OR S.last_name_fr ILIKE %s)"
-                    params.extend([f"%{search}%", f"%{search}%"])
-                    
-                query += " ORDER BY D.incident_date DESC"
-                
-                cursor.execute(query, params)
-                rows = cursor.fetchall()
+                rows = DisciplineRepository(conn).get_history(
+                    active_year, class_id=cid, period_id=pid, search=search
+                )
             
             for r in rows:
                 idx = self.table_history.rowCount()
@@ -962,11 +847,15 @@ class DisciplineWindow(QMainWindow):
             try:
                 db = DatabaseManager()
                 with db.get_connection() as conn:
-                    cursor = conn.cursor()
-                    cursor.execute("""
-                        UPDATE StudentDiscipline SET incident_date=%s, incident_type=%s, sanction=%s, points_deducted=%s, observation=%s
-                        WHERE id=%s
-                    """, (date_edit.date().toString("yyyy-MM-dd"), type_combo.currentText(), sanction_input.text(), points_spin.value(), obs_input.toPlainText(), details['id']))
+                    repo = DisciplineRepository(conn)
+                    repo.update_incident(
+                        details['id'],
+                        date_edit.date().toString("yyyy-MM-dd"),
+                        type_combo.currentText(),
+                        sanction_input.text(),
+                        points_spin.value(),
+                        obs_input.toPlainText(),
+                    )
                     conn.commit()
                 
                 self.load_history()
@@ -984,8 +873,7 @@ class DisciplineWindow(QMainWindow):
             try:
                 db = DatabaseManager()
                 with db.get_connection() as conn:
-                    cursor = conn.cursor()
-                    cursor.execute("DELETE FROM StudentDiscipline WHERE id=%s", (incident_id,))
+                    DisciplineRepository(conn).delete_incident(incident_id)
                     conn.commit()
                 self.load_history()
                 self.load_recent()
@@ -1008,9 +896,7 @@ class DisciplineWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT * FROM SchoolInfo LIMIT 1")
-                school_info = cursor.fetchone()
+                school_info = DisciplineRepository(conn).get_school_info()
         except Exception: pass
         pdf = DisciplinePDF(school_info)
 

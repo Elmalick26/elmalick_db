@@ -16,6 +16,7 @@ from fpdf import FPDF
 
 from ui_styles import ThemeManager, Colors, get_card_style, apply_shadow_to_widget, get_table_style, get_tabs_style
 from print_export_service import output_pdf, get_report_output_mode
+from repositories.staff_repo import StaffRepository
 from pdf_report_style import apply_table_header_style, apply_table_body_style, set_zebra_row_fill
 
 THEME_AVAILABLE = True
@@ -413,14 +414,7 @@ class StaffAttendanceWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT id,
-                           TRIM(COALESCE(first_name, '') || ' ' || COALESCE(last_name, ''))
-                    FROM Staff
-                    WHERE status='Actif'
-                """)
-                rows = cursor.fetchall()
+                rows = StaffRepository(conn).list_active_staff_fullname()
 
             self.combo_staff_report.clear()
             self.combo_staff_report.addItem("Tous / الكل", None)
@@ -437,73 +431,55 @@ class StaffAttendanceWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                
-                query = """
-                    SELECT id,
-                           TRIM(COALESCE(last_name, '') || ' ' || COALESCE(first_name, '')),
-                           COALESCE(role, '')
-                    FROM Staff
-                    WHERE status = 'Actif'
-                """
-                params = []
-                if "Tous" not in role_filter:
-                    query += " AND role = %s"
-                    params.append(role_filter)
-                    
-                cursor.execute(query, params)
-                staff_members = cursor.fetchall()
-                
+                repo = StaffRepository(conn)
+                role_arg = None if "Tous" in role_filter else role_filter
+                staff_members = repo.list_active_staff_by_role(role_arg)
+
                 for staff in staff_members:
                     row_idx = self.table_attendance.rowCount()
                     self.table_attendance.insertRow(row_idx)
-                    
+
                     id_item = QTableWidgetItem(str(staff[0]))
                     id_item.setFlags(Qt.ItemFlag.ItemIsEnabled)
                     self.table_attendance.setItem(row_idx, 0, id_item)
-                    
+
                     name_item = QTableWidgetItem(staff[1] or "-")
                     name_item.setFlags(Qt.ItemFlag.ItemIsEnabled)
                     self.table_attendance.setItem(row_idx, 1, name_item)
-                    
+
                     role_item = QTableWidgetItem(staff[2] or "-")
                     role_item.setFlags(Qt.ItemFlag.ItemIsEnabled)
                     self.table_attendance.setItem(row_idx, 2, role_item)
-                    
+
                     status_combo = QComboBox()
                     status_combo.addItems(["Présent", "Absent", "Retard", "Congé", "Mission"])
                     status_combo.setStyleSheet("QComboBox { border: none; background: transparent; }")
                     self.table_attendance.setCellWidget(row_idx, 3, status_combo)
-                    
+
                     time_in = QTimeEdit()
                     time_in.setDisplayFormat("HH:mm")
                     time_in.setTime(QTime(8, 0)) 
                     time_in.setStyleSheet("QTimeEdit { border: none; background: transparent; }")
                     self.table_attendance.setCellWidget(row_idx, 4, time_in)
-                    
+
                     time_out = QTimeEdit()
                     time_out.setDisplayFormat("HH:mm")
                     time_out.setTime(QTime(16, 0))
                     time_out.setStyleSheet("QTimeEdit { border: none; background: transparent; }")
                     self.table_attendance.setCellWidget(row_idx, 5, time_out)
-                    
+
                     note_item = QLineEdit()
                     note_item.setStyleSheet("QLineEdit { border: none; background: transparent; }")
                     self.table_attendance.setCellWidget(row_idx, 6, note_item)
 
-                    cursor.execute("""
-                        SELECT status, check_in_time, check_out_time, note 
-                        FROM StaffAttendance 
-                        WHERE staff_id = %s AND attendance_date = %s
-                    """, (staff[0], selected_date))
-                    existing = cursor.fetchone()
-                    
+                    existing = repo.get_staff_attendance_for_date(staff[0], selected_date)
+
                     if existing:
                         status_combo.setCurrentText(existing[0])
                         if existing[1]: time_in.setTime(QTime.fromString(existing[1], "HH:mm"))
                         if existing[2]: time_out.setTime(QTime.fromString(existing[2], "HH:mm"))
                         if existing[3]: note_item.setText(existing[3])
-                        
+
                         if existing[0] == "Absent":
                             colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
                             status_combo.setStyleSheet(f"QComboBox {{ color: {colors.DANGER}; font-weight: bold; }}")
@@ -524,24 +500,9 @@ class StaffAttendanceWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-
-                query = """
-                    SELECT S.first_name || ' ' || S.last_name AS staff_name,
-                           A.attendance_date, A.status, A.check_in_time, A.check_out_time, A.note
-                    FROM StaffAttendance A
-                    JOIN Staff S ON A.staff_id = S.id
-                    WHERE A.attendance_date >= %s AND A.attendance_date < %s
-                """
-                params = [start_date, end_date]
-                if staff_id:
-                    query += " AND A.staff_id = %s"
-                    params.append(staff_id)
-
-                query += " ORDER BY A.attendance_date DESC, S.last_name"
-
-                cursor.execute(query, params)
-                rows = cursor.fetchall()
+                rows = StaffRepository(conn).get_attendance_report_for_display(
+                    start_date, end_date, staff_id
+                )
 
             for row in rows:
                 idx = self.table_report.rowCount()
@@ -569,21 +530,16 @@ class StaffAttendanceWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
+                repo = StaffRepository(conn)
                 for row in range(self.table_attendance.rowCount()):
                     staff_id = int(self.table_attendance.item(row, 0).text())
                     status = self.table_attendance.cellWidget(row, 3).currentText()
                     check_in = self.table_attendance.cellWidget(row, 4).time().toString("HH:mm")
                     check_out = self.table_attendance.cellWidget(row, 5).time().toString("HH:mm")
                     note = self.table_attendance.cellWidget(row, 6).text()
-                    
-                    cursor.execute("DELETE FROM StaffAttendance WHERE staff_id = %s AND attendance_date = %s", (staff_id, selected_date))
-                    
-                    cursor.execute("""
-                        INSERT INTO StaffAttendance (staff_id, attendance_date, check_in_time, check_out_time, status, note)
-                        VALUES (%s, %s, %s, %s, %s, %s)
-                    """, (staff_id, selected_date, check_in, check_out, status, note))
-                
+                    repo.upsert_staff_attendance(
+                        staff_id, selected_date, check_in, check_out, status, note
+                    )
                 conn.commit()
             QMessageBox.information(self, "Succès", "Pointage enregistré avec succès.")
         except Exception as e:
@@ -607,30 +563,12 @@ class StaffAttendanceWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                
-                cursor.execute("SELECT * FROM SchoolInfo LIMIT 1")
-                school_info = cursor.fetchone()
-
-                if staff_id:
-                    cursor.execute("""
-                        SELECT attendance_date, status, check_in_time, check_out_time, note
-                        FROM StaffAttendance 
-                        WHERE staff_id = %s AND attendance_date >= %s AND attendance_date < %s
-                        ORDER BY attendance_date
-                    """, (staff_id, start_date, end_date))
-                    records = cursor.fetchall()
-                    is_all = False
-                else:
-                    cursor.execute("""
-                        SELECT S.first_name || ' ' || S.last_name, A.attendance_date, A.status, A.check_in_time, A.check_out_time, A.note
-                        FROM StaffAttendance A
-                        JOIN Staff S ON A.staff_id = S.id
-                        WHERE A.attendance_date >= %s AND A.attendance_date < %s
-                        ORDER BY A.attendance_date DESC, S.last_name
-                    """, (start_date, end_date))
-                    records = cursor.fetchall()
-                    is_all = True
+                repo = StaffRepository(conn)
+                school_info = repo.get_school_info()
+                records = repo.get_attendance_report(
+                    start_date, end_date, staff_id if staff_id else None
+                )
+                is_all = staff_id is None
 
             pdf = StaffAttendancePDF(school_info)
             pdf.add_page()
