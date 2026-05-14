@@ -179,6 +179,103 @@ class LoginWindow(QDialog):
             }}
         """)
 
+    def _force_change_default_password(self, conn, user_id: int) -> bool:
+        """
+        فرض تغيير كلمة المرور الافتراضية admin/admin.
+        العائد: True إذا نجح التغيير، False إذا ألغى المستخدم أو فشل.
+        """
+        from PyQt6.QtWidgets import QInputDialog
+        
+        dlg = QMessageBox(self)
+        dlg.setWindowTitle("🔐 تغيير كلمة المرور الإجبارية / Changement de mot de passe obligatoire")
+        dlg.setText(
+            "أنت تستخدم كلمة المرور الافتراضية (admin/admin).\n"
+            "يجب تغييرها الآن لحماية النظام.\n\n"
+            "Vous utilisez le mot de passe par défaut (admin/admin).\n"
+            "Il doit être changé maintenant pour sécuriser le système."
+        )
+        dlg.setIcon(QMessageBox.Icon.Information)
+        dlg.setStandardButtons(QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel)
+        colors = Colors()
+        dlg.setStyleSheet(f"background-color: {colors.BG_CARD}; color: {colors.TEXT_PRIMARY};")
+        
+        if dlg.exec() != QMessageBox.StandardButton.Ok:
+            AppLogger.warning("LoginWindow", "المستخدم ألغى تغيير كلمة المرور الافتراضية")
+            return False
+        
+        # حوار إدخال كلمة المرور الجديدة
+        while True:
+            new_pass, ok = QInputDialog.getText(
+                self,
+                "كلمة المرور الجديدة / Nouveau mot de passe",
+                "أدخل كلمة مرور قوية (8+ أحرف، أرقام، حروف):\nEntrez un mot de passe fort (8+ caractères, chiffres, lettres):",
+                QInputDialog.InputMode.PasswordInput
+            )
+            
+            if not ok:
+                AppLogger.warning("LoginWindow", "المستخدم ألغى دخول كلمة المرور الجديدة")
+                return False
+            
+            # التحقق من قوة كلمة المرور
+            from validators import validate_password_strength, format_errors
+            errors = validate_password_strength(new_pass)
+            if errors:
+                QMessageBox.warning(
+                    self,
+                    "كلمة مرور ضعيفة / Mot de passe faible",
+                    format_errors(errors)
+                )
+                continue
+            
+            # تأكيد كلمة المرور
+            confirm_pass, ok = QInputDialog.getText(
+                self,
+                "تأكيد كلمة المرور / Confirmer le mot de passe",
+                "أعد إدخال كلمة المرور:\nVérifiez le mot de passe:",
+                QInputDialog.InputMode.PasswordInput
+            )
+            
+            if not ok:
+                AppLogger.warning("LoginWindow", "المستخدم ألغى تأكيد كلمة المرور")
+                return False
+            
+            if new_pass != confirm_pass:
+                QMessageBox.warning(
+                    self,
+                    "عدم التطابق / Non-correspondance",
+                    "كلمتا المرور غير متطابقتين.\nLes mots de passe ne correspondent pas."
+                )
+                continue
+            
+            # حفظ كلمة المرور الجديدة
+            try:
+                new_hash = security_utils.hash_password(new_pass)
+                cursor = conn.cursor()
+                cursor.execute(
+                    "UPDATE Users SET password_hash=%s WHERE id=%s",
+                    (new_hash, user_id)
+                )
+                conn.commit()
+                
+                from database_setup import log_audit
+                log_audit(conn, "admin", "FORCE_PASSWORD_CHANGE", "admin")
+                
+                AppLogger.info("LoginWindow", "تم تغيير كلمة مرور المسؤول الافتراضية بنجاح")
+                QMessageBox.information(
+                    self,
+                    "تم / Succès",
+                    "تم تغيير كلمة المرور بنجاح!\nMot de passe changé avec succès!"
+                )
+                return True
+            except Exception as e:
+                AppLogger.error("LoginWindow", f"فشل تحديث كلمة مرور المسؤول: {e}")
+                QMessageBox.critical(
+                    self,
+                    "خطأ / Erreur",
+                    f"فشل حفظ كلمة المرور: {e}\nÉchec de l'enregistrement: {e}"
+                )
+                return False
+
     def check_login(self):
         user = self.txt_user.text().strip()
         pwd = self.txt_pass.text()
@@ -223,13 +320,11 @@ class LoginWindow(QDialog):
                         from database_setup import log_audit
                         log_audit(conn, user, "LOGIN", user)
 
-                        # تحذير أمني إذا كان الحساب الافتراضي لا يزال مستخدماً
+                        # فرض تغيير كلمة المرور الافتراضية — الحساب الافتراضي admin/admin
                         if user == "admin" and pwd == "admin":
-                            QMessageBox.warning(
-                                self,
-                                "Avertissement de sécurité",
-                                "Le mot de passe par défaut est encore utilisé. Il est fortement recommandé de le modifier.\nيُنصح بتغيير كلمة المرور الافتراضية لحماية النظام."
-                            )
+                            if not self._force_change_default_password(conn, user_id):
+                                # المستخدم ألغى أو فشل — لا يسمح بالدخول
+                                return
 
                         # تحديث التجزئة إذا كانت ضعيفة (Auto-upgrade legacy hashes)
                         if security_utils.needs_rehash(stored_hash):

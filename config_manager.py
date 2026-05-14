@@ -40,6 +40,12 @@ class ConfigManager:
                 self._create_default_config()
         else:
             self._create_default_config()
+        
+        # محاولة الترحيل التلقائي من config.ini إلى keyring (بدون إزعاج المستخدم)
+        try:
+            self.migrate_password_to_keyring()
+        except Exception as e:
+            pass  # صامت — الترحيل اختياري ولا يعيق التطبيق
     
     def _create_default_config(self):
         """إنشاء ملف إعدادات افتراضي"""

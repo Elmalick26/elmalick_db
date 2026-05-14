@@ -515,6 +515,9 @@ class FirstRunWizard(QDialog):
             config.set("DATABASE", "user", self.txt_db_user.text().strip())
             # تخزين كلمة المرور بأمان في keyring
             config.set_db_password(self.txt_db_pass.text())
+            
+            # 2b. الترحيل الآمن من config.ini إلى keyring (إذا كانت موجودة)
+            config.migrate_password_to_keyring()
 
             # 3. تحديث كلمة مرور المسؤول في قاعدة البيانات
             self._update_admin_password()
