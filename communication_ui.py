@@ -21,6 +21,7 @@ from pdf_report_style import apply_grades_sheet_header, apply_table_header_style
 
 from ui_styles import ThemeManager, get_card_style, apply_shadow_to_widget, Colors, get_table_style, get_tabs_style
 from app_logger import AppLogger
+from repositories.communication_repo import CommunicationRepository
 
 THEME_AVAILABLE = True
 COMMUNICATION_REPORT_OUTPUT_MODE = get_report_output_mode("communication_report_mode", "save")
@@ -111,13 +112,7 @@ class CommunicationWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT id FROM AcademicYears WHERE is_active=1 LIMIT 1")
-                row = cursor.fetchone()
-                if not row:
-                    cursor.execute("SELECT id FROM AcademicYears ORDER BY id DESC LIMIT 1")
-                    row = cursor.fetchone()
-                return row[0] if row else -1
+                return CommunicationRepository(conn).get_active_year_id()
         except Exception:
             return -1
 
@@ -435,22 +430,12 @@ class CommunicationWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
+                repo = CommunicationRepository(conn)
 
                 if report_kind == "summary":
                     title = "Rapport Synthèse Livraison Emails"
                     headers = ["Statut", "Nombre", "Taux %"]
-                    cursor.execute(
-                        """
-                        SELECT status, COUNT(*)
-                        FROM NotificationLogs
-                        WHERE sent_at BETWEEN %s AND %s
-                        GROUP BY status
-                        ORDER BY COUNT(*) DESC
-                        """,
-                        (date_from, date_to_full),
-                    )
-                    summary = cursor.fetchall()
+                    summary = repo.get_notification_log_summary(date_from, date_to_full)
                     total = sum(int(count or 0) for _, count in summary)
                     for status, count in summary:
                         count_int = int(count or 0)
@@ -459,16 +444,7 @@ class CommunicationWindow(QMainWindow):
                 else:
                     title = "Rapport Détail des Envois Emails"
                     headers = ["Date", "Destinataire", "Sujet", "Statut", "Erreur"]
-                    cursor.execute(
-                        """
-                        SELECT sent_at, recipient_contact, subject, status, error_msg
-                        FROM NotificationLogs
-                        WHERE sent_at BETWEEN %s AND %s
-                        ORDER BY id DESC
-                        """,
-                        (date_from, date_to_full),
-                    )
-                    for sent_at, recipient, subject, status, error_msg in cursor.fetchall():
+                    for sent_at, recipient, subject, status, error_msg in repo.get_notification_log_detail(date_from, date_to_full):
                         rows.append([
                             sent_at or "-",
                             recipient or "-",
@@ -547,9 +523,7 @@ class CommunicationWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT id, COALESCE(class_name_fr, '-') FROM Classes ORDER BY class_name_fr")
-                rows = cursor.fetchall()
+                rows = CommunicationRepository(conn).list_classes()
             self.combo_class.clear()
             for c in rows:
                 self.combo_class.addItem(str(c[1] or "-"), c[0])
@@ -573,10 +547,10 @@ class CommunicationWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("DELETE FROM EmailSettings")
-                cursor.execute("INSERT INTO EmailSettings (smtp_server, smtp_port, email_address, email_password) VALUES (%s,%s,%s,%s)",
-                            (self.txt_smtp_host.text(), self.txt_smtp_port.text(), self.txt_email.text(), password_value))
+                CommunicationRepository(conn).upsert_email_settings(
+                    self.txt_smtp_host.text(), self.txt_smtp_port.text(),
+                    self.txt_email.text(), password_value
+                )
                 conn.commit()
             QMessageBox.information(self, "Succès", "Paramètres sauvegardés.")
         except Exception as e:
@@ -586,10 +560,8 @@ class CommunicationWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT * FROM EmailSettings LIMIT 1")
-                res = cursor.fetchone()
-            
+                res = CommunicationRepository(conn).get_email_settings()
+
             if res:
                 self.txt_smtp_host.setText(str(res[1] or ""))
                 self.txt_smtp_port.setText(str(res[2] or ""))
@@ -606,46 +578,24 @@ class CommunicationWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                
+                repo = CommunicationRepository(conn)
+
                 if target_idx == 0: # Parents of Class
                     cid = self.combo_class.currentData()
                     if not cid: return []
-                    
+
                     active_year = self.get_active_year_id()
-                    
-                    cursor.execute("""
-                        SELECT S.id,
-                               COALESCE(S.parent_name, '[Parent]') AS parent_name,
-                               COALESCE(S.parent_email, '') AS parent_email
-                        FROM Students S
-                        JOIN StudentClassNumbers SCN ON S.id = SCN.student_id
-                        WHERE SCN.class_id=%s AND SCN.year_id=%s AND S.status='Active'
-                    """, (cid, active_year))
-                    for r in cursor.fetchall():
+
+                    for r in repo.get_recipients_parents_of_class(cid, active_year):
                         recipients.append((r[0], str(r[1] or "[Parent]"), str(r[2] or "")))
-                        
+
                 elif target_idx == 1: # All Staff
-                    cursor.execute("""
-                        SELECT id,
-                               TRIM(COALESCE(first_name, '') || ' ' || COALESCE(last_name, '')) AS full_name,
-                               COALESCE(email, '') AS email
-                        FROM Staff
-                        WHERE COALESCE(status, '')='Actif'
-                    """)
-                    for r in cursor.fetchall():
+                    for r in repo.get_recipients_all_staff():
                         display_name = (str(r[1] or "").strip() or "[Staff]")
                         recipients.append((r[0], display_name, str(r[2] or "")))
-                        
+
                 elif target_idx == 2: # Teachers Only
-                    cursor.execute("""
-                        SELECT id,
-                               TRIM(COALESCE(first_name, '') || ' ' || COALESCE(last_name, '')) AS full_name,
-                               COALESCE(email, '') AS email
-                        FROM Staff
-                        WHERE COALESCE(status, '')='Actif' AND COALESCE(role, '') ILIKE '%Prof%'
-                    """)
-                    for r in cursor.fetchall():
+                    for r in repo.get_recipients_teachers():
                         display_name = (str(r[1] or "").strip() or "[Prof]")
                         recipients.append((r[0], display_name, str(r[2] or "")))
         except Exception as e:
@@ -693,9 +643,9 @@ class CommunicationWindow(QMainWindow):
             db = DatabaseManager()
             dt = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("INSERT INTO NotificationLogs (recipient_contact, subject, status, error_msg, sent_at) VALUES (%s,%s,%s,%s,%s)",
-                            (email, self.txt_subject.text(), status, error, dt))
+                CommunicationRepository(conn).insert_notification_log(
+                    email, self.txt_subject.text(), status, error, dt
+                )
                 conn.commit()
         except Exception as e:
             AppLogger.error("CommunicationUI", f"Error logging email: {e}")
@@ -710,10 +660,8 @@ class CommunicationWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT sent_at, recipient_contact, subject, status FROM NotificationLogs ORDER BY id DESC LIMIT 50")
-                rows = cursor.fetchall()
-                
+                rows = CommunicationRepository(conn).list_notification_logs(limit=50)
+
             for r in rows:
                 idx = self.table_logs.rowCount()
                 self.table_logs.insertRow(idx)

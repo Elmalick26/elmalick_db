@@ -23,6 +23,7 @@ from services.grade_service import GradeService
 from services.migration_service import MigrationService
 
 from ui_styles import ThemeManager, get_card_style, apply_shadow_to_widget, Colors, get_table_style, get_tabs_style
+from repositories.year_end_repo import YearEndRepository
 
 THEME_AVAILABLE = True
 
@@ -41,49 +42,34 @@ class MigrationCalculator(QThread):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
+                repo = YearEndRepository(conn)
 
                 class_map = {}
                 try:
-                    cursor.execute("SELECT id, class_name_fr, cycle_id, sort_order FROM Classes ORDER BY sort_order")
-                    for cid, name, cycle_id, order_val in cursor.fetchall():
+                    for cid, name, cycle_id, order_val in repo.list_classes_with_order():
                         class_map[cid] = {'name': name, 'cycle': cycle_id, 'order': order_val}
                 except Exception:
-                    cursor.execute("SELECT id, class_name_fr, cycle_id FROM Classes")
-                    for cid, name, cycle_id in cursor.fetchall():
+                    for cid, name, cycle_id in repo.list_classes_basic():
                         class_map[cid] = {'name': name, 'cycle': cycle_id, 'order': cid}
 
                 period_ids = []
                 try:
-                    cursor.execute("SELECT id FROM AcademicPeriods WHERE year_id=%s", (self.current_year_id,))
-                    period_ids = [row[0] for row in cursor.fetchall()]
+                    period_ids = repo.list_period_ids(self.current_year_id)
                 except Exception as e:
                     AppLogger.error("YearEndMigration", f"Error fetching periods: {e}")
                     period_ids = []
 
                 if self.filter_class_id:
-                    cursor.execute("""
-                        SELECT S.id, S.first_name_fr, S.last_name_fr, SCN.class_id 
-                        FROM Students S
-                        JOIN StudentClassNumbers SCN ON S.id = SCN.student_id
-                        WHERE S.status='Active' AND SCN.class_id=%s AND SCN.year_id=%s
-                    """, (self.filter_class_id, self.current_year_id))
+                    students = repo.list_active_students_in_class(self.current_year_id, self.filter_class_id)
                 else:
-                    cursor.execute("""
-                        SELECT S.id, S.first_name_fr, S.last_name_fr, SCN.class_id 
-                        FROM Students S
-                        JOIN StudentClassNumbers SCN ON S.id = SCN.student_id
-                        WHERE S.status='Active' AND SCN.year_id=%s
-                    """, (self.current_year_id,))
-                students = cursor.fetchall()
+                    students = repo.list_all_active_students(self.current_year_id)
 
                 total = max(len(students), 1)
                 for i, (std_id, fname, lname, class_id) in enumerate(students):
                     cycle_id = class_map.get(class_id, {}).get('cycle', 0)
                     subjects = []
                     try:
-                        cursor.execute("SELECT id, coefficient FROM Subjects WHERE cycle_id=%s", (cycle_id,))
-                        subjects = cursor.fetchall()
+                        subjects = repo.list_subjects_with_coefficient(cycle_id)
                     except Exception:
                         pass
 
@@ -92,28 +78,19 @@ class MigrationCalculator(QThread):
                         for pid in period_ids:
                             weighted_scores = []
                             for sub_id, coef in subjects:
-                                cursor.execute("""
-                                    SELECT AVG(G.score) FROM Grades G
-                                    JOIN AssessmentTypes A ON G.assessment_id = A.id
-                                    WHERE G.student_id=%s AND G.subject_id=%s AND A.period_id=%s AND G.year_id=%s
-                                """, (std_id, sub_id, pid, self.current_year_id))
-                                res = cursor.fetchone()
-                                if res and res[0] is not None:
-                                    weighted_scores.append((float(res[0]), float(coef)))
+                                avg_val = repo.get_grade_average(std_id, sub_id, pid, self.current_year_id)
+                                if avg_val is not None:
+                                    weighted_scores.append((avg_val, float(coef)))
                             period_avgs.append(self.grade_service.calculate_period_average(weighted_scores))
 
                     fallback_average = 0.0
                     if not period_avgs:
-                        cursor.execute("SELECT AVG(score) FROM Grades WHERE student_id=%s AND year_id=%s", (std_id, self.current_year_id))
-                        res = cursor.fetchone()
-                        fallback_average = float(res[0]) if res and res[0] is not None else 0.0
+                        fallback_average = repo.get_fallback_average(std_id, self.current_year_id)
 
                     avg_annual = self.grade_service.calculate_annual_average(period_avgs, fallback_average)
 
                     # --- Decision Logic ---
-                    cursor.execute("SELECT name_fr FROM Cycles WHERE id=%s", (cycle_id,))
-                    cname_res = cursor.fetchone()
-                    cycle_name = cname_res[0] if cname_res else ""
+                    cycle_name = repo.get_cycle_name(cycle_id)
                     decision = self.grade_service.get_promotion_decision(avg_annual, cycle_name)
 
                     # --- Next Class Logic ---
@@ -367,19 +344,18 @@ class MigrationWindow(QMainWindow):
     def load_initial_data(self):
         with DatabaseManager() as db:
             conn = db.get_connection()
-            cursor = conn.cursor()
-            
-            cursor.execute("SELECT id, year_label, is_active FROM AcademicYears ORDER BY id ASC")
-            years = cursor.fetchall()
-            
+            repo = YearEndRepository(conn)
+
+            years = repo.list_academic_years()
+
             self.combo_current_year.clear()
             self.combo_target_year.clear()
-            
+
             active_idx = -1
             for i, y in enumerate(years):
                 self.combo_current_year.addItem(y[1], y[0])
                 self.combo_target_year.addItem(y[1], y[0])
-                if y[2] == 1: 
+                if y[2] == 1:
                     active_idx = i
 
             if active_idx != -1:
@@ -390,8 +366,7 @@ class MigrationWindow(QMainWindow):
                 else:
                     self.combo_target_year.setCurrentIndex(active_idx)
 
-            cursor.execute("SELECT id, class_name_fr FROM Classes ORDER BY sort_order")
-            classes = cursor.fetchall()
+            classes = repo.list_classes_for_combo()
             self.combo_filter_class.clear()
             self.combo_filter_class.addItem("Toutes les Classes / كل الفصول", None)
             for c in classes:

@@ -17,6 +17,7 @@ from print_export_service import output_pdf, get_report_output_mode
 from pdf_report_style import apply_grades_sheet_header, apply_table_header_style, apply_table_body_style, set_zebra_row_fill, get_school_info_row
 
 from ui_styles import ThemeManager, get_card_style, apply_shadow_to_widget, get_table_style, get_tabs_style, Colors
+from repositories.inventory_repo import InventoryRepository
 
 THEME_AVAILABLE = True
 
@@ -459,44 +460,24 @@ class InventoryWindow(QMainWindow):
         try:
             with DatabaseManager() as db:
                 conn = db.get_connection()
-                cursor = conn.cursor()
+                repo = InventoryRepository(conn)
 
                 if report_type == "Valeur du stock par catégorie":
                     title = "Rapport de valeur du stock par catégorie"
                     headers = ["Catégorie", "Articles", "Quantité totale", "Valeur totale (FCFA)"]
-                    cursor.execute("""
-                        SELECT category, COUNT(*) AS items_count, SUM(quantity) AS total_qty, SUM(quantity * unit_price) AS total_value
-                        FROM InventoryItems GROUP BY category ORDER BY total_value DESC
-                    """)
-                    for category, items_count, total_qty, total_value in cursor.fetchall():
+                    for category, items_count, total_qty, total_value in repo.get_stock_value_by_category():
                         rows.append([category or "-", int(items_count or 0), int(total_qty or 0), f"{float(total_value or 0):,.2f}"])
 
                 elif report_type == "Articles en alerte de stock":
                     title = "Rapport des articles en alerte de stock"
                     headers = ["Article", "Catégorie", "Stock actuel", "Seuil min", "Emplacement"]
-                    cursor.execute("""
-                        SELECT name_fr, category, quantity, min_quantity, location
-                        FROM InventoryItems WHERE quantity <= min_quantity
-                        ORDER BY (min_quantity - quantity) DESC, name_fr
-                    """)
-                    for name_fr, category, quantity, min_quantity, location in cursor.fetchall():
+                    for name_fr, category, quantity, min_quantity, location in repo.get_low_stock_items():
                         rows.append([name_fr or "-", category or "-", int(quantity or 0), int(min_quantity or 0), location or "-"])
 
                 else:
                     title = "Rapport des mouvements par période"
                     headers = ["Article", "Entrées", "Sorties", "Solde net"]
-                    cursor.execute("""
-                        SELECT I.name_fr,
-                               SUM(CASE WHEN L.transaction_type = 'IN' THEN L.quantity ELSE 0 END) AS total_in,
-                               SUM(CASE WHEN L.transaction_type = 'OUT' THEN L.quantity ELSE 0 END) AS total_out,
-                               SUM(CASE WHEN L.transaction_type = 'IN' THEN L.quantity ELSE -L.quantity END) AS net_qty
-                        FROM InventoryLog L
-                        JOIN InventoryItems I ON I.id = L.item_id
-                        WHERE CAST(L.transaction_date AS TIMESTAMP) BETWEEN CAST(%s AS TIMESTAMP) AND CAST(%s AS TIMESTAMP)
-                        GROUP BY I.id, I.name_fr
-                        ORDER BY I.name_fr
-                    """, (date_from, date_to_full))
-                    for name_fr, total_in, total_out, net_qty in cursor.fetchall():
+                    for name_fr, total_in, total_out, net_qty in repo.get_movements_by_period(date_from, date_to_full):
                         rows.append([name_fr or "-", int(total_in or 0), int(total_out or 0), int(net_qty or 0)])
 
             self.current_inventory_report_rows = rows
@@ -581,13 +562,8 @@ class InventoryWindow(QMainWindow):
         try:
             with DatabaseManager() as db:
                 conn = db.get_connection()
-                cursor = conn.cursor()
-                cursor.execute("""
-                    INSERT INTO InventoryItems (name_fr, name_ar, category, quantity, min_quantity, unit_price, location)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
-                    RETURNING id
-                """, (fr, ar, cat, qty, min_q, price, loc))
-                item_id = cursor.fetchone()[0]
+                repo = InventoryRepository(conn)
+                item_id = repo.insert_item(fr, ar, cat, qty, min_q, price, loc)
                 conn.commit()
             
             # ===== استخدام IN بدلاً من ENTRÉE =====
@@ -605,11 +581,7 @@ class InventoryWindow(QMainWindow):
         try:
             with DatabaseManager() as db:
                 conn = db.get_connection()
-                cursor = conn.cursor()
-                cursor.execute("""
-                    INSERT INTO InventoryLog (item_id, transaction_type, quantity, transaction_date, notes)
-                    VALUES (%s, %s, %s, %s, %s)
-                """, (item_id, m_type, qty, date_str, notes))
+                InventoryRepository(conn).insert_movement_log(item_id, m_type, qty, date_str, notes)
                 conn.commit()
         except Exception as e:
             AppLogger.error("InventoryManagement", f"Error logging movement: {e}")
@@ -621,9 +593,7 @@ class InventoryWindow(QMainWindow):
         try:
             with DatabaseManager() as db:
                 conn = db.get_connection()
-                cursor = conn.cursor()
-                cursor.execute("SELECT * FROM InventoryItems ORDER BY name_fr")
-                rows = cursor.fetchall()
+                rows = InventoryRepository(conn).list_all_items()
             
             total_val = 0
             alert_count = 0
@@ -689,28 +659,21 @@ class InventoryWindow(QMainWindow):
         try:
             with DatabaseManager() as db:
                 conn = db.get_connection()
-                cursor = conn.cursor()
-            
+                repo = InventoryRepository(conn)
+
                 if move_type == "OUT":
-                    cursor.execute("SELECT quantity FROM InventoryItems WHERE id=%s", (item_id,))
-                    row = cursor.fetchone()
-                    current = int(row[0] or 0) if row else 0
+                    current = repo.get_item_quantity(item_id)
                     if current < qty:
                         QMessageBox.warning(self, "Erreur", f"Stock insuffisant! (Disponible: {current})")
                         return
                     new_qty = current - qty
                 else:
-                    cursor.execute("SELECT quantity FROM InventoryItems WHERE id=%s", (item_id,))
-                    row = cursor.fetchone()
-                    current = int(row[0] or 0) if row else 0
+                    current = repo.get_item_quantity(item_id)
                     new_qty = current + qty
-                
-                cursor.execute("UPDATE InventoryItems SET quantity=%s WHERE id=%s", (new_qty, item_id))
-                cursor.execute("""
-                    INSERT INTO InventoryLog (item_id, transaction_type, quantity, transaction_date, notes)
-                    VALUES (%s, %s, %s, %s, %s)
-                """, (item_id, move_type, qty, date_str, notes))
-                
+
+                repo.update_item_quantity(item_id, new_qty)
+                repo.insert_movement_log(item_id, move_type, qty, date_str, notes)
+
                 conn.commit()
             
             self.load_inventory()
@@ -726,17 +689,7 @@ class InventoryWindow(QMainWindow):
         try:
             with DatabaseManager() as db:
                 conn = db.get_connection()
-                cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT L.transaction_date,
-                           L.transaction_type,
-                           COALESCE(I.name_fr, '[Article supprimé]') AS item_name,
-                           L.quantity,
-                           L.notes
-                    FROM InventoryLog L LEFT JOIN InventoryItems I ON L.item_id = I.id
-                    ORDER BY L.id DESC LIMIT 50
-                """)
-                rows = cursor.fetchall()
+                rows = InventoryRepository(conn).list_movement_history(limit=50)
             for r in rows:
                 idx = self.table_log.rowCount()
                 self.table_log.insertRow(idx)

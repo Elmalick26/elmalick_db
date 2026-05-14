@@ -16,6 +16,7 @@ from fpdf import FPDF
 from ui_styles import ThemeManager, get_card_style, apply_shadow_to_widget, Colors, get_tabs_style
 from print_export_service import output_pdf, get_report_output_mode
 from app_logger import AppLogger
+from repositories.admin_documents_repo import AdminDocumentsRepository
 
 THEME_AVAILABLE = True
 ADMIN_DOCS_OUTPUT_MODE = get_report_output_mode("admin_documents_mode", "print")
@@ -467,13 +468,7 @@ class AdminDocsWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT id FROM AcademicYears WHERE is_active=1 LIMIT 1")
-                row = cursor.fetchone()
-                if not row:
-                    cursor.execute("SELECT id FROM AcademicYears ORDER BY id DESC LIMIT 1")
-                    row = cursor.fetchone()
-                return row[0] if row else -1
+                return AdminDocumentsRepository(conn).get_active_year_id()
         except Exception:
             return -1
 
@@ -754,10 +749,8 @@ class AdminDocsWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT id, class_name_fr FROM Classes")
-                classes = cursor.fetchall()
-            
+                classes = AdminDocumentsRepository(conn).list_classes()
+
             combos = [self.combo_class_cert, self.combo_class_card, self.combo_class_conv]
             for combo in combos:
                 combo.clear()
@@ -775,42 +768,34 @@ class AdminDocsWindow(QMainWindow):
 
         active_year = self.get_active_year_id()
         if active_year == -1: return
-        
+
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT S.id, S.first_name_fr || ' ' || S.last_name_fr 
-                    FROM Students S 
-                    JOIN StudentClassNumbers SCN ON S.id = SCN.student_id
-                    WHERE SCN.class_id=%s AND SCN.year_id=%s AND S.status='Active'
-                """, (class_id, active_year))
-                for s in cursor.fetchall():
-                    student_combo.addItem(s[1], s[0])
+                rows = AdminDocumentsRepository(conn).list_active_students_in_class(class_id, active_year)
+            for s in rows:
+                student_combo.addItem(s[1], s[0])
         except Exception as e:
             AppLogger.error("AdminDocuments", f"Error loading students: {e}")
 
     def check_photo_status(self):
         sid = self.combo_student_card.currentData()
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-        
+
         if not sid:
             self.lbl_photo_status.setText("...")
             return
-            
+
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT photo_path FROM Students WHERE id=%s", (sid,))
-                res = cursor.fetchone()
-                if res and res[0] and os.path.exists(res[0]):
-                    self.lbl_photo_status.setText("✅ Photo disponible")
-                    self.lbl_photo_status.setStyleSheet(f"color: {colors.SUCCESS}; font-weight: bold; margin-left: 10px;")
-                else:
-                    self.lbl_photo_status.setText("❌ Pas de photo")
-                    self.lbl_photo_status.setStyleSheet(f"color: {colors.DANGER}; font-weight: bold; margin-left: 10px;")
+                path = AdminDocumentsRepository(conn).get_student_photo_path(sid)
+            if path and os.path.exists(path):
+                self.lbl_photo_status.setText("✅ Photo disponible")
+                self.lbl_photo_status.setStyleSheet(f"color: {colors.SUCCESS}; font-weight: bold; margin-left: 10px;")
+            else:
+                self.lbl_photo_status.setText("❌ Pas de photo")
+                self.lbl_photo_status.setStyleSheet(f"color: {colors.DANGER}; font-weight: bold; margin-left: 10px;")
         except Exception:
             self.lbl_photo_status.setText("❌ Erreur DB")
 
@@ -829,13 +814,12 @@ class AdminDocsWindow(QMainWindow):
             
             try:
                 shutil.copy(file_path, new_path)
-                
+
                 db = DatabaseManager()
                 with db.get_connection() as conn:
-                    cursor = conn.cursor()
-                    cursor.execute("UPDATE Students SET photo_path=%s WHERE id=%s", (new_path, sid))
+                    AdminDocumentsRepository(conn).update_student_photo_path(sid, new_path)
                     conn.commit()
-                self.check_photo_status() 
+                self.check_photo_status()
                 QMessageBox.information(self, "Succès", "Photo enregistrée avec succès.")
             except Exception as e:
                 QMessageBox.critical(self, "Erreur", str(e))
@@ -844,12 +828,10 @@ class AdminDocsWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT * FROM SchoolInfo LIMIT 1")
-                info = cursor.fetchone()
-                cursor.execute("SELECT year_label FROM AcademicYears WHERE is_active=1")
-                yr = cursor.fetchone()
-            year = yr[0] if yr else "202X"
+                repo = AdminDocumentsRepository(conn)
+                info = repo.get_school_info()
+                yr_label = repo.get_active_year_label()
+            year = yr_label if yr_label else "202X"
             return info, year
         except Exception:
             return None, "202X"
@@ -860,31 +842,16 @@ class AdminDocsWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT S.id, S.first_name_fr || ' ' || S.last_name_fr, S.birth_date, S.birth_place, 
-                           C.class_name_fr, S.parent_name, S.photo_path, S.address, S.parent_phone, S.registration_date,
-                           SCN.class_number, S.student_code
-                    FROM Students S 
-                    LEFT JOIN StudentClassNumbers SCN ON S.id = SCN.student_id AND SCN.year_id=%s
-                    LEFT JOIN Classes C ON SCN.class_id = C.id
-                    WHERE S.id=%s
-                """, (active_year, sid))
-                res = cursor.fetchone()
+                repo = AdminDocumentsRepository(conn)
+                res = repo.get_student_full_data(sid, active_year)
+                due_rows = repo.get_student_dues(sid, active_year)
 
                 dues_map = {}
                 month_names = {
-                    10: "Octobre", 11: "Novembre", 12: "Décembre",
-                    1: "Janvier", 2: "Février", 3: "Mars",
+                    10: "Octobre", 11: "Novembre", 12: "D\u00e9cembre",
+                    1: "Janvier", 2: "F\u00e9vrier", 3: "Mars",
                     4: "Avril", 5: "Mai", 6: "Juin"
                 }
-                cursor.execute("""
-                    SELECT fee_type, fee_description, net_amount, due_date, is_paid
-                    FROM StudentDues
-                    WHERE student_id=%s AND year_id=%s
-                    ORDER BY due_date ASC, id ASC
-                """, (sid, active_year))
-                due_rows = cursor.fetchall()
 
                 for fee_type, fee_description, net_amount, due_date, is_paid in due_rows:
                     key = None
@@ -1004,14 +971,7 @@ class AdminDocsWindow(QMainWindow):
             try:
                 db = DatabaseManager()
                 with db.get_connection() as conn:
-                    cursor = conn.cursor()
-                    cursor.execute("""
-                        SELECT S.id 
-                        FROM Students S
-                        JOIN StudentClassNumbers SCN ON S.id = SCN.student_id
-                        WHERE SCN.class_id=%s AND SCN.year_id=%s AND S.status='Active'
-                    """, (cid, active_year))
-                    ids = [r[0] for r in cursor.fetchall()]
+                    ids = AdminDocumentsRepository(conn).list_student_ids_in_class(cid, active_year)
                 
                 for sid in ids:
                     std = self.get_student_data(sid)
