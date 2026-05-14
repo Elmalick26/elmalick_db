@@ -2,6 +2,9 @@
 import os
 from database_setup import DatabaseManager
 from app_logger import AppLogger
+from repositories.grades_repo import GradesRepository
+from repositories.student_repo import StudentRepository
+from repositories.finance_repo import FinanceRepository
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                              QHBoxLayout, QTableWidget, QTableWidgetItem, 
                              QPushButton, QLabel, QComboBox, QMessageBox, 
@@ -214,13 +217,7 @@ class StudentGradesWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT id FROM AcademicYears WHERE is_active=1 LIMIT 1")
-                row = cursor.fetchone()
-                if not row:
-                    cursor.execute("SELECT id FROM AcademicYears ORDER BY id DESC LIMIT 1")
-                    row = cursor.fetchone()
-                return row[0] if row else -1
+                return StudentRepository(conn).get_active_year_id()
         except Exception:
             return -1
 
@@ -451,11 +448,9 @@ class StudentGradesWindow(QMainWindow):
         combo.clear()
         combo.addItem("- Choisir -", None)
         try:
-            with DatabaseManager() as db:
-                conn = db.get_connection()
-                cursor = conn.cursor()
-                cursor.execute("SELECT id, class_name_fr FROM Classes")
-                for c in cursor.fetchall():
+            db = DatabaseManager()
+            with db.get_connection() as conn:
+                for c in GradesRepository(conn).list_classes():
                     combo.addItem(c[1], c[0])
         except Exception as e:
             AppLogger.error("StudentGrades", f"Error loading classes: {e}")
@@ -465,12 +460,10 @@ class StudentGradesWindow(QMainWindow):
             active_year = self.get_active_year_id()
             if active_year == -1:
                 return
-            with DatabaseManager() as db:
-                conn = db.get_connection()
-                cursor = conn.cursor()
-                cursor.execute("SELECT id, period_name_fr FROM AcademicPeriods WHERE year_id=%s ORDER BY sort_order", (active_year,))
+            db = DatabaseManager()
+            with db.get_connection() as conn:
                 seen = set()
-                for p in cursor.fetchall():
+                for p in GradesRepository(conn).list_periods_for_year(active_year):
                     if p[1] not in seen:
                         combo.addItem(p[1], p[0])
                         seen.add(p[1])
@@ -487,32 +480,13 @@ class StudentGradesWindow(QMainWindow):
             active_year = self.get_active_year_id()
             if active_year == -1:
                 return
-
-            with DatabaseManager() as db:
-                conn = db.get_connection()
-                cursor = conn.cursor()
-
-                if class_id:
-                    cursor.execute("SELECT cycle_id FROM Classes WHERE id=%s", (class_id,))
-                    row = cursor.fetchone()
-                    if row:
-                        cursor.execute(
-                            "SELECT id, period_name_fr FROM AcademicPeriods WHERE cycle_id=%s AND year_id=%s ORDER BY sort_order",
-                            (row[0], active_year),
-                        )
-                    else:
-                        cursor.execute(
-                            "SELECT id, period_name_fr FROM AcademicPeriods WHERE year_id=%s ORDER BY sort_order",
-                            (active_year,),
-                        )
-                else:
-                    cursor.execute(
-                        "SELECT id, period_name_fr FROM AcademicPeriods WHERE year_id=%s ORDER BY sort_order",
-                        (active_year,),
-                    )
-
-                for period_id, period_name in cursor.fetchall():
-                    self.combo_view_period.addItem(period_name, period_id)
+            db = DatabaseManager()
+            with db.get_connection() as conn:
+                periods = GradesRepository(conn).list_periods_for_class_year(
+                    class_id, active_year
+                ) if class_id else GradesRepository(conn).list_periods_for_year(active_year)
+            for period_id, period_name in periods:
+                self.combo_view_period.addItem(period_name, period_id)
         except Exception:
             pass
         finally:
@@ -547,24 +521,17 @@ class StudentGradesWindow(QMainWindow):
             return
         
         try:
-            with DatabaseManager() as db:
-                conn = db.get_connection()
+            db = DatabaseManager()
+            with db.get_connection() as conn:
                 cursor = conn.cursor()
-                
                 subjects = self.get_class_subjects(cursor, class_id)
                 if not subjects: return
 
                 for s in subjects:
                     self.combo_subject.addItem(f"{s[1]} (Coef: {s[3]})", s[0])
 
-                cursor.execute("SELECT cycle_id FROM Classes WHERE id=%s", (class_id,))
-                res = cursor.fetchone()
-                if not res: return
-                cycle_id = res[0]
-                    
                 self.combo_period.addItem("- Période -", None)
-                cursor.execute("SELECT id, period_name_fr FROM AcademicPeriods WHERE cycle_id=%s AND year_id=%s ORDER BY sort_order", (cycle_id, active_year))
-                for p in cursor.fetchall():
+                for p in GradesRepository(conn).list_periods_for_class_year(class_id, active_year):
                     self.combo_period.addItem(p[1], p[0])
         except Exception as e:
             AppLogger.error("StudentGrades", f"Error class changed: {e}")
@@ -573,13 +540,10 @@ class StudentGradesWindow(QMainWindow):
         period_id = self.combo_period.currentData()
         self.combo_assessment.clear()
         if not period_id: return
-        
         try:
-            with DatabaseManager() as db:
-                conn = db.get_connection()
-                cursor = conn.cursor()
-                cursor.execute("SELECT id, name_fr FROM AssessmentTypes WHERE period_id=%s", (period_id,))
-                for a in cursor.fetchall():
+            db = DatabaseManager()
+            with db.get_connection() as conn:
+                for a in GradesRepository(conn).list_assessments_for_period(period_id):
                     self.combo_assessment.addItem(a[1], a[0])
         except Exception: pass
     # ===== جلب الطلاب باستخدام جدول التسجيل SCN =====
@@ -598,31 +562,12 @@ class StudentGradesWindow(QMainWindow):
             return
 
         try:
-            with DatabaseManager() as db:
-                conn = db.get_connection()
-                cursor = conn.cursor()
-                cursor.execute("SELECT CY.name_fr FROM Classes CL JOIN Cycles CY ON CL.cycle_id = CY.id WHERE CL.id = %s", (class_id,))
-                cycle_row = cursor.fetchone()
-                cname = (cycle_row[0] if cycle_row and cycle_row[0] else "").lower()
-                max_score = 10.0 if ("elem" in cname or "prim" in cname) else 20.0
+            db = DatabaseManager()
+            with db.get_connection() as conn:
+                repo = GradesRepository(conn)
+                max_score = repo.get_max_score_for_class(class_id)
                 self.table_grades.horizontalHeaderItem(3).setText(f"Note /{int(max_score)}")
-
-                # استرجاع الدرجات
-                query = """
-                    SELECT S.id, S.first_name_fr || ' ' || S.last_name_fr, 
-                           S.first_name_ar || ' ' || S.last_name_ar,
-                           G.score, G.observation
-                    FROM Students S
-                    JOIN StudentClassNumbers SCN ON S.id = SCN.student_id
-                    LEFT JOIN Grades G ON S.id = G.student_id 
-                                       AND G.subject_id = %s 
-                                       AND G.assessment_id = %s
-                                       AND G.year_id = %s
-                    WHERE SCN.class_id = %s AND SCN.year_id = %s AND S.status = 'Active'
-                    ORDER BY S.last_name_fr
-                """
-                cursor.execute(query, (subject_id, assess_id, active_year, class_id, active_year))
-                rows = cursor.fetchall()
+                rows = repo.load_grading_sheet(class_id, subject_id, assess_id, active_year)
                 
                 self.table_grades.setRowCount(0)
                 colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
@@ -666,25 +611,16 @@ class StudentGradesWindow(QMainWindow):
         if active_year == -1: return
 
         try:
-            with DatabaseManager() as db:
-                conn = db.get_connection()
-                cursor = conn.cursor()
+            db = DatabaseManager()
+            with db.get_connection() as conn:
+                repo = GradesRepository(conn)
                 today = QDate.currentDate().toString("yyyy-MM-dd")
-                
                 for row in range(self.table_grades.rowCount()):
                     sid = int(self.table_grades.item(row, 0).text())
                     score_widget = self.table_grades.cellWidget(row, 3)
                     score = score_widget.value() if score_widget else 0.0
                     obs = self.table_grades.item(row, 4).text()
-                    
-                    cursor.execute("SELECT id FROM Grades WHERE student_id=%s AND subject_id=%s AND assessment_id=%s AND year_id=%s", (sid, subject_id, assess_id, active_year))
-                    exists = cursor.fetchone()
-                    if exists:
-                        cursor.execute("UPDATE Grades SET score=%s, observation=%s, date_recorded=%s WHERE id=%s", (score, obs, today, exists[0]))
-                    else:
-                        cursor.execute("INSERT INTO Grades (student_id, subject_id, assessment_id, score, observation, date_recorded, year_id) VALUES (%s,%s,%s,%s,%s,%s,%s)", 
-                                       (sid, subject_id, assess_id, score, obs, today, active_year))
-                
+                    repo.upsert_grade(sid, subject_id, assess_id, active_year, score, obs, today)
                 conn.commit()
             QMessageBox.information(self, "Info", "Notes enregistrées avec succès.")
         except Exception as e:
@@ -697,38 +633,14 @@ class StudentGradesWindow(QMainWindow):
         active_year = self.get_active_year_id()
 
         try:
-            with DatabaseManager() as db:
-                conn = db.get_connection()
-                cursor = conn.cursor()
-                
-                query = """
-                    SELECT G.date_recorded, C.class_name_fr, 
-                           S.first_name_fr || ' ' || S.last_name_fr,
-                           Sub.subject_name_fr, A.name_fr, G.score, G.observation
-                    FROM Grades G
-                    JOIN Students S ON G.student_id = S.id
-                    LEFT JOIN StudentClassNumbers SCN ON S.id = SCN.student_id AND SCN.year_id = G.year_id
-                    LEFT JOIN Classes C ON SCN.class_id = C.id
-                    JOIN Subjects Sub ON G.subject_id = Sub.id
-                    JOIN AssessmentTypes A ON G.assessment_id = A.id
-                    WHERE G.year_id = %s
-                """
-                params = [active_year]
-                
-                if class_id:
-                    query += " AND SCN.class_id = %s"
-                    params.append(class_id)
-                if period_id:
-                    query += " AND A.period_id = %s"
-                    params.append(period_id)
-                if student_name:
-                    query += " AND (S.first_name_fr ILIKE %s OR S.last_name_fr ILIKE %s)"
-                    params.extend([f"%{student_name}%", f"%{student_name}%"])
-                    
-                query += " ORDER BY G.date_recorded DESC LIMIT 100"
-                
-                cursor.execute(query, params)
-                rows = cursor.fetchall()
+            db = DatabaseManager()
+            with db.get_connection() as conn:
+                rows = GradesRepository(conn).search_grades(
+                    active_year,
+                    class_id=class_id,
+                    period_id=period_id,
+                    student_name=student_name if student_name else None,
+                )
                 
                 self.table_view.setRowCount(0)
                 for r in rows:
@@ -750,41 +662,18 @@ class StudentGradesWindow(QMainWindow):
             return
 
         try:
-            with DatabaseManager() as db:
-                conn = db.get_connection()
-                cursor = conn.cursor()
+            db = DatabaseManager()
+            with db.get_connection() as conn:
+                repo = GradesRepository(conn)
                 try:
-                    cursor.execute("SELECT * FROM SchoolInfo LIMIT 1")
-                    school_info = cursor.fetchone()
+                    school_info = FinanceRepository(conn).get_school_info()
                 except Exception:
                     school_info = None
-                
-                cursor.execute("SELECT class_name_fr FROM Classes WHERE id=%s", (class_id,))
-                cls_row = cursor.fetchone()
-                cls_txt = cls_row[0] if cls_row else "Classe"
-
-                cursor.execute("SELECT subject_name_fr FROM Subjects WHERE id=%s", (subject_id,))
-                sub_row = cursor.fetchone()
-                sub_txt = sub_row[0] if sub_row else "Matiere"
-
-                cursor.execute("SELECT name_fr FROM AssessmentTypes WHERE id=%s", (assess_id,))
-                eval_row = cursor.fetchone()
-                eval_txt = eval_row[0] if eval_row else "Evaluation"
-                
-                cursor.execute("SELECT CY.name_fr FROM Classes CL JOIN Cycles CY ON CL.cycle_id = CY.id WHERE CL.id = %s", (class_id,))
-                cycle_row = cursor.fetchone()
-                cname = (cycle_row[0] if cycle_row and cycle_row[0] else "").lower()
-                max_score = 10.0 if ("elem" in cname or "prim" in cname) else 20.0
-                
-                cursor.execute("""
-                    SELECT S.id, S.first_name_fr || ' ' || S.last_name_fr,
-                           S.first_name_ar || ' ' || S.last_name_ar
-                    FROM Students S
-                    JOIN StudentClassNumbers SCN ON S.id = SCN.student_id
-                    WHERE SCN.class_id = %s AND SCN.year_id = %s AND S.status = 'Active'
-                    ORDER BY S.last_name_fr
-                """, (class_id, active_year))
-                rows = cursor.fetchall()
+                cls_txt = repo.get_class_label(class_id)
+                sub_txt = repo.get_subject_label(subject_id)
+                eval_txt = repo.get_assessment_label(assess_id)
+                max_score = repo.get_max_score_for_class(class_id)
+                rows = repo.get_students_for_class_year(class_id, active_year)
 
             file_stub = f"Feuille_Notes_{self.sanitize_filename(cls_txt)}_{self.sanitize_filename(sub_txt)}_{self.sanitize_filename(eval_txt)}"
 

@@ -240,3 +240,34 @@ class StudentRepository:
                 "INSERT INTO StudentClassNumbers (student_id, class_id, year_id, class_number) VALUES (%s, %s, %s, %s)",
                 (student_id, class_id, year_id, number),
             )
+
+    def count_active_students(self, year_id: int) -> int:
+        cursor = self.conn.cursor()
+        cursor.execute(
+            "SELECT COUNT(*) FROM Students S JOIN StudentClassNumbers SCN ON S.id=SCN.student_id WHERE S.status='Active' AND SCN.year_id=%s",
+            (year_id,)
+        )
+        row = cursor.fetchone()
+        return row[0] if row else 0
+
+    def count_classes(self) -> int:
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM Classes")
+        row = cursor.fetchone()
+        return row[0] if row else 0
+
+    def get_students_by_cycle(self, year_id: int) -> list:
+        cursor = self.conn.cursor()
+        cursor.execute(
+            """
+            SELECT CY.name_fr, COUNT(S.id)
+            FROM Students S
+            JOIN StudentClassNumbers SCN ON S.id=SCN.student_id
+            JOIN Classes CL ON SCN.class_id = CL.id
+            JOIN Cycles CY ON CL.cycle_id = CY.id
+            WHERE S.status='Active' AND SCN.year_id=%s
+            GROUP BY CY.id, CY.name_fr
+            """,
+            (year_id,)
+        )
+        return cursor.fetchall()

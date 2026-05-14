@@ -20,6 +20,11 @@ from config_manager import ConfigManager
 from app_logger import AppLogger
 from auto_backup import AutoBackupSystem
 from ui_styles import ThemeManager, Colors, DarkColors
+from repositories.student_repo import StudentRepository
+from repositories.finance_repo import FinanceRepository
+from repositories.staff_repo import StaffRepository
+from repositories.grades_repo import GradesRepository
+from repositories.attendance_repo import AttendanceRepository
 
 THEME_AVAILABLE = True
 
@@ -575,92 +580,14 @@ class MainWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-
-                # السنة الدراسية النشطة
-                cursor.execute("SELECT id FROM AcademicYears WHERE is_active=1 LIMIT 1")
-                row = cursor.fetchone()
-                if not row:
+                active_year = FinanceRepository(conn).get_active_year_id()
+                if active_year == -1:
                     return
-                active_year = row[0]
-                today = datetime.now().date()
+                absent_rows = AttendanceRepository(conn).get_high_absence_students(active_year)
+                late_rows = FinanceRepository(conn).get_late_dues_students(active_year)
+                low_grade_rows = GradesRepository(conn).get_low_average_students(active_year)
+                leave_rows = StaffRepository(conn).list_pending_leaves()
 
-                # 1. طلاب نسبة غيابهم > 20%
-                cursor.execute("""
-                    SELECT S.first_name_fr || ' ' || S.last_name_fr,
-                           ROUND(COUNT(*) FILTER (WHERE SA.status='Absent') * 100.0 / NULLIF(COUNT(*), 0), 0) AS absence_rate
-                    FROM Students S
-                    JOIN StudentAttendance SA ON S.id = SA.student_id
-                    WHERE SA.year_id = %s AND S.status = 'Active'
-                    GROUP BY S.id, S.first_name_fr, S.last_name_fr
-                    HAVING COUNT(*) FILTER (WHERE SA.status='Absent') * 100.0 / NULLIF(COUNT(*), 0) > 20
-                    ORDER BY absence_rate DESC
-                    LIMIT 20
-                """, (active_year,))
-                absent_rows = cursor.fetchall()
-
-                # 2. مستحقات متأخرة > 30 يوم
-                # is_paid مخزّن كـ INTEGER (0/1) وليس BOOLEAN
-                cursor.execute("""
-                    SELECT S.first_name_fr || ' ' || S.last_name_fr,
-                           SUM(SD.net_amount) AS total_debt
-                    FROM StudentDues SD
-                    JOIN Students S ON SD.student_id = S.id
-                    WHERE SD.is_paid = 0
-                      AND SD.year_id = %s
-                      AND SD.due_date < %s::date - INTERVAL '30 days'
-                    GROUP BY S.id, S.first_name_fr, S.last_name_fr
-                    ORDER BY total_debt DESC
-                    LIMIT 20
-                """, (active_year, today))
-                late_rows = cursor.fetchall()
-
-                # 3. طلاب معدلهم < 8 / 20 في السنة الحالية
-                # max_score غير مخزّن في Grades — يُستنتج من اسم الـ Cycle:
-                # ابتدائي/élémentaire → max=10 → عتبة التنبيه 4/10 (ما يعادل 8/20)
-                # مراحل أخرى          → max=20 → عتبة التنبيه 8/20
-                cursor.execute("""
-                    SELECT S.first_name_fr || ' ' || S.last_name_fr,
-                           ROUND(
-                               AVG(G.score * 20.0 /
-                                   CASE WHEN LOWER(CY.name_fr) SIMILAR TO '%%(elem|prim|ibtida)%%'
-                                        THEN 10.0
-                                        ELSE 20.0
-                                   END
-                               ), 1
-                           ) AS avg_normalized
-                    FROM Grades G
-                    JOIN Students S ON G.student_id = S.id
-                    JOIN StudentClassNumbers SCN ON S.id = SCN.student_id AND SCN.year_id = G.year_id
-                    JOIN Classes CL ON SCN.class_id = CL.id
-                    JOIN Cycles CY ON CL.cycle_id = CY.id
-                    WHERE G.year_id = %s AND G.score IS NOT NULL
-                    GROUP BY S.id, S.first_name_fr, S.last_name_fr
-                    HAVING ROUND(
-                               AVG(G.score * 20.0 /
-                                   CASE WHEN LOWER(CY.name_fr) SIMILAR TO '%%(elem|prim|ibtida)%%'
-                                        THEN 10.0
-                                        ELSE 20.0
-                                   END
-                               ), 1
-                           ) < 8
-                    ORDER BY avg_normalized ASC
-                    LIMIT 20
-                """, (active_year,))
-                low_grade_rows = cursor.fetchall()
-
-                # 4. طلبات إجازة معلقة
-                cursor.execute("""
-                    SELECT ST.first_name || ' ' || ST.last_name, SL.leave_type
-                    FROM StaffLeaves SL
-                    JOIN Staff ST ON SL.staff_id = ST.id
-                    WHERE SL.status = 'En Attente'
-                    ORDER BY SL.start_date DESC
-                    LIMIT 20
-                """)
-                leave_rows = cursor.fetchall()
-
-            # تحديث البطاقات
             self._update_alert_card(
                 self.alert_absent, absent_rows,
                 lambda r: f"{r[0]}  ({int(r[1])}%)"
@@ -730,58 +657,39 @@ class MainWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                
-                # Active Year
-                cursor.execute("SELECT id FROM AcademicYears WHERE is_active=1 LIMIT 1")
-                row = cursor.fetchone()
-                active_year = row[0] if row else -1
+                fin_repo = FinanceRepository(conn)
+                stu_repo = StudentRepository(conn)
+                sta_repo = StaffRepository(conn)
 
-                # Students (تم استبدال ? بـ %s)
-                cursor.execute("SELECT COUNT(*) FROM Students S JOIN StudentClassNumbers SCN ON S.id=SCN.student_id WHERE S.status='Active' AND SCN.year_id=%s", (active_year,))
-                st_count = cursor.fetchone()[0]
+                active_year = fin_repo.get_active_year_id()
+
+                st_count = stu_repo.count_active_students(active_year)
                 self.kpi_students.findChild(QLabel, "val").setText(str(st_count))
 
-                # Staff
-                cursor.execute("SELECT COUNT(*) FROM Staff WHERE status='Actif'")
-                self.kpi_staff.findChild(QLabel, "val").setText(str(cursor.fetchone()[0]))
+                self.kpi_staff.findChild(QLabel, "val").setText(str(sta_repo.get_active_staff_count()))
 
-                # Classes
-                cursor.execute("SELECT COUNT(*) FROM Classes")
-                self.kpi_classes.findChild(QLabel, "val").setText(str(cursor.fetchone()[0]))
+                self.kpi_classes.findChild(QLabel, "val").setText(str(stu_repo.count_classes()))
 
-                # Revenue (Current Year) - (تم استبدال ? بـ %s)
-                cursor.execute("SELECT SUM(amount_paid) FROM Payments WHERE year_id=%s", (active_year,))
-                rev = cursor.fetchone()[0] or 0
+                rev = fin_repo.get_total_revenue(active_year) or 0
                 self.kpi_revenue.findChild(QLabel, "val").setText(f"{rev:,.0f}")
 
-                # Chart Data - (تم استبدال ? بـ %s)
-                cursor.execute("""
-                    SELECT CY.name_fr, COUNT(S.id) 
-                    FROM Students S
-                    JOIN StudentClassNumbers SCN ON S.id=SCN.student_id
-                    JOIN Classes CL ON SCN.class_id = CL.id
-                    JOIN Cycles CY ON CL.cycle_id = CY.id
-                    WHERE S.status='Active' AND SCN.year_id=%s
-                    GROUP BY CY.id
-                """, (active_year,))
-                data = cursor.fetchall()
-                
-                self.ax = self.figure.add_subplot(111)
-                self.ax.clear()
-                
-                colors = ThemeManager.get_colors()
-                if data:
-                    labels = [r[0] for r in data]
-                    sizes = [r[1] for r in data]
-                    self.ax.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=90, 
-                                colors=[colors.PRIMARY, colors.SUCCESS, colors.WARNING, colors.SECONDARY],
-                                textprops={'color': colors.TEXT_PRIMARY, 'fontweight': 'bold'})
-                else:
-                    self.ax.text(0.5, 0.5, "Pas de données", ha='center', va='center', color=colors.TEXT_SECONDARY)
-                    self.ax.axis('off')
-                
-                self.canvas.draw()
+                data = stu_repo.get_students_by_cycle(active_year)
+
+            self.ax = self.figure.add_subplot(111)
+            self.ax.clear()
+
+            colors = ThemeManager.get_colors()
+            if data:
+                labels = [r[0] for r in data]
+                sizes = [r[1] for r in data]
+                self.ax.pie(sizes, labels=labels, autopct='%1.1f%%', startangle=90,
+                            colors=[colors.PRIMARY, colors.SUCCESS, colors.WARNING, colors.SECONDARY],
+                            textprops={'color': colors.TEXT_PRIMARY, 'fontweight': 'bold'})
+            else:
+                self.ax.text(0.5, 0.5, "Pas de données", ha='center', va='center', color=colors.TEXT_SECONDARY)
+                self.ax.axis('off')
+
+            self.canvas.draw()
 
         except Exception as e:
             AppLogger.error("MainDashboard", f"Dashboard Data Error: {e}")

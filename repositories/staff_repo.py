@@ -199,3 +199,32 @@ class StaffRepository:
             """
         )
         return cursor.fetchall()
+
+    def list_classes(self) -> list[tuple]:
+        """Return (id, class_name_fr) for all classes."""
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT id, class_name_fr FROM Classes ORDER BY class_name_fr")
+        return cursor.fetchall()
+
+    def get_active_staff_count(self) -> int:
+        """Return the number of active staff members."""
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM Staff WHERE status = 'Actif'")
+        row = cursor.fetchone()
+        return row[0] if row else 0
+
+    def list_pending_leaves(self, limit: int = 20) -> list[tuple]:
+        """Return (full_name, leave_type) for staff with pending leave requests."""
+        cursor = self.conn.cursor()
+        cursor.execute(
+            """
+            SELECT ST.first_name || ' ' || ST.last_name, SL.leave_type
+            FROM StaffLeaves SL
+            JOIN Staff ST ON SL.staff_id = ST.id
+            WHERE SL.status = 'En Attente'
+            ORDER BY SL.start_date DESC
+            LIMIT %s
+            """,
+            (limit,),
+        )
+        return cursor.fetchall()

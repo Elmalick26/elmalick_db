@@ -4,6 +4,9 @@ import os
 from datetime import datetime
 from database_setup import DatabaseManager
 from app_logger import AppLogger
+from repositories.attendance_repo import AttendanceRepository
+from repositories.student_repo import StudentRepository
+from repositories.finance_repo import FinanceRepository
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                              QHBoxLayout, QTableWidget, QTableWidgetItem, 
                              QPushButton, QLabel, QLineEdit, QComboBox, 
@@ -171,13 +174,7 @@ class StudentAttendanceWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT id FROM AcademicYears WHERE is_active=1 LIMIT 1")
-                row = cursor.fetchone()
-                if not row:
-                    cursor.execute("SELECT id FROM AcademicYears ORDER BY id DESC LIMIT 1")
-                    row = cursor.fetchone()
-                return row[0] if row else -1
+                return StudentRepository(conn).get_active_year_id()
         except Exception:
             return -1
 
@@ -187,22 +184,7 @@ class StudentAttendanceWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                # تم استبدال ? بـ %s
-                cursor.execute("SELECT cycle_id FROM Classes WHERE id=%s", (class_id,))
-                cycle_row = cursor.fetchone()
-                if not cycle_row:
-                    return []
-                cursor.execute(
-                    """
-                    SELECT id, period_name_fr
-                    FROM AcademicPeriods
-                    WHERE year_id=%s AND cycle_id=%s
-                    ORDER BY sort_order, id
-                    """,
-                    (year_id, cycle_row[0])
-                )
-                return cursor.fetchall()
+                return AttendanceRepository(conn).get_periods_for_class(class_id, year_id)
         except Exception:
             return []
 
@@ -212,25 +194,7 @@ class StudentAttendanceWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT cycle_id FROM Classes WHERE id=%s", (class_id,))
-                cycle_row = cursor.fetchone()
-                if not cycle_row:
-                    return None
-                # تم استبدال دوال date الخاصة بـ SQLite بـ CAST لـ PostgreSQL
-                cursor.execute(
-                    """
-                    SELECT id
-                    FROM AcademicPeriods
-                    WHERE year_id=%s AND cycle_id=%s
-                      AND CAST(%s AS DATE) BETWEEN CAST(start_date AS DATE) AND CAST(end_date AS DATE)
-                    ORDER BY sort_order, id
-                    LIMIT 1
-                    """,
-                    (year_id, cycle_row[0], date_str)
-                )
-                row = cursor.fetchone()
-                return row[0] if row else None
+                return AttendanceRepository(conn).resolve_period_id_for_class_date(class_id, date_str, year_id)
         except Exception:
             return None
 
@@ -522,9 +486,7 @@ class StudentAttendanceWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT id, class_name_fr FROM Classes")
-                classes = cursor.fetchall()
+                classes = AttendanceRepository(conn).list_classes()
             
             self.combo_class_entry.clear()
             self.combo_class_entry.addItem("Choisir une Classe...", None)
@@ -559,23 +521,9 @@ class StudentAttendanceWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                # تم التعديل: قراءة الطلاب من StudentClassNumbers واستخدام %s
-                query = """
-                    SELECT S.id, S.first_name_fr || ' ' || S.last_name_fr, 
-                        A.status, A.justifie, A.reason, A.notes
-                    FROM Students S
-                    JOIN StudentClassNumbers SCN ON S.id = SCN.student_id AND SCN.year_id = %s
-                    LEFT JOIN StudentAttendance A ON S.id = A.student_id AND A.date = %s AND A.year_id = %s
-                    WHERE SCN.class_id = %s AND S.status = 'Active'
-                    ORDER BY S.first_name_fr
-                """
-                params = [active_year, date_sel, active_year, class_id]
-                if period_id:
-                    query = query.replace("LEFT JOIN StudentAttendance A ON S.id = A.student_id AND A.date = %s AND A.year_id = %s", "LEFT JOIN StudentAttendance A ON S.id = A.student_id AND A.date = %s AND A.year_id = %s AND A.period_id = %s")
-                    params = [active_year, date_sel, active_year, period_id, class_id]
-                cursor.execute(query, params)
-                rows = cursor.fetchall()
+                rows = AttendanceRepository(conn).load_students_for_attendance(
+                    class_id, date_sel, active_year, period_id
+                )
             
             for r in rows:
                 idx = self.table_entry.rowCount()
@@ -645,35 +593,15 @@ class StudentAttendanceWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                
+                repo = AttendanceRepository(conn)
+                resolved_period_id = period_id or self.resolve_period_id_for_class_date(class_id, date_sel, active_year)
                 for row in range(self.table_entry.rowCount()):
                     sid = int(self.table_entry.item(row, 0).text())
-                    
                     status = self.table_entry.cellWidget(row, 2).currentText()
                     is_justified = 1 if self.table_entry.cellWidget(row, 3).findChild(QCheckBox).isChecked() else 0
                     reason = self.table_entry.item(row, 4).text()
                     notes = self.table_entry.item(row, 5).text()
-                    
-                    resolved_period_id = period_id or self.resolve_period_id_for_class_date(class_id, date_sel, active_year)
-                    if resolved_period_id:
-                        cursor.execute("SELECT id FROM StudentAttendance WHERE student_id = %s AND date = %s AND year_id = %s AND COALESCE(period_id, 0) = %s", (sid, date_sel, active_year, resolved_period_id))
-                    else:
-                        cursor.execute("SELECT id FROM StudentAttendance WHERE student_id = %s AND date = %s AND year_id = %s AND (period_id IS NULL OR period_id = 0)", (sid, date_sel, active_year))
-                    exists = cursor.fetchone()
-
-                    if exists:
-                        cursor.execute("""
-                            UPDATE StudentAttendance 
-                            SET status=%s, justifie=%s, reason=%s, notes=%s, year_id=%s, period_id=%s
-                            WHERE id=%s
-                        """, (status, is_justified, reason, notes, active_year, resolved_period_id, exists[0]))
-                    else:
-                        cursor.execute("""
-                            INSERT INTO StudentAttendance (student_id, date, status, justifie, reason, notes, year_id, period_id)
-                            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-                        """, (sid, date_sel, status, is_justified, reason, notes, active_year, resolved_period_id))
-            
+                    repo.upsert_attendance(sid, date_sel, status, is_justified, reason, notes, active_year, resolved_period_id)
                 conn.commit()
             QMessageBox.information(self, "Succès", "Données enregistrées avec succès!")
         except Exception as e:
@@ -694,14 +622,7 @@ class StudentAttendanceWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT S.id, S.first_name_fr || ' ' || S.last_name_fr 
-                    FROM Students S
-                    JOIN StudentClassNumbers SCN ON S.id = SCN.student_id
-                    WHERE SCN.class_id=%s AND SCN.year_id=%s AND S.status='Active'
-                """, (class_id, active_year))
-                for r in cursor.fetchall():
+                for r in AttendanceRepository(conn).load_students_for_report_combo(class_id, active_year):
                     self.combo_student_report.addItem(r[1], r[0])
         except Exception as e:
             AppLogger.error("StudentAttendance", f"Error loading students for report: {e}")
@@ -740,44 +661,15 @@ class StudentAttendanceWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                
-                query = """
-                    SELECT A.date, S.first_name_fr || ' ' || S.last_name_fr, C.class_name_fr, 
-                        A.status, A.justifie, A.reason
-                    FROM StudentAttendance A
-                    JOIN Students S ON A.student_id = S.id
-                    JOIN StudentClassNumbers SCN ON S.id = SCN.student_id AND SCN.year_id = A.year_id
-                    JOIN Classes C ON SCN.class_id = C.id
-                    WHERE A.date BETWEEN %s AND %s
-                """
-                params = [d_from, d_to]
-                if active_year != -1:
-                    query += " AND A.year_id = %s"
-                    params.append(active_year)
-                if pid:
-                    query += " AND COALESCE(A.period_id, 0) = %s"
-                    params.append(pid)
-                
-                if cid:
-                    query += " AND SCN.class_id = %s"
-                    params.append(cid)
-                if sid:
-                    query += " AND A.student_id = %s"
-                    params.append(sid)
-                    
-                query += " ORDER BY A.date DESC, C.sort_order, S.first_name_fr"
-                
-                cursor.execute(query, params)
-                rows = cursor.fetchall()
-            
-            results = []
-            for r in rows:
-                results.append({
-                    'date': r[0], 'name': r[1], 'class': r[2],
-                    'status': r[3], 'justifie': r[4], 'reason': r[5]
-                })
-            return results
+                rows = AttendanceRepository(conn).fetch_report_data(
+                    active_year, d_from, d_to,
+                    class_id=cid, student_id=sid, period_id=pid
+                )
+            return [
+                {'date': r[0], 'name': r[1], 'class': r[2],
+                 'status': r[3], 'justifie': r[4], 'reason': r[5]}
+                for r in rows
+            ]
         except Exception as e:
             QMessageBox.critical(self, "Erreur", f"Échec de la récupération des données: {e}")
             return []
@@ -822,9 +714,7 @@ class StudentAttendanceWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT * FROM SchoolInfo LIMIT 1")
-                school_info = cursor.fetchone()
+                school_info = FinanceRepository(conn).get_school_info()
         except Exception: pass
         try:
             pdf = AttendancePDF(school_info)

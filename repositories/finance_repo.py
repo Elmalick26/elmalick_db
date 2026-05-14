@@ -447,3 +447,35 @@ class FinanceRepository:
         cursor = self.conn.cursor()
         cursor.execute("SELECT * FROM SchoolInfo LIMIT 1")
         return cursor.fetchone()
+
+    def get_late_dues_students(
+        self, year_id: int, days_overdue: int = 30, limit: int = 20
+    ) -> list[tuple]:
+        """Return (full_name, total_debt) for students with unpaid dues older than days_overdue."""
+        cursor = self.conn.cursor()
+        cursor.execute(
+            """
+            SELECT S.first_name_fr || ' ' || S.last_name_fr,
+                   SUM(SD.net_amount) AS total_debt
+            FROM StudentDues SD
+            JOIN Students S ON SD.student_id = S.id
+            WHERE SD.is_paid = 0
+              AND SD.year_id = %s
+              AND SD.due_date < CURRENT_DATE - (%s || ' days')::INTERVAL
+            GROUP BY S.id, S.first_name_fr, S.last_name_fr
+            ORDER BY total_debt DESC
+            LIMIT %s
+            """,
+            (year_id, days_overdue, limit),
+        )
+        return cursor.fetchall()
+
+    def get_total_revenue(self, year_id: int) -> float:
+        """Return total payments received for an academic year."""
+        cursor = self.conn.cursor()
+        cursor.execute(
+            "SELECT COALESCE(SUM(amount_paid), 0) FROM Payments WHERE year_id = %s",
+            (year_id,),
+        )
+        row = cursor.fetchone()
+        return float(row[0]) if row else 0.0
