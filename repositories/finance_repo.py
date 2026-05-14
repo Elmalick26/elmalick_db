@@ -479,3 +479,70 @@ class FinanceRepository:
         )
         row = cursor.fetchone()
         return float(row[0]) if row else 0.0
+
+    # ── Fees setup ─────────────────────────────────────────
+
+    def upsert_registration_fee(self, class_id: int, amount: float) -> None:
+        """Delete then re-insert the registration fee for a class."""
+        cursor = self.conn.cursor()
+        cursor.execute("DELETE FROM RegistrationFees WHERE class_id=%s", (class_id,))
+        cursor.execute(
+            "INSERT INTO RegistrationFees (class_id, amount) VALUES (%s, %s)",
+            (class_id, amount),
+        )
+
+    def get_registration_fees_table(self) -> list:
+        """Return (class_name_fr, amount) for all registration fees."""
+        cursor = self.conn.cursor()
+        cursor.execute(
+            "SELECT C.class_name_fr, R.amount"
+            " FROM RegistrationFees R"
+            " JOIN Classes C ON R.class_id = C.id"
+        )
+        return cursor.fetchall()
+
+    def save_monthly_fee_schedule(self, class_id: int, entries: list) -> None:
+        """Replace all MonthlyFeeSchedule rows for a class.
+        entries: list of (month_index, month_name, amount)
+        """
+        cursor = self.conn.cursor()
+        cursor.execute("DELETE FROM MonthlyFeeSchedule WHERE class_id=%s", (class_id,))
+        for month_index, month_name, amount in entries:
+            cursor.execute(
+                "INSERT INTO MonthlyFeeSchedule (class_id, month_index, month_name, amount)"
+                " VALUES (%s, %s, %s, %s)",
+                (class_id, month_index, month_name, amount),
+            )
+
+    def get_fees_comparison_report(self) -> list:
+        """Return (class_name, registration_fee, monthly_total) for all classes."""
+        cursor = self.conn.cursor()
+        cursor.execute(
+            "SELECT C.class_name_fr,"
+            "       COALESCE(RF.amount, 0) AS registration_fee,"
+            "       COALESCE((SELECT SUM(MS.amount) FROM MonthlyFeeSchedule MS"
+            "                 WHERE MS.class_id = C.id), 0) AS monthly_total"
+            " FROM Classes C"
+            " LEFT JOIN RegistrationFees RF ON RF.class_id = C.id"
+            " ORDER BY C.sort_order, C.class_name_fr"
+        )
+        return cursor.fetchall()
+
+    def get_fees_projection_report(self, year_id: int) -> list:
+        """Return (class_name, active_students, registration_fee, monthly_total) for projection."""
+        cursor = self.conn.cursor()
+        cursor.execute(
+            "SELECT C.class_name_fr,"
+            "       COALESCE((SELECT COUNT(SCN.student_id) FROM StudentClassNumbers SCN"
+            "                 JOIN Students S ON S.id = SCN.student_id"
+            "                 WHERE SCN.class_id = C.id AND SCN.year_id = %s"
+            "                   AND S.status = 'Active'), 0) AS active_students,"
+            "       COALESCE(RF.amount, 0) AS registration_fee,"
+            "       COALESCE((SELECT SUM(MS.amount) FROM MonthlyFeeSchedule MS"
+            "                 WHERE MS.class_id = C.id), 0) AS monthly_total"
+            " FROM Classes C"
+            " LEFT JOIN RegistrationFees RF ON RF.class_id = C.id"
+            " ORDER BY C.sort_order, C.class_name_fr",
+            (year_id,),
+        )
+        return cursor.fetchall()

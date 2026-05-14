@@ -16,6 +16,8 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from fpdf import FPDF
 from database_setup import DatabaseManager
+from repositories.analytics_repo import AnalyticsRepository
+from repositories.finance_repo import FinanceRepository
 from pdf_report_style import apply_grades_sheet_header, apply_table_header_style, apply_table_body_style, set_zebra_row_fill, get_school_info_row
 from print_export_service import output_pdf, get_report_output_mode
 from app_logger import AppLogger
@@ -566,7 +568,7 @@ class AdvancedReportsWindow(QMainWindow):
         db = DatabaseManager()
         with db.get_connection() as conn:
             cursor = conn.cursor()
-            active_year_id, active_year_label = self._get_active_year_context(cursor)
+            active_year_id, active_year_label = AnalyticsRepository(conn).get_active_year_context()
 
             income_filter = "transaction_date IS NOT NULL"
             expense_filter = "expense_date IS NOT NULL"
@@ -594,25 +596,14 @@ class AdvancedReportsWindow(QMainWindow):
             balance = total_income - total_expenses
 
             if active_year_id:
-                cursor.execute("""
-                    SELECT COUNT(DISTINCT S.id) 
-                    FROM Students S
-                    JOIN StudentClassNumbers SCN ON S.id = SCN.student_id
-                    WHERE S.status='Active' AND SCN.year_id=%s
-                """, (active_year_id,))
-                active_students = int(cursor.fetchone()[0] or 0)
+                stats = AnalyticsRepository(conn).get_comprehensive_stats(active_year_id)
             else:
-                active_students = 0
-                
-            cursor.execute("SELECT COUNT(*) FROM Classes")
-            total_classes = int(cursor.fetchone()[0] or 0)
-
-            cursor.execute("SELECT COUNT(*) FROM StudentAttendance WHERE status='Présent' AND (year_id=%s OR %s IS NULL)", (active_year_id, active_year_id))
-            presents = int(cursor.fetchone()[0] or 0)
-            cursor.execute("SELECT COUNT(*) FROM StudentAttendance WHERE status='Absent' AND (year_id=%s OR %s IS NULL)", (active_year_id, active_year_id))
-            absents = int(cursor.fetchone()[0] or 0)
-            cursor.execute("SELECT COUNT(*) FROM StudentAttendance WHERE status='Retard' AND (year_id=%s OR %s IS NULL)", (active_year_id, active_year_id))
-            lates = int(cursor.fetchone()[0] or 0)
+                stats = AnalyticsRepository(conn).get_comprehensive_stats(None)
+            active_students = stats["active_students"]
+            total_classes = stats["total_classes"]
+            presents = stats["presents"]
+            absents = stats["absents"]
+            lates = stats["lates"]
 
         apply_table_header_style(pdf, "Arial", 10)
         pdf.cell(0, 8, self._sanitize_latin("Résumé Financier"), 1, 1, 'L', True)
@@ -1112,12 +1103,7 @@ class AdvancedReportsWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                try:
-                    cursor.execute("SELECT id, COALESCE(class_name_fr, '-') FROM Classes ORDER BY sort_order")
-                except Exception:
-                    cursor.execute("SELECT id, COALESCE(class_name_fr, '-') FROM Classes ORDER BY class_name_fr")
-                for class_id, class_name in cursor.fetchall():
+                for class_id, class_name in FinanceRepository(conn).list_classes():
                     self.class_combo.addItem(str(class_name or "-"), class_id)
         except Exception as e:
             AppLogger.error("AdvancedReports", "Erreur lors du chargement des classes", e)

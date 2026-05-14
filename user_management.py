@@ -11,6 +11,7 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
 from PyQt6.QtCore import Qt, QDate
 from PyQt6.QtGui import QFont, QColor
 from database_setup import DatabaseManager, log_audit
+from repositories.user_repo import UserRepository
 from app_logger import AppLogger
 import security_utils
 from print_export_service import output_pdf, get_report_output_mode
@@ -73,14 +74,11 @@ class UserManagementWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT count(*) FROM Users")
-                if cursor.fetchone()[0] == 0:
+                repo = UserRepository(conn)
+                if repo.count_users() == 0:
                     default_pass = security_utils.hash_password("admin")
-                    cursor.execute("INSERT INTO Users (username, email, password_hash, role) VALUES (%s, %s, %s, %s)", 
-                                ("admin", "admin@school.local", default_pass, "Admin"))
-                    cursor.execute("INSERT INTO AuditLogs (actor, action, target, timestamp) VALUES (%s, %s, %s, %s)",
-                                ("System", "Auto-Create", "admin", datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+                    repo.create_user("admin", "admin@school.local", default_pass, "Admin")
+                    log_audit(conn, "System", "Auto-Create", "admin")
                     conn.commit()
         except Exception as e:
             AppLogger.error("UserManagement", f"Error ensuring admin exists: {e}")
@@ -88,11 +86,8 @@ class UserManagementWindow(QMainWindow):
     def log_action(self, action, target):
         try:
             db = DatabaseManager()
-            timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("INSERT INTO AuditLogs (actor, action, target, timestamp) VALUES (%s, %s, %s, %s)",
-                            (self.current_user, action, target, timestamp))
+                log_audit(conn, self.current_user, action, target)
                 conn.commit()
             self.load_audit_logs()
         except Exception as e:
@@ -416,9 +411,7 @@ class UserManagementWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT id, first_name, last_name FROM Staff WHERE status='Actif' ORDER BY last_name")
-                rows = cursor.fetchall()
+                rows = UserRepository(conn).list_active_staff()
             
             self.combo_staff.clear()
             self.combo_staff.addItem("- Aucun lien -", None)
@@ -437,10 +430,7 @@ class UserManagementWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT email FROM Staff WHERE id=%s", (staff_id,))
-                row = cursor.fetchone()
-            email = row[0] if row and row[0] else ""
+                email = UserRepository(conn).get_staff_email(staff_id)
             self.txt_new_email.setText(email)
         except Exception:
             self.txt_new_email.clear()
@@ -450,16 +440,7 @@ class UserManagementWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT u.id, u.staff_id, 
-                        COALESCE(s.first_name || ' ' || s.last_name, '---') as staff_name,
-                        u.username, u.email, u.role 
-                    FROM Users u 
-                    LEFT JOIN Staff s ON u.staff_id = s.id
-                    ORDER BY u.id DESC
-                """)
-                rows = cursor.fetchall()
+                rows = UserRepository(conn).list_users()
             
             for row in rows:
                 idx = self.table.rowCount()
@@ -481,20 +462,8 @@ class UserManagementWindow(QMainWindow):
         
         try:
             db = DatabaseManager()
-            query = "SELECT timestamp, actor, action, target FROM AuditLogs WHERE (actor ILIKE %s OR action ILIKE %s OR target ILIKE %s)"
-            params = [f"%{search}%", f"%{search}%", f"%{search}%"]
-
-            if date_start and date_end:
-                query += " AND timestamp >= %s AND timestamp <= %s"
-                params.extend([date_start, date_end])
-
-            query += " ORDER BY id DESC LIMIT %s"
-            params.append(max_rows)
-            
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute(query, params)
-                rows = cursor.fetchall()
+                rows = UserRepository(conn).list_audit_logs(search, date_start, date_end, max_rows)
 
             self.current_audit_report_rows = [[r[0], r[1], r[2], r[3]] for r in rows]
 
@@ -585,11 +554,7 @@ class UserManagementWindow(QMainWindow):
             hashed_pwd = security_utils.hash_password(password)
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    INSERT INTO Users (staff_id, username, email, password_hash, role, status)
-                    VALUES (%s, %s, %s, %s, %s, 'Actif')
-                """, (staff_id, username, email, hashed_pwd, role))
+                UserRepository(conn).create_user(username, email, hashed_pwd, role, staff_id=staff_id)
                 log_audit(conn, getattr(self, "current_user", "admin"), "CREATE_USER", username)
                 conn.commit()
             
@@ -633,8 +598,7 @@ class UserManagementWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("UPDATE Users SET password_hash=%s WHERE id=%s", (hashed_pwd, self.selected_user_id))
+                UserRepository(conn).update_password(self.selected_user_id, hashed_pwd)
                 log_audit(conn, getattr(self, "current_user", "admin"), "RESET_PASSWORD", self.selected_username)
                 conn.commit()
             
@@ -654,12 +618,9 @@ class UserManagementWindow(QMainWindow):
             try:
                 db = DatabaseManager()
                 with db.get_connection() as conn:
-                    cursor = conn.cursor()
-                    cursor.execute("DELETE FROM Users WHERE id=%s", (self.selected_user_id,))
-                    conn.commit()
-                from database_setup import log_audit
-                with db.get_connection() as conn:
+                    UserRepository(conn).delete_user(self.selected_user_id)
                     log_audit(conn, getattr(self, "current_user", "admin"), "DELETE_USER", self.selected_username)
+                    conn.commit()
                 self.load_users()
                 self.lbl_selected_user.setText("Aucun utilisateur sélectionné")
                 colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()

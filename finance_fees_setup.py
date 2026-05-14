@@ -3,6 +3,7 @@ import psycopg2
 from datetime import datetime
 from fpdf import FPDF
 from database_setup import DatabaseManager
+from repositories.finance_repo import FinanceRepository
 from app_logger import AppLogger
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QHBoxLayout, QTableWidget, QTableWidgetItem, 
@@ -52,13 +53,7 @@ class FeesSetupWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT id FROM AcademicYears WHERE is_active=1 LIMIT 1")
-                row = cursor.fetchone()
-                if not row:
-                    cursor.execute("SELECT id FROM AcademicYears ORDER BY id DESC LIMIT 1")
-                    row = cursor.fetchone()
-                return row[0] if row else -1
+                return FinanceRepository(conn).get_active_year_id()
         except Exception:
             return -1
 
@@ -362,9 +357,7 @@ class FeesSetupWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT id, class_name_fr FROM Classes")
-                classes = cursor.fetchall()
+                classes = FinanceRepository(conn).list_classes()
                 
                 self.combo_class_reg.clear()
                 self.combo_class_month.clear()
@@ -389,9 +382,7 @@ class FeesSetupWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("DELETE FROM RegistrationFees WHERE class_id=%s", (class_id,))
-                cursor.execute("INSERT INTO RegistrationFees (class_id, amount) VALUES (%s,%s)", (class_id, amount))
+                FinanceRepository(conn).upsert_registration_fee(class_id, amount)
                 conn.commit()
             self.load_reg_table()
             QMessageBox.information(self, "Succès", "Frais d'inscription mis à jour.")
@@ -403,12 +394,8 @@ class FeesSetupWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT C.class_name_fr, R.amount 
-                    FROM RegistrationFees R JOIN Classes C ON R.class_id = C.id
-                """)
-                for r in cursor.fetchall():
+                rows = FinanceRepository(conn).get_registration_fees_table()
+            for r in rows:
                     idx = self.table_reg.rowCount()
                     self.table_reg.insertRow(idx)
                     amount = float(r[1] or 0)
@@ -440,16 +427,11 @@ class FeesSetupWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("DELETE FROM MonthlyFeeSchedule WHERE class_id=%s", (class_id,))
-                
-                for i, (month_idx, month_name) in enumerate(self.academic_months):
-                    amount = self.table_months.cellWidget(i, 1).value()
-                    cursor.execute("""
-                        INSERT INTO MonthlyFeeSchedule (class_id, month_index, month_name, amount)
-                        VALUES (%s, %s, %s, %s)
-                    """, (class_id, month_idx, month_name, amount))
-                
+                entries = [
+                    (month_idx, month_name, self.table_months.cellWidget(i, 1).value())
+                    for i, (month_idx, month_name) in enumerate(self.academic_months)
+                ]
+                FinanceRepository(conn).save_monthly_fee_schedule(class_id, entries)
                 conn.commit()
             QMessageBox.information(self, "Succès", "Échéancier enregistré avec succès.")
         except Exception as e:
@@ -464,11 +446,9 @@ class FeesSetupWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT month_index, amount FROM MonthlyFeeSchedule WHERE class_id=%s", (class_id,))
-                rows = cursor.fetchall()
+                rows = FinanceRepository(conn).get_monthly_fee_schedule(class_id)
             
-            data_map = {r[0]: r[1] for r in rows}
+            data_map = {r[0]: r[2] for r in rows}
             
             for i, (m_idx, _) in enumerate(self.academic_months):
                 if m_idx in data_map:
@@ -488,24 +468,11 @@ class FeesSetupWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
 
                 if report_key == "comparison":
                     title = "Rapport Comparatif des Frais par Classe"
                     headers = ["Classe", "Inscription", "Total Mensualités", "Frais Annuels (1 élève)"]
-                    cursor.execute("""
-                        SELECT C.class_name_fr,
-                               COALESCE(RF.amount, 0) AS registration_fee,
-                               COALESCE((
-                                   SELECT SUM(MS.amount)
-                                   FROM MonthlyFeeSchedule MS
-                                   WHERE MS.class_id = C.id
-                               ), 0) AS monthly_total
-                        FROM Classes C
-                        LEFT JOIN RegistrationFees RF ON RF.class_id = C.id
-                        ORDER BY C.sort_order, C.class_name_fr
-                    """)
-                    for class_name, registration_fee, monthly_total in cursor.fetchall():
+                    for class_name, registration_fee, monthly_total in FinanceRepository(conn).get_fees_comparison_report():
                         annual_total = float(registration_fee or 0) + float(monthly_total or 0)
                         rows.append([
                             class_name or "-",
@@ -519,26 +486,7 @@ class FeesSetupWindow(QMainWindow):
                         return
                     title = "Rapport Projection du Revenu Annuel"
                     headers = ["Classe", "Élèves Actifs", "Frais Annuels (1 élève)", "Projection Totale"]
-                    cursor.execute("""
-                        SELECT C.class_name_fr,
-                               COALESCE((
-                                   SELECT COUNT(SCN.student_id) 
-                                   FROM StudentClassNumbers SCN
-                                   JOIN Students S ON S.id = SCN.student_id
-                                   WHERE SCN.class_id = C.id AND SCN.year_id = %s AND S.status = 'Active'
-                               ), 0) AS active_students,
-                               COALESCE(RF.amount, 0) AS registration_fee,
-                               COALESCE((
-                                   SELECT SUM(MS.amount)
-                                   FROM MonthlyFeeSchedule MS
-                                   WHERE MS.class_id = C.id
-                               ), 0) AS monthly_total
-                        FROM Classes C
-                        LEFT JOIN RegistrationFees RF ON RF.class_id = C.id
-                        ORDER BY C.sort_order, C.class_name_fr
-                    """, (active_year,))
-                    
-                    for class_name, active_students, registration_fee, monthly_total in cursor.fetchall():
+                    for class_name, active_students, registration_fee, monthly_total in FinanceRepository(conn).get_fees_projection_report(active_year):
                         annual_per_student = float(registration_fee or 0) + float(monthly_total or 0)
                         projection = annual_per_student * int(active_students or 0)
                         rows.append([
