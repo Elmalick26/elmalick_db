@@ -109,3 +109,93 @@ class StaffRepository:
         """Soft-delete: set status to 'Archived' to preserve history."""
         cursor = self.conn.cursor()
         cursor.execute("UPDATE Staff SET status='Archived' WHERE id=%s", (staff_id,))
+
+    # ──────────────────────────────────────────────
+    # Subjects
+    # ──────────────────────────────────────────────
+
+    def list_subjects(self) -> list[tuple]:
+        """Return (id, subject_name_fr) for all subjects."""
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT id, subject_name_fr FROM Subjects ORDER BY subject_name_fr")
+        return cursor.fetchall()
+
+    # ──────────────────────────────────────────────
+    # Timetable
+    # ──────────────────────────────────────────────
+
+    def list_timetable(self) -> list[tuple]:
+        """Return all timetable rows ordered by day and time.
+
+        Columns: (id, teacher_full_name, class_name_fr, subject_name_fr, day_of_week, time_range)
+        """
+        cursor = self.conn.cursor()
+        cursor.execute(
+            """
+            SELECT T.id,
+                   S.last_name || ' ' || S.first_name,
+                   C.class_name_fr,
+                   Sub.subject_name_fr,
+                   T.day_of_week,
+                   T.start_time || ' - ' || T.end_time
+            FROM Timetable T
+            JOIN Staff S ON T.teacher_id = S.id
+            JOIN Classes C ON T.class_id = C.id
+            JOIN Subjects Sub ON T.subject_id = Sub.id
+            ORDER BY
+                CASE T.day_of_week
+                    WHEN 'Lundi' THEN 1 WHEN 'Mardi' THEN 2 WHEN 'Mercredi' THEN 3
+                    WHEN 'Jeudi' THEN 4 WHEN 'Vendredi' THEN 5 WHEN 'Samedi' THEN 6 WHEN 'Dimanche' THEN 7
+                END,
+                T.start_time
+            """
+        )
+        return cursor.fetchall()
+
+    def get_timetable_for_class(self, class_id: int) -> list[tuple]:
+        """Return timetable rows for a specific class ordered by day and time.
+
+        Columns: (day_of_week, start_time, end_time, subject_name_fr, teacher_full_name)
+        """
+        cursor = self.conn.cursor()
+        cursor.execute(
+            """
+            SELECT T.day_of_week, T.start_time, T.end_time,
+                   Sub.subject_name_fr,
+                   S.last_name || ' ' || S.first_name
+            FROM Timetable T
+            JOIN Staff S ON T.teacher_id = S.id
+            JOIN Subjects Sub ON T.subject_id = Sub.id
+            WHERE T.class_id = %s
+            ORDER BY
+                CASE T.day_of_week
+                    WHEN 'Lundi' THEN 1 WHEN 'Mardi' THEN 2 WHEN 'Mercredi' THEN 3
+                    WHEN 'Jeudi' THEN 4 WHEN 'Vendredi' THEN 5 WHEN 'Samedi' THEN 6 WHEN 'Dimanche' THEN 7
+                END,
+                T.start_time
+            """,
+            (class_id,),
+        )
+        return cursor.fetchall()
+
+    def delete_timetable_entry(self, entry_id: int) -> None:
+        """Delete a timetable row by id."""
+        cursor = self.conn.cursor()
+        cursor.execute("DELETE FROM Timetable WHERE id = %s", (entry_id,))
+
+    def list_staff_for_report(self) -> list[tuple]:
+        """Return all staff rows for the staff list PDF report.
+
+        Columns: (id, full_name, role, specialty, phone, email, address,
+                  hire_date, contract_type, salary_base, hourly_rate, status)
+        """
+        cursor = self.conn.cursor()
+        cursor.execute(
+            """
+            SELECT id, first_name || ' ' || last_name, role, specialty, phone, email,
+                   address, hire_date, contract_type, salary_base, hourly_rate, status
+            FROM Staff
+            ORDER BY status='Actif' DESC, id DESC
+            """
+        )
+        return cursor.fetchall()

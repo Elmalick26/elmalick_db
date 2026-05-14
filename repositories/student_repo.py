@@ -165,3 +165,78 @@ class StudentRepository:
         cursor = self.conn.cursor()
         cursor.execute("DELETE FROM StudentClassNumbers WHERE student_id=%s", (student_id,))
         cursor.execute("DELETE FROM Students WHERE id=%s", (student_id,))
+
+    # ──────────────────────────────────────────────
+    # Academic year
+    # ──────────────────────────────────────────────
+
+    def get_active_year_id(self) -> int:
+        """Return the active academic year id, or -1 if none found."""
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT id FROM AcademicYears WHERE is_active = 1 LIMIT 1")
+        row = cursor.fetchone()
+        if row:
+            return row[0]
+        cursor.execute("SELECT id FROM AcademicYears ORDER BY id DESC LIMIT 1")
+        row = cursor.fetchone()
+        return row[0] if row else -1
+
+    # ──────────────────────────────────────────────
+    # Cycles & Classes (filter dropdowns)
+    # ──────────────────────────────────────────────
+
+    def list_cycles(self) -> list[tuple]:
+        """Return (id, name_fr) for all cycles."""
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT id, name_fr FROM Cycles ORDER BY id")
+        return cursor.fetchall()
+
+    def list_classes(self, cycle_id=None) -> list[tuple]:
+        """Return (id, class_name_fr) for classes, optionally filtered by cycle."""
+        cursor = self.conn.cursor()
+        if cycle_id:
+            cursor.execute(
+                "SELECT id, class_name_fr FROM Classes WHERE cycle_id = %s ORDER BY class_name_fr",
+                (cycle_id,),
+            )
+        else:
+            cursor.execute("SELECT id, class_name_fr FROM Classes ORDER BY class_name_fr")
+        return cursor.fetchall()
+
+    # ──────────────────────────────────────────────
+    # StudentClassNumbers (class assignment)
+    # ──────────────────────────────────────────────
+
+    def get_next_class_number(self, class_id: int, year_id: int) -> int:
+        """Return the next sequential class number for a class/year."""
+        cursor = self.conn.cursor()
+        cursor.execute(
+            "SELECT MAX(class_number) FROM StudentClassNumbers WHERE class_id = %s AND year_id = %s",
+            (class_id, year_id),
+        )
+        row = cursor.fetchone()
+        return (row[0] or 0) + 1
+
+    def get_class_assignment(self, student_id: int, year_id: int) -> tuple | None:
+        """Return (class_id, class_number) assignment for a student/year, or None."""
+        cursor = self.conn.cursor()
+        cursor.execute(
+            "SELECT class_id, class_number FROM StudentClassNumbers WHERE student_id = %s AND year_id = %s",
+            (student_id, year_id),
+        )
+        return cursor.fetchone()
+
+    def set_class_assignment(self, student_id: int, class_id: int, year_id: int, number: int) -> None:
+        """Insert or update the class assignment for a student/year."""
+        cursor = self.conn.cursor()
+        existing = self.get_class_assignment(student_id, year_id)
+        if existing:
+            cursor.execute(
+                "UPDATE StudentClassNumbers SET class_id = %s, class_number = %s WHERE student_id = %s AND year_id = %s",
+                (class_id, number, student_id, year_id),
+            )
+        else:
+            cursor.execute(
+                "INSERT INTO StudentClassNumbers (student_id, class_id, year_id, class_number) VALUES (%s, %s, %s, %s)",
+                (student_id, class_id, year_id, number),
+            )
