@@ -10,6 +10,7 @@ import security_utils
 from app_logger import AppLogger
 from ui_styles import Colors
 from db_path import configure_qt_font_environment
+from repositories.login_repo import LoginRepository
 
 
 def _resolve_app_icon_path():
@@ -43,15 +44,10 @@ class LoginWindow(QDialog):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT count(*) FROM Users")
-                if cursor.fetchone()[0] == 0:
+                repo = LoginRepository(conn)
+                if repo.count_users() == 0:
                     default_pass = security_utils.hash_password("admin")
-                    # تم استبدال ? بـ %s الخاصة بـ PostgreSQL
-                    cursor.execute("""
-                        INSERT INTO Users (username, email, password_hash, role, status) 
-                        VALUES (%s, %s, %s, %s, %s)
-                    """, ("admin", "admin@school.local", default_pass, "Admin", "Actif"))
+                    repo.insert_default_admin(default_pass)
                     conn.commit()
                     AppLogger.info("LoginWindow", "Compte administrateur par défaut créé (admin/admin)")
         except Exception as e:
@@ -250,11 +246,7 @@ class LoginWindow(QDialog):
             # حفظ كلمة المرور الجديدة
             try:
                 new_hash = security_utils.hash_password(new_pass)
-                cursor = conn.cursor()
-                cursor.execute(
-                    "UPDATE Users SET password_hash=%s WHERE id=%s",
-                    (new_hash, user_id)
-                )
+                LoginRepository(conn).update_password_hash(user_id, new_hash)
                 conn.commit()
                 
                 from database_setup import log_audit
@@ -297,10 +289,7 @@ class LoginWindow(QDialog):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                # تم استبدال ? بـ %s
-                cursor.execute("SELECT id, role, password_hash, status FROM Users WHERE username=%s", (user,))
-                result = cursor.fetchone()
+                result = LoginRepository(conn).get_user_for_login(user)
                 if result:
                     user_id, role, stored_hash, status = result
 
@@ -330,8 +319,7 @@ class LoginWindow(QDialog):
                         if security_utils.needs_rehash(stored_hash):
                             new_hash = security_utils.hash_password(pwd)
                             with db.get_connection() as conn2:
-                                cursor2 = conn2.cursor()
-                                cursor2.execute("UPDATE Users SET password_hash=%s WHERE id=%s", (new_hash, user_id))
+                                LoginRepository(conn2).update_password_hash(user_id, new_hash)
                                 conn2.commit()
                             AppLogger.info("LoginWindow", f"Mise à niveau du hachage du mot de passe pour '{user}'")
 

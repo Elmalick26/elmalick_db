@@ -886,12 +886,11 @@ class ModernStaffManagement(QMainWindow):
         except Exception as e: print(f"Subjects TT Load Error: {e}")
 
     # ================== خوارزمية فحص التداخل (Conflict Detection) ==================
-    def check_timetable_conflict(self, cursor, teacher_id, class_id, day, start, end):
+    def check_timetable_conflict(self, conn, teacher_id, class_id, day, start, end):
         """
         يفحص إذا كان هناك تداخل في الجدول الزمني
         يعود بـ (True, رسالة الخطأ) إذا كان هناك تداخل، و (False, "") إذا كان الوضع آمناً.
         """
-        # تحويل الأوقات لتسهيل المقارنة "HH:MM"
         try:
             t_start = datetime.strptime(start, "%H:%M").time()
             t_end = datetime.strptime(end, "%H:%M").time()
@@ -901,32 +900,18 @@ class ModernStaffManagement(QMainWindow):
         if t_start >= t_end:
             return True, "L'heure de fin doit être après l'heure de début."
 
+        repo = StaffRepository(conn)
+
         # 1. فحص تداخل الأستاذ (هل يدرس في فصل آخر في نفس الوقت؟)
-        cursor.execute("""
-            SELECT C.class_name_fr, start_time, end_time 
-            FROM Timetable T
-            JOIN Classes C ON T.class_id = C.id
-            WHERE T.teacher_id = %s AND T.day_of_week = %s
-        """, (teacher_id, day))
-        
-        for cname, existing_start, existing_end in cursor.fetchall():
+        for cname, existing_start, existing_end in repo.get_teacher_timetable_for_day(teacher_id, day):
             e_start = datetime.strptime(existing_start, "%H:%M").time()
             e_end = datetime.strptime(existing_end, "%H:%M").time()
-            # فحص تقاطع الفترات الزمنية
             if (t_start < e_end) and (t_end > e_start):
                 prof_name = self.combo_prof_tt.currentText()
                 return True, f"Le professeur {prof_name} est déjà assigné à la classe {cname} le {day} de {existing_start} à {existing_end}."
 
         # 2. فحص تداخل الفصل (هل الفصل لديه حصة أخرى في نفس الوقت؟)
-        cursor.execute("""
-            SELECT S.last_name || ' ' || S.first_name, Sub.subject_name_fr, start_time, end_time 
-            FROM Timetable T
-            JOIN Staff S ON T.teacher_id = S.id
-            JOIN Subjects Sub ON T.subject_id = Sub.id
-            WHERE T.class_id = %s AND T.day_of_week = %s
-        """, (class_id, day))
-
-        for prof_name, sub_name, existing_start, existing_end in cursor.fetchall():
+        for prof_name, sub_name, existing_start, existing_end in repo.get_class_timetable_for_day(class_id, day):
             e_start = datetime.strptime(existing_start, "%H:%M").time()
             e_end = datetime.strptime(existing_end, "%H:%M").time()
             if (t_start < e_end) and (t_end > e_start):
@@ -950,18 +935,13 @@ class ModernStaffManagement(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-
                 # --- استخدام خوارزمية منع التداخل ---
-                is_conflict, conflict_msg = self.check_timetable_conflict(cursor, teacher_id, class_id, day, start, end)
+                is_conflict, conflict_msg = self.check_timetable_conflict(conn, teacher_id, class_id, day, start, end)
                 if is_conflict:
                     QMessageBox.critical(self, "Conflit d'Horaire / تداخل في الجدول", conflict_msg)
                     return
 
-                cursor.execute("""
-                    INSERT INTO Timetable (teacher_id, class_id, subject_id, day_of_week, start_time, end_time)
-                    VALUES (%s, %s, %s, %s, %s, %s)
-                """, (teacher_id, class_id, sub_id, day, start, end))
+                StaffRepository(conn).insert_timetable_entry(teacher_id, class_id, sub_id, day, start, end)
                 conn.commit()
             self.load_timetable()
             self.txt_time_start.clear()

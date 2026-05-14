@@ -1,5 +1,6 @@
 import os
 from database_setup import DatabaseManager
+from repositories.staff_repo import StaffRepository
 
 SLATE_HEADER_BG = (30, 41, 59)
 SLATE_HEADER_TEXT = (248, 250, 252)
@@ -43,9 +44,7 @@ def get_school_info_row():
     try:
         with DatabaseManager() as db:
             conn = db.get_connection()
-            cursor = conn.cursor()
-            cursor.execute("SELECT * FROM SchoolInfo LIMIT 1")
-            return cursor.fetchone()
+            return StaffRepository(conn).get_school_info()
     except Exception:
         return None
 

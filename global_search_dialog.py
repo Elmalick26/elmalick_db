@@ -28,6 +28,7 @@ from PyQt6.QtGui import QFont, QKeySequence, QColor
 
 from database_setup import DatabaseManager
 from app_logger import AppLogger
+from repositories.global_search_repo import GlobalSearchRepository
 from ui_styles import ThemeManager
 
 
@@ -63,72 +64,7 @@ def _search(query: str, limit: int = 40) -> list[ResultItem]:
     try:
         db = DatabaseManager()
         with db.get_connection() as conn:
-            cursor = conn.cursor()
-
-            # 1. Élèves
-            cursor.execute("""
-                SELECT id,
-                       first_name_fr || ' ' || last_name_fr,
-                       COALESCE(first_name_ar, '') || ' ' || COALESCE(last_name_ar, '')
-                FROM Students
-                WHERE (first_name_fr ILIKE %s OR last_name_fr ILIKE %s
-                       OR first_name_ar ILIKE %s OR last_name_ar ILIKE %s)
-                  AND status != 'Archived'
-                ORDER BY last_name_fr
-                LIMIT %s
-            """, (pat, pat, pat, pat, limit))
-            for sid, name_fr, name_ar in cursor.fetchall():
-                subtitle = name_ar.strip() if name_ar.strip() else ""
-                results.append(("Élève", name_fr.strip(), subtitle, "student_management", sid))
-
-            # 2. Personnel — COALESCE(status,'Actif') pour les anciens enregistrements
-            cursor.execute("""
-                SELECT id,
-                       first_name || ' ' || last_name,
-                       role
-                FROM Staff
-                WHERE (first_name ILIKE %s OR last_name ILIKE %s OR role ILIKE %s)
-                  AND COALESCE(status, 'Actif') != 'Archived'
-                ORDER BY last_name
-                LIMIT %s
-            """, (pat, pat, pat, limit))
-            for sid, name, role in cursor.fetchall():
-                results.append(("Personnel", name.strip(), role or "", "staff_management", sid))
-
-            # 3. Paiements — recherche par n° reçu (id) ou description (details)
-            cursor.execute("""
-                SELECT P.id,
-                       COALESCE(S.first_name_fr,'') || ' ' || COALESCE(S.last_name_fr,''),
-                       CAST(P.transaction_date AS TEXT),
-                       P.amount_paid
-                FROM Payments P
-                JOIN Students S ON P.student_id = S.id
-                WHERE (CAST(P.id AS TEXT) ILIKE %s
-                       OR COALESCE(P.details,'') ILIKE %s
-                       OR S.first_name_fr ILIKE %s
-                       OR S.last_name_fr  ILIKE %s)
-                ORDER BY P.transaction_date DESC
-                LIMIT %s
-            """, (pat, pat, pat, pat, limit))
-            for pid, name, tx_date, amount in cursor.fetchall():
-                date_str = str(tx_date)[:10] if tx_date else ""
-                subtitle = f"Reçu #{pid}  •  {date_str}  •  {float(amount or 0):,.0f} F"
-                results.append(("Paiement", name.strip(), subtitle, "finance_payments", pid))
-
-            # 4. AuditLogs
-            cursor.execute("""
-                SELECT id, actor, action || ' → ' || COALESCE(target,''),
-                       CAST(timestamp AS TEXT)
-                FROM AuditLogs
-                WHERE actor ILIKE %s OR action ILIKE %s OR target ILIKE %s
-                ORDER BY timestamp DESC
-                LIMIT %s
-            """, (pat, pat, pat, limit))
-            for aid, actor, action_target, ts in cursor.fetchall():
-                date_str = str(ts)[:16] if ts else ""
-                subtitle = f"{actor}  •  {date_str}"
-                results.append(("Audit", action_target, subtitle, None, aid))
-
+            results.extend(GlobalSearchRepository(conn).search_all(pat, limit))
     except Exception as e:
         AppLogger.error("GlobalSearch", f"Search error: {e}")
 

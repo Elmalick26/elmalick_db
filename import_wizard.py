@@ -34,6 +34,7 @@ from database_setup import DatabaseManager, log_audit
 from app_logger import AppLogger
 from validators import validate_student, format_errors
 from ui_styles import ThemeManager
+from repositories.import_wizard_repo import ImportWizardRepository
 
 try:
     import openpyxl
@@ -110,48 +111,16 @@ class ImportWorker(QThread):
         for idx, data in enumerate(self.rows):
             try:
                 with db.get_connection() as conn:
-                    cursor = conn.cursor()
+                    repo = ImportWizardRepository(conn)
 
                     # احتساب رقم الطالب التالي في الفصل
-                    cursor.execute(
-                        "SELECT COALESCE(MAX(class_number), 0) + 1 FROM StudentClassNumbers "
-                        "WHERE class_id = %s AND year_id = %s",
-                        (self.class_id, self.year_id)
-                    )
-                    next_num = cursor.fetchone()[0]
+                    next_num = repo.get_next_class_number(self.class_id, self.year_id)
 
                     # إدراج الطالب
-                    cursor.execute("""
-                        INSERT INTO Students
-                            (first_name_fr, last_name_fr, first_name_ar, last_name_ar,
-                             birth_date, birth_place, gender, address,
-                             parent_name, parent_phone, parent_email, parent_address,
-                             status)
-                        VALUES
-                            (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'Active')
-                        RETURNING id
-                    """, (
-                        data.get("first_name_fr", ""),
-                        data.get("last_name_fr", ""),
-                        data.get("first_name_ar", ""),
-                        data.get("last_name_ar", ""),
-                        data.get("birth_date") or None,
-                        data.get("birth_place", ""),
-                        data.get("gender", ""),
-                        data.get("address", ""),
-                        data.get("parent_name", ""),
-                        data.get("parent_phone", ""),
-                        data.get("parent_email", ""),
-                        data.get("parent_address", ""),
-                    ))
-                    student_id = cursor.fetchone()[0]
+                    student_id = repo.insert_student(data)
 
                     # ربط الطالب بالفصل والسنة
-                    cursor.execute("""
-                        INSERT INTO StudentClassNumbers
-                            (student_id, class_id, year_id, class_number)
-                        VALUES (%s, %s, %s, %s)
-                    """, (student_id, self.class_id, self.year_id, next_num))
+                    repo.insert_student_class_number(student_id, self.class_id, self.year_id, next_num)
 
                     log_audit(conn, self.actor, "IMPORT_STUDENT",
                               f"{data.get('first_name_fr','')} {data.get('last_name_fr','')} (id={student_id})")
@@ -320,18 +289,10 @@ class ImportWizard(QDialog):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                # is_active = INTEGER (0/1)
-                cursor.execute(
-                    "SELECT id, year_label FROM AcademicYears ORDER BY is_active DESC, id DESC"
-                )
-                for yid, label in cursor.fetchall():
+                repo = ImportWizardRepository(conn)
+                for yid, label in repo.list_academic_years():
                     self.combo_year.addItem(label, yid)
-
-                cursor.execute(
-                    "SELECT id, class_name_fr FROM Classes ORDER BY sort_order, id"
-                )
-                for cid, cname in cursor.fetchall():
+                for cid, cname in repo.list_classes():
                     self.combo_class.addItem(cname, cid)
         except Exception as e:
             AppLogger.error("ImportWizard", f"Chargement classes/années: {e}")

@@ -470,3 +470,53 @@ class StaffRepository:
             (limit,),
         )
         return cursor.fetchall()
+
+    # ── Timetable conflict helpers ─────────────────────────
+
+    def get_teacher_timetable_for_day(self, teacher_id: int, day: str) -> list[tuple]:
+        """Return (class_name_fr, start_time, end_time) for a teacher on a given day."""
+        cursor = self.conn.cursor()
+        cursor.execute(
+            """
+            SELECT C.class_name_fr, T.start_time, T.end_time
+            FROM Timetable T
+            JOIN Classes C ON T.class_id = C.id
+            WHERE T.teacher_id = %s AND T.day_of_week = %s
+            """,
+            (teacher_id, day),
+        )
+        return cursor.fetchall()
+
+    def get_class_timetable_for_day(self, class_id: int, day: str) -> list[tuple]:
+        """Return (prof_name, subject_name_fr, start_time, end_time) for a class on a given day."""
+        cursor = self.conn.cursor()
+        cursor.execute(
+            """
+            SELECT S.last_name || ' ' || S.first_name, Sub.subject_name_fr, T.start_time, T.end_time
+            FROM Timetable T
+            JOIN Staff S ON T.teacher_id = S.id
+            JOIN Subjects Sub ON T.subject_id = Sub.id
+            WHERE T.class_id = %s AND T.day_of_week = %s
+            """,
+            (class_id, day),
+        )
+        return cursor.fetchall()
+
+    def insert_timetable_entry(
+        self,
+        teacher_id: int,
+        class_id: int,
+        sub_id: int,
+        day: str,
+        start: str,
+        end: str,
+    ) -> None:
+        """Insert a new timetable entry."""
+        cursor = self.conn.cursor()
+        cursor.execute(
+            """
+            INSERT INTO Timetable (teacher_id, class_id, subject_id, day_of_week, start_time, end_time)
+            VALUES (%s, %s, %s, %s, %s, %s)
+            """,
+            (teacher_id, class_id, sub_id, day, start, end),
+        )

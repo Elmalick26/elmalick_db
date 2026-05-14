@@ -546,15 +546,11 @@ class FirstRunWizard(QDialog):
         try:
             import security_utils
             from database_setup import DatabaseManager, log_audit
+            from repositories.login_repo import LoginRepository
             new_hash = security_utils.hash_password(new_password)
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                # تحديث كلمة المرور وتغيير اسم المستخدم إذا تغيّر
-                cursor.execute(
-                    "UPDATE Users SET password_hash=%s, username=%s WHERE username='admin' OR id=1",
-                    (new_hash, new_username)
-                )
+                LoginRepository(conn).update_admin_credentials(new_hash, new_username)
                 conn.commit()
                 log_audit(conn, "wizard", "ADMIN_SETUP", new_username)
         except Exception as e:
