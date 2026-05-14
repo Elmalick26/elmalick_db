@@ -2,6 +2,7 @@ import sys
 import psycopg2
 import os
 from database_setup import DatabaseManager
+from repositories.academic_repo import AcademicRepository
 
 # محاولة استيراد ConfigManager، وتجاوز الخطأ إن لم يكن متوفراً بالكامل بعد
 try:
@@ -417,11 +418,7 @@ class AcademicSettingsWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                if self.current_year_id:
-                    cursor.execute("UPDATE AcademicYears SET year_label=%s WHERE id=%s", (label, self.current_year_id))
-                else:
-                    cursor.execute("INSERT INTO AcademicYears (year_label, is_active) VALUES (%s, 0)", (label,))
+                AcademicRepository(conn).upsert_year(self.current_year_id, label)
                 conn.commit()
             self.txt_year.clear()
             self.current_year_id = None
@@ -435,9 +432,7 @@ class AcademicSettingsWindow(QMainWindow):
     def edit_year(self, id):
         db = DatabaseManager()
         with db.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT year_label FROM AcademicYears WHERE id=%s", (id,))
-            res = cursor.fetchone()
+            res = AcademicRepository(conn).get_year(id)
         if res:
             self.txt_year.setText(res[0])
             self.current_year_id = id
@@ -448,9 +443,7 @@ class AcademicSettingsWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("UPDATE AcademicYears SET is_active=0")
-                cursor.execute("UPDATE AcademicYears SET is_active=1 WHERE id=%s", (id,))
+                AcademicRepository(conn).activate_year(id)
                 conn.commit()
             self.refresh_all_data()
             QMessageBox.information(self, "Succès", "Année scolaire activée avec succès! / تم تنشيط هذه السنة الدراسية!")
@@ -462,14 +455,11 @@ class AcademicSettingsWindow(QMainWindow):
             try:
                 db = DatabaseManager()
                 with db.get_connection() as conn:
-                    cursor = conn.cursor()
-                    # Check if active
-                    cursor.execute("SELECT is_active FROM AcademicYears WHERE id=%s", (id,))
-                    res = cursor.fetchone()
-                    if res and res[0] == 1:
+                    repo = AcademicRepository(conn)
+                    if repo.get_year_is_active(id):
                         QMessageBox.warning(self, "Attention", "Impossible de supprimer l'année active. / لا يمكن حذف السنة النشطة.")
                         return
-                    cursor.execute("DELETE FROM AcademicYears WHERE id=%s", (id,))
+                    repo.delete_year(id)
                     conn.commit()
                 self.refresh_all_data()
             except psycopg2.IntegrityError:
@@ -485,11 +475,7 @@ class AcademicSettingsWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                if self.current_cycle_id:
-                    cursor.execute("UPDATE Cycles SET name_fr=%s, name_ar=%s WHERE id=%s", (fr, ar, self.current_cycle_id))
-                else:
-                    cursor.execute("INSERT INTO Cycles (name_fr, name_ar) VALUES (%s, %s)", (fr, ar))
+                AcademicRepository(conn).upsert_cycle(self.current_cycle_id, fr, ar)
                 conn.commit()
             self.txt_c_fr.clear(); self.txt_c_ar.clear()
             self.current_cycle_id = None
@@ -501,9 +487,7 @@ class AcademicSettingsWindow(QMainWindow):
     def edit_cycle(self, id):
         db = DatabaseManager()
         with db.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT name_fr, name_ar FROM Cycles WHERE id=%s", (id,))
-            res = cursor.fetchone()
+            res = AcademicRepository(conn).get_cycle(id)
         if res:
             self.txt_c_fr.setText(res[0])
             self.txt_c_ar.setText(res[1])
@@ -515,8 +499,7 @@ class AcademicSettingsWindow(QMainWindow):
             try:
                 db = DatabaseManager()
                 with db.get_connection() as conn:
-                    cursor = conn.cursor()
-                    cursor.execute("DELETE FROM Cycles WHERE id=%s", (id,))
+                    AcademicRepository(conn).delete_cycle(id)
                     conn.commit()
                 self.refresh_all_data()
             except psycopg2.IntegrityError:
@@ -533,11 +516,7 @@ class AcademicSettingsWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                if self.current_class_id:
-                    cursor.execute("UPDATE Classes SET cycle_id=%s, class_name_fr=%s, class_name_ar=%s, sort_order=%s WHERE id=%s", (cid, fr, ar, order, self.current_class_id))
-                else:
-                    cursor.execute("INSERT INTO Classes (cycle_id, class_name_fr, class_name_ar, sort_order) VALUES (%s, %s, %s, %s)", (cid, fr, ar, order))
+                AcademicRepository(conn).upsert_class(self.current_class_id, cid, fr, ar, order)
                 conn.commit()
 
             self.txt_cls_fr.clear(); self.txt_cls_ar.clear(); self.sp_order.setValue(1)
@@ -550,9 +529,7 @@ class AcademicSettingsWindow(QMainWindow):
     def edit_class(self, id):
         db = DatabaseManager()
         with db.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT cycle_id, class_name_fr, class_name_ar, sort_order FROM Classes WHERE id=%s", (id,))
-            res = cursor.fetchone()
+            res = AcademicRepository(conn).get_class(id)
         
         if res:
             idx = self.combo_cycles_cls.findData(res[0])
@@ -568,8 +545,7 @@ class AcademicSettingsWindow(QMainWindow):
             try:
                 db = DatabaseManager()
                 with db.get_connection() as conn:
-                    cursor = conn.cursor()
-                    cursor.execute("DELETE FROM Classes WHERE id=%s", (id,))
+                    AcademicRepository(conn).delete_class(id)
                     conn.commit()
                 self.refresh_all_data()
             except psycopg2.IntegrityError:
@@ -587,11 +563,7 @@ class AcademicSettingsWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                if self.current_subject_id:
-                    cursor.execute("UPDATE Subjects SET cycle_id=%s, subject_name_fr=%s, subject_name_ar=%s, coefficient=%s, subject_lang=%s WHERE id=%s", (cid, fr, ar, coef, lang, self.current_subject_id))
-                else:
-                    cursor.execute("INSERT INTO Subjects (cycle_id, subject_name_fr, subject_name_ar, coefficient, subject_lang) VALUES (%s, %s, %s, %s, %s)", (cid, fr, ar, coef, lang))
+                AcademicRepository(conn).upsert_subject(self.current_subject_id, cid, fr, ar, coef, lang)
                 conn.commit()
             
             self.txt_sub_fr.clear(); self.txt_sub_ar.clear(); self.sp_coeff.setValue(1)
@@ -604,9 +576,7 @@ class AcademicSettingsWindow(QMainWindow):
     def edit_subject(self, id):
         db = DatabaseManager()
         with db.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT cycle_id, subject_name_fr, subject_name_ar, coefficient, subject_lang FROM Subjects WHERE id=%s", (id,))
-            res = cursor.fetchone()
+            res = AcademicRepository(conn).get_subject(id)
         
         if res:
             idx = self.combo_cycles_sub.findData(res[0])
@@ -623,8 +593,7 @@ class AcademicSettingsWindow(QMainWindow):
             try:
                 db = DatabaseManager()
                 with db.get_connection() as conn:
-                    cursor = conn.cursor()
-                    cursor.execute("DELETE FROM Subjects WHERE id=%s", (id,))
+                    AcademicRepository(conn).delete_subject(id)
                     conn.commit()
                 self.refresh_all_data()
             except psycopg2.IntegrityError:
@@ -636,8 +605,7 @@ class AcademicSettingsWindow(QMainWindow):
             try:
                 db = DatabaseManager()
                 with db.get_connection() as conn:
-                    cursor = conn.cursor()
-                    cursor.execute("DELETE FROM AssessmentTypes WHERE id=%s", (id,))
+                    AcademicRepository(conn).delete_evaluation(id)
                     conn.commit()
                 self.refresh_all_data()
             except psycopg2.IntegrityError:
@@ -664,12 +632,10 @@ class AcademicSettingsWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("DELETE FROM SchoolInfo")
-                cursor.execute("""
-                    INSERT INTO SchoolInfo (republic, ia, ief, school_name, auth_number, address, phone, logo_path, director_name)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-                """, (republic, ia, ief, school_name, auth, address, phone, self.logo_path_value, director))
+                AcademicRepository(conn).save_school_info(
+                    republic, ia, ief, school_name, auth, address, phone,
+                    self.logo_path_value, director
+                )
                 conn.commit()
             QMessageBox.information(self, "Succès", "Informations enregistrées et mises à jour.")
         except Exception as e:
@@ -693,30 +659,17 @@ class AcademicSettingsWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                
-                cursor.execute("DELETE FROM AssessmentTypes WHERE period_id IN (SELECT id FROM AcademicPeriods WHERE year_id=%s AND cycle_id=%s)", (year_id, cycle_id))
-                cursor.execute("DELETE FROM AcademicPeriods WHERE year_id=%s AND cycle_id=%s", (year_id, cycle_id))
-
-                if "elem" in cycle_name or "prim" in cycle_name or "إبتدائ" in cycle_name:
-                    periods = [("Trimestre 1", "الفصل الأول"), ("Trimestre 2", "الفصل الثاني"), ("Trimestre 3", "الفصل الثالث")]
-                    for idx, (p_fr, p_ar) in enumerate(periods):
-                        cursor.execute("INSERT INTO AcademicPeriods (year_id, cycle_id, period_name_fr, period_name_ar, sort_order) VALUES (%s, %s, %s, %s, %s) RETURNING id", (year_id, cycle_id, p_fr, p_ar, idx+1))
-                        period_id = cursor.fetchone()[0]
-                        cursor.execute("INSERT INTO AssessmentTypes (period_id, name_fr, name_ar, type_code, weight_percentage) VALUES (%s, 'Composition', 'اختبار فصلي', 'COMPO', 1.0)", (period_id,))
-                else:
-                    periods = [("Semestre 1", "السداسي الأول"), ("Semestre 2", "السداسي الثاني")]
-                    for idx, (p_fr, p_ar) in enumerate(periods):
-                        cursor.execute("INSERT INTO AcademicPeriods (year_id, cycle_id, period_name_fr, period_name_ar, sort_order) VALUES (%s, %s, %s, %s, %s) RETURNING id", (year_id, cycle_id, p_fr, p_ar, idx+1))
-                        period_id = cursor.fetchone()[0]
-                        cursor.execute("INSERT INTO AssessmentTypes (period_id, name_fr, name_ar, type_code, weight_percentage) VALUES (%s, 'Devoir 1', 'الواجب 1', 'DEV', 1.0)", (period_id,))
-                        cursor.execute("INSERT INTO AssessmentTypes (period_id, name_fr, name_ar, type_code, weight_percentage) VALUES (%s, 'Devoir 2', 'الواجب 2', 'DEV', 1.0)", (period_id,))
-                        cursor.execute("INSERT INTO AssessmentTypes (period_id, name_fr, name_ar, type_code, weight_percentage) VALUES (%s, 'Composition', 'الاختبار', 'COMPO', 2.0)", (period_id,))
-
+                is_elementary = (
+                    "elem" in cycle_name or "prim" in cycle_name
+                    or "\u0625\u0628\u062a\u062f\u0627\u0626\u064a" in cycle_name
+                )
+                AcademicRepository(conn).generate_periods_and_assessments(
+                    year_id, cycle_id, is_elementary
+                )
                 conn.commit()
 
             self.refresh_all_data()
-            QMessageBox.information(self, "Succès", "Configuration générée avec succès.")
+            QMessageBox.information(self, "Succ\u00e8s", "Configuration g\u00e9n\u00e9r\u00e9e avec succ\u00e8s.")
         except Exception as e:
             QMessageBox.critical(self, "Erreur", str(e))
 
@@ -724,11 +677,10 @@ class AcademicSettingsWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
+                repo = AcademicRepository(conn)
 
                 # School Info
-                cursor.execute("SELECT * FROM SchoolInfo LIMIT 1")
-                info = cursor.fetchone()
+                info = repo.get_school_info()
                 if info:
                     if len(info) > 1: self.info_inputs['rep'].setText(str(info[1] or ""))
                     if len(info) > 2: self.info_inputs['ia'].setText(str(info[2] or ""))
@@ -749,8 +701,7 @@ class AcademicSettingsWindow(QMainWindow):
                 # Years
                 self.table_years.setRowCount(0)
                 self.combo_year_gen.clear()
-                cursor.execute("SELECT id, year_label, is_active FROM AcademicYears")
-                for r in cursor.fetchall():
+                for r in repo.list_years():
                     idx = self.table_years.rowCount()
                     self.table_years.insertRow(idx)
                     self.table_years.setItem(idx, 0, QTableWidgetItem(str(r[0])))
@@ -802,8 +753,7 @@ class AcademicSettingsWindow(QMainWindow):
                 self.combo_cycles_cls.clear()
                 self.combo_cycles_sub.clear()
                 self.combo_cycle_gen.clear()
-                cursor.execute("SELECT id, name_fr, name_ar FROM Cycles")
-                for r in cursor.fetchall():
+                for r in repo.list_cycles():
                     idx = self.table_cycles.rowCount()
                     self.table_cycles.insertRow(idx)
                     self.table_cycles.setItem(idx, 0, QTableWidgetItem(str(r[0])))
@@ -818,8 +768,7 @@ class AcademicSettingsWindow(QMainWindow):
 
                 # Classes
                 self.table_classes.setRowCount(0)
-                cursor.execute("SELECT CL.id, CY.name_fr, CL.class_name_fr, CL.class_name_ar FROM Classes CL JOIN Cycles CY ON CL.cycle_id=CY.id ORDER BY CL.sort_order")
-                for r in cursor.fetchall():
+                for r in repo.list_classes_with_cycle():
                     idx = self.table_classes.rowCount()
                     self.table_classes.insertRow(idx)
                     self.table_classes.setItem(idx, 0, QTableWidgetItem(str(r[0])))
@@ -830,8 +779,7 @@ class AcademicSettingsWindow(QMainWindow):
 
                 # Subjects
                 self.table_subjects.setRowCount(0)
-                cursor.execute("SELECT S.id, C.name_fr, S.subject_name_fr, S.subject_name_ar, S.subject_lang, S.coefficient FROM Subjects S JOIN Cycles C ON S.cycle_id=C.id")
-                for r in cursor.fetchall():
+                for r in repo.list_subjects_with_cycle():
                     idx = self.table_subjects.rowCount()
                     self.table_subjects.insertRow(idx)
                     for c, v in enumerate(r): self.table_subjects.setItem(idx, c, QTableWidgetItem(self.safe_text(v)))
@@ -839,8 +787,7 @@ class AcademicSettingsWindow(QMainWindow):
 
                 # Evals
                 self.table_evals.setRowCount(0)
-                cursor.execute("SELECT A.id, C.name_fr, P.period_name_fr, A.name_fr, A.name_ar, A.type_code, A.weight_percentage FROM AssessmentTypes A JOIN AcademicPeriods P ON A.period_id = P.id JOIN Cycles C ON P.cycle_id = C.id ORDER BY C.id, P.sort_order")
-                for r in cursor.fetchall():
+                for r in repo.list_evaluations():
                     idx = self.table_evals.rowCount()
                     self.table_evals.insertRow(idx)
                     self.table_evals.setItem(idx, 0, QTableWidgetItem(str(r[0])))

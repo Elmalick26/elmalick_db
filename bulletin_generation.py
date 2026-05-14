@@ -14,6 +14,7 @@ from fpdf import FPDF
 
 from ui_styles import ThemeManager, get_card_style, apply_shadow_to_widget, Colors, get_table_style, get_tabs_style
 from print_export_service import output_pdf, get_report_output_mode
+from repositories.bulletin_repo import BulletinRepository
 
 THEME_AVAILABLE = True
 BULLETIN_SUMMARY_OUTPUT_MODE = get_report_output_mode("bulletin_summary_mode", "save")
@@ -952,13 +953,7 @@ class BulletinGenerationWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT id FROM AcademicYears WHERE is_active=1 LIMIT 1")
-                row = cursor.fetchone()
-                if not row:
-                    cursor.execute("SELECT id FROM AcademicYears ORDER BY id DESC LIMIT 1")
-                    row = cursor.fetchone()
-                return row[0] if row else -1
+                return BulletinRepository(conn).get_active_year_id()
         except Exception:
             return -1
 
@@ -1236,20 +1231,14 @@ class BulletinGenerationWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                active_year = self.get_active_year_id()
-                
-                cursor.execute("SELECT id, class_name_fr, class_name_ar FROM Classes")
-                classes = cursor.fetchall()
-
-                if active_year != -1:
-                    cursor.execute(
-                        "SELECT id, period_name_fr, period_name_ar FROM AcademicPeriods WHERE year_id=%s ORDER BY sort_order",
-                        (active_year,)
-                    )
-                else:
-                    cursor.execute("SELECT id, period_name_fr, period_name_ar FROM AcademicPeriods ORDER BY sort_order")
-                periods = cursor.fetchall()
+                repo = BulletinRepository(conn)
+                active_year = repo.get_active_year_id()
+                classes = repo.list_classes()
+                periods = (
+                    repo.list_periods_for_year(active_year)
+                    if active_year != -1
+                    else repo.list_all_periods()
+                )
 
             self.combo_class_batch.clear()
             self.combo_class_indiv.clear()
@@ -1289,14 +1278,10 @@ class BulletinGenerationWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT S.id, S.first_name_fr, S.last_name_fr, S.first_name_ar, S.last_name_ar 
-                    FROM Students S
-                    JOIN StudentClassNumbers SCN ON S.id = SCN.student_id
-                    WHERE SCN.class_id=%s AND SCN.year_id=%s AND S.status='Active'
-                """, (class_id, active_year))
-                for s in cursor.fetchall():
+                students = BulletinRepository(conn).list_active_students_in_class(
+                    class_id, active_year
+                )
+                for s in students:
                     first_fr = str(s[1] or "").strip()
                     last_fr = str(s[2] or "").strip()
                     first_ar = str(s[3] or "").strip()
@@ -1315,27 +1300,12 @@ class BulletinGenerationWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT cycle_id FROM Classes WHERE id=%s", (class_id,))
-                res = cursor.fetchone()
-                if not res: return None
-                cycle_id = res[0]
-                active_year = self.get_active_year_id()
-                if active_year != -1:
-                    cursor.execute(
-                        "SELECT id FROM AcademicPeriods WHERE period_name_fr=%s AND cycle_id=%s AND year_id=%s ORDER BY sort_order LIMIT 1",
-                        (period_name, cycle_id, active_year)
-                    )
-                    res = cursor.fetchone()
-                    if res:
-                        return res[0]
-
-                cursor.execute(
-                    "SELECT id FROM AcademicPeriods WHERE period_name_fr=%s AND cycle_id=%s ORDER BY id DESC LIMIT 1",
-                    (period_name, cycle_id)
-                )
-                res = cursor.fetchone()
-            return res[0] if res else None
+                repo = BulletinRepository(conn)
+                cycle_id = repo.get_cycle_id_for_class(class_id)
+                if cycle_id is None:
+                    return None
+                active_year = repo.get_active_year_id()
+                return repo.get_period_id_by_name(period_name, cycle_id, active_year)
         except Exception:
             return None
 
@@ -1402,9 +1372,7 @@ class BulletinGenerationWindow(QMainWindow):
             try:
                 db = DatabaseManager()
                 with db.get_connection() as conn:
-                    cursor = conn.cursor()
-                    cursor.execute("SELECT * FROM SchoolInfo LIMIT 1")
-                    school_info = cursor.fetchone()
+                    school_info = BulletinRepository(conn).get_school_info()
             except Exception:
                 school_info = None
 
@@ -1588,27 +1556,20 @@ class BulletinGenerationWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
+                repo = BulletinRepository(conn)
+                school_info = repo.get_school_info()
                 cursor = conn.cursor()
-                cursor.execute("SELECT * FROM SchoolInfo LIMIT 1")
-                school_info = cursor.fetchone()
-                
-                # Fetch active year label based on period's year
                 year_id = GradeCalculator()._get_period_year_id(cursor, real_period_id)
-                cursor.execute("SELECT year_label FROM AcademicYears WHERE id=%s", (year_id,))
-                yr = cursor.fetchone()
-                if yr:
-                    year_label = yr[0]
-                else:
-                    cursor.execute("SELECT year_label FROM AcademicYears ORDER BY id DESC LIMIT 1")
-                    yr_alt = cursor.fetchone()
-                    year_label = yr_alt[0] if yr_alt else "202X-202X"
-                    
-                cursor.execute("SELECT class_name_fr, class_name_ar FROM Classes WHERE id=%s", (class_id,))
-                class_res = cursor.fetchone()
-                if class_res:
-                    class_name = f"{class_res[0]} / {class_res[1]}" if class_res[1] else class_res[0]
-                else:
-                    class_name = "Classe"
+                year_label = (
+                    repo.get_year_label(year_id)
+                    or repo.get_last_year_label()
+                    or "202X-202X"
+                )
+                class_res = repo.get_class_names(class_id)
+                class_name = (
+                    f"{class_res[0]} / {class_res[1]}" if class_res and class_res[1]
+                    else (class_res[0] if class_res else "Classe")
+                )
 
             calc = GradeCalculator()
             all_ranks = calc.get_student_averages(class_id, real_period_id, include_conduct=True)
@@ -1685,20 +1646,18 @@ class BulletinGenerationWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT * FROM SchoolInfo LIMIT 1")
-                school_info = cursor.fetchone()
-                
+                repo = BulletinRepository(conn)
+                school_info = repo.get_school_info()
+
                 # Fetch active year from period
                 cid = self.combo_class_honor.currentData()
                 pname = self.combo_period_honor.currentText()
                 pid = self.get_real_period_id(cid, pname)
-                
+
                 if pid:
+                    cursor = conn.cursor()
                     year_id = GradeCalculator()._get_period_year_id(cursor, pid)
-                    cursor.execute("SELECT year_label FROM AcademicYears WHERE id=%s", (year_id,))
-                    yr = cursor.fetchone()
-                    year_label = yr[0] if yr else "202X-202X"
+                    year_label = repo.get_year_label(year_id) or "202X-202X"
                 else:
                     year_label = "202X-202X"
         
