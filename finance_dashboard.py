@@ -13,6 +13,7 @@ from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from database_setup import DatabaseManager
 from print_export_service import output_pdf, get_report_output_mode
 from pdf_report_style import apply_grades_sheet_header, apply_table_header_style, apply_table_body_style, set_zebra_row_fill, get_school_info_row
+from repositories.finance_repo import FinanceRepository
 
 from ui_styles import ThemeManager, Colors, rgba, get_table_style
 from app_logger import AppLogger
@@ -299,124 +300,90 @@ class ModernFinanceDashboard(QMainWindow):
 
     def refresh_data(self):
         try:
-            with DatabaseManager() as db_manager:
-                conn = db_manager.get_connection()
-                cursor = conn.cursor()
-
-                def _to_float(value):
-                    try:
-                        return float(value)
-                    except Exception:
-                        return 0.0
-
-                # Income
+            db = DatabaseManager()
+            with db.get_connection() as conn:
+                repo = FinanceRepository(conn)
+                inc = repo.get_total_income()
+                exp = repo.get_total_expenses()
+                inventory_val = repo.get_total_inventory_value()
                 try:
-                    cursor.execute("SELECT SUM(amount_paid) FROM Payments")
-                    res_inc = cursor.fetchone()[0]
-                    inc = _to_float(res_inc)
-                except Exception:
-                    inc = 0.0 
-                
-                # Expenses
-                try:
-                    cursor.execute("SELECT SUM(amount) FROM Expenses")
-                    res_exp = cursor.fetchone()[0]
-                    exp = _to_float(res_exp)
-                except Exception:
-                    exp = 0.0
-
-                solde = inc - exp
-                self.last_income = float(inc)
-                self.last_expenses = float(exp)
-                self.last_balance = float(solde)
-
-                # Update Labels
-                self.card_income.findChild(QLabel, "val_label").setText(f"{inc:,.0f} FCFA")
-                self.card_expenses.findChild(QLabel, "val_label").setText(f"{exp:,.0f} FCFA")
-                self.card_profit.findChild(QLabel, "val_label").setText(f"{solde:,.0f} FCFA")
-                
-                # Inventory Value
-                try:
-                    cursor.execute("SELECT SUM(quantity * unit_price) FROM InventoryItems")
-                    res_inv = cursor.fetchone()[0]
-                    inventory_val = _to_float(res_inv)
-                    self.last_inventory = float(inventory_val)
-                    self.card_inventory.findChild(QLabel, "val_label").setText(f"{inventory_val:,.0f} FCFA")
-                except Exception:
-                    self.last_inventory = 0.0
-                    self.card_inventory.findChild(QLabel, "val_label").setText("0 FCFA")
-
-                # Chart
-                self.ax.clear()
-                if inc > 0 or exp > 0:
-                    if THEME_AVAILABLE:
-                        theme_colors = ThemeManager.get_colors()
-                        colors = [theme_colors.SUCCESS, theme_colors.DANGER]
-                        text_color = theme_colors.TEXT_PRIMARY
-                    else:
-                        colors = [Colors().SUCCESS, Colors().DANGER]
-                        text_color = Colors().TEXT_PRIMARY
-                    wedges, texts, autotexts = self.ax.pie(
-                        [inc, exp], labels=['Recettes', 'Dépenses'], 
-                        autopct='%1.1f%%', startangle=90, colors=colors,
-                        wedgeprops={'width': 0.5, 'edgecolor': 'w'}, # Donut
-                        textprops={'color': text_color}
-                    )
-                    plt.setp(autotexts, size=9, weight="bold", color="white")
-                else:
-                    if THEME_AVAILABLE:
-                        self.ax.text(0.5, 0.5, "Pas de données", ha='center', va='center', color=ThemeManager.get_colors().TEXT_SECONDARY)
-                    else:
-                        self.ax.text(0.5, 0.5, "Pas de données", ha='center', va='center', color=Colors().TEXT_SECONDARY)
-                
-                self.canvas.draw()
-
-                # Table (Union of Income and Expenses - Date formatted for PostgreSQL safe ordering)
-                self.table_recent.setRowCount(0)
-                try:
-                    query = """
-                        SELECT 'Entrée',
-                               TRIM(COALESCE(S.last_name_fr, '') || ' ' || COALESCE(S.first_name_fr, '')),
-                               COALESCE(P.amount_paid, 0),
-                               CAST(P.transaction_date AS VARCHAR(10)) AS t_date
-                        FROM Payments P LEFT JOIN Students S ON P.student_id = S.id 
-                        UNION ALL
-                        SELECT 'Sortie', COALESCE(description, '-'), COALESCE(amount, 0), CAST(expense_date AS VARCHAR(10)) AS t_date 
-                        FROM Expenses
-                        ORDER BY t_date DESC LIMIT 15
-                    """
-                    cursor.execute(query)
-                    recent_rows = cursor.fetchall()
+                    recent_rows = repo.get_recent_transactions(limit=15)
                     self.last_recent_transactions = recent_rows
-                    
-                    for row in recent_rows:
-                        r_idx = self.table_recent.rowCount()
-                        self.table_recent.insertRow(r_idx)
-                        
-                        type_val = "Recette" if row[0] == 'Entrée' else "Dépense"
-                        type_item = QTableWidgetItem(type_val)
-                        if row[0] == 'Entrée':
-                            if THEME_AVAILABLE:
-                                type_item.setForeground(QColor(ThemeManager.get_colors().SUCCESS))
-                            else:
-                                type_item.setForeground(QColor(Colors().SUCCESS))
-                        else:
-                            if THEME_AVAILABLE:
-                                type_item.setForeground(QColor(ThemeManager.get_colors().DANGER))
-                            else:
-                                type_item.setForeground(QColor(Colors().DANGER))
-                        
-                        source_text = (str(row[1] or "-")).strip() or "-"
-                        amount_val = _to_float(row[2])
-                        date_text = str(row[3] or "-")
-
-                        self.table_recent.setItem(r_idx, 0, type_item)
-                        self.table_recent.setItem(r_idx, 1, QTableWidgetItem(source_text))
-                        self.table_recent.setItem(r_idx, 2, QTableWidgetItem(f"{amount_val:,.0f}"))
-                        self.table_recent.setItem(r_idx, 3, QTableWidgetItem(date_text))
                 except Exception as e:
+                    recent_rows = []
                     self.last_recent_transactions = []
                     AppLogger.error("FinanceDashboard", f"Dashboard Recent Transactions Error: {e}")
+
+            def _to_float(value):
+                try:
+                    return float(value)
+                except Exception:
+                    return 0.0
+
+            solde = inc - exp
+            self.last_income = float(inc)
+            self.last_expenses = float(exp)
+            self.last_balance = float(solde)
+            self.last_inventory = float(inventory_val)
+
+            # Update Labels
+            self.card_income.findChild(QLabel, "val_label").setText(f"{inc:,.0f} FCFA")
+            self.card_expenses.findChild(QLabel, "val_label").setText(f"{exp:,.0f} FCFA")
+            self.card_profit.findChild(QLabel, "val_label").setText(f"{solde:,.0f} FCFA")
+            self.card_inventory.findChild(QLabel, "val_label").setText(f"{inventory_val:,.0f} FCFA")
+
+            # Chart
+            self.ax.clear()
+            if inc > 0 or exp > 0:
+                if THEME_AVAILABLE:
+                    theme_colors = ThemeManager.get_colors()
+                    colors = [theme_colors.SUCCESS, theme_colors.DANGER]
+                    text_color = theme_colors.TEXT_PRIMARY
+                else:
+                    colors = [Colors().SUCCESS, Colors().DANGER]
+                    text_color = Colors().TEXT_PRIMARY
+                wedges, texts, autotexts = self.ax.pie(
+                    [inc, exp], labels=['Recettes', 'Dépenses'],
+                    autopct='%1.1f%%', startangle=90, colors=colors,
+                    wedgeprops={'width': 0.5, 'edgecolor': 'w'},  # Donut
+                    textprops={'color': text_color}
+                )
+                plt.setp(autotexts, size=9, weight="bold", color="white")
+            else:
+                if THEME_AVAILABLE:
+                    self.ax.text(0.5, 0.5, "Pas de données", ha='center', va='center', color=ThemeManager.get_colors().TEXT_SECONDARY)
+                else:
+                    self.ax.text(0.5, 0.5, "Pas de données", ha='center', va='center', color=Colors().TEXT_SECONDARY)
+
+            self.canvas.draw()
+
+            # Table (recent transactions)
+            self.table_recent.setRowCount(0)
+            for row in recent_rows:
+                r_idx = self.table_recent.rowCount()
+                self.table_recent.insertRow(r_idx)
+
+                type_val = "Recette" if row[0] == 'Entrée' else "Dépense"
+                type_item = QTableWidgetItem(type_val)
+                if row[0] == 'Entrée':
+                    if THEME_AVAILABLE:
+                        type_item.setForeground(QColor(ThemeManager.get_colors().SUCCESS))
+                    else:
+                        type_item.setForeground(QColor(Colors().SUCCESS))
+                else:
+                    if THEME_AVAILABLE:
+                        type_item.setForeground(QColor(ThemeManager.get_colors().DANGER))
+                    else:
+                        type_item.setForeground(QColor(Colors().DANGER))
+
+                source_text = (str(row[1] or "-")).strip() or "-"
+                amount_val = _to_float(row[2])
+                date_text = str(row[3] or "-")
+
+                self.table_recent.setItem(r_idx, 0, type_item)
+                self.table_recent.setItem(r_idx, 1, QTableWidgetItem(source_text))
+                self.table_recent.setItem(r_idx, 2, QTableWidgetItem(f"{amount_val:,.0f}"))
+                self.table_recent.setItem(r_idx, 3, QTableWidgetItem(date_text))
 
         except Exception as e:
             AppLogger.error("FinanceDashboard", f"Dashboard Error: {e}")

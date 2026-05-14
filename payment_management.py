@@ -4,6 +4,7 @@ import os
 from datetime import datetime
 from database_setup import DatabaseManager
 from app_logger import AppLogger
+from repositories.finance_repo import FinanceRepository
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                              QHBoxLayout, QTableWidget, QTableWidgetItem, 
                              QPushButton, QLabel, QLineEdit, QComboBox, 
@@ -67,13 +68,7 @@ class StudentDuesWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT id FROM AcademicYears WHERE is_active=1 LIMIT 1")
-                row = cursor.fetchone()
-                if not row:
-                    cursor.execute("SELECT id FROM AcademicYears ORDER BY id DESC LIMIT 1")
-                    row = cursor.fetchone()
-                return row[0] if row else -1
+                return FinanceRepository(conn).get_active_year_id()
         except Exception:
             return -1
 
@@ -336,9 +331,7 @@ class StudentDuesWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT id, COALESCE(class_name_fr, '-') FROM Classes ORDER BY class_name_fr")
-                for c in cursor.fetchall(): 
+                for c in FinanceRepository(conn).list_classes():
                     self.combo_classes.addItem(str(c[1] or "-"), c[0])
         except Exception as e:
             AppLogger.error("PaymentManagement", f"Error loading classes: {e}")
@@ -355,15 +348,7 @@ class StudentDuesWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT S.id,
-                           TRIM(COALESCE(S.first_name_fr, '') || ' ' || COALESCE(S.last_name_fr, '')) AS student_name
-                    FROM Students S
-                    JOIN StudentClassNumbers SCN ON S.id = SCN.student_id 
-                    WHERE SCN.class_id=%s AND SCN.year_id=%s AND S.status='Active'
-                """, (cid, active_year))
-                for s in cursor.fetchall(): 
+                for s in FinanceRepository(conn).list_students_by_class(cid, active_year):
                     self.combo_students.addItem((str(s[1] or "").strip() or "[Élève]"), s[0])
         except Exception as e:
             AppLogger.error("PaymentManagement", f"Error loading students: {e}")
@@ -382,15 +367,8 @@ class StudentDuesWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    SELECT id, fee_type, fee_description, original_amount, discount_amount, net_amount, due_date, is_paid
-                    FROM StudentDues
-                    WHERE student_id=%s AND year_id=%s
-                    ORDER BY due_date ASC, id ASC
-                """, (sid, active_year))
-                rows = cursor.fetchall()
-                
+                rows = FinanceRepository(conn).get_dues_for_management(sid, active_year)
+
                 colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
 
                 def _to_float(value):
@@ -474,13 +452,9 @@ class StudentDuesWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("""
-                    INSERT INTO StudentDues (student_id, year_id, fee_type, fee_description, original_amount, net_amount, due_date)
-                    VALUES (%s, %s, 'Custom', %s, %s, %s, %s)
-                """, (sid, active_year, desc, amt, amt, date_d))
+                FinanceRepository(conn).add_due(sid, active_year, 'Custom', desc, amt, amt, date_d)
                 conn.commit()
-                
+
             QMessageBox.information(self, "Succès", "Facture ajoutée avec succès.")
             self.txt_fee_title.clear()
             self.spin_fee_amount.setValue(0)
@@ -509,20 +483,13 @@ class StudentDuesWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT is_paid FROM StudentDues WHERE id=%s", (due_id,))
-                res = cursor.fetchone()
-                if res and res[0]:
+                repo = FinanceRepository(conn)
+                if repo.get_due_is_paid(due_id):
                     QMessageBox.warning(self, "Erreur", "Impossible de modifier une facture déjà payée.")
                     return
-                    
-                cursor.execute("""
-                    UPDATE StudentDues 
-                    SET discount_amount=%s, net_amount=%s 
-                    WHERE id=%s
-                """, (new_discount, new_net, due_id))
+                repo.update_due_discount(due_id, new_discount, new_net)
                 conn.commit()
-                
+
             QMessageBox.information(self, "Succès", "Remise appliquée avec succès.")
             self.load_student_dues()
             
@@ -536,8 +503,7 @@ class StudentDuesWindow(QMainWindow):
             try:
                 db = DatabaseManager()
                 with db.get_connection() as conn:
-                    cursor = conn.cursor()
-                    cursor.execute("DELETE FROM StudentDues WHERE id=%s", (due_id,))
+                    FinanceRepository(conn).delete_due(due_id)
                     conn.commit()
                 self.load_student_dues()
             except Exception as e:
@@ -561,53 +527,35 @@ class StudentDuesWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                
-                cursor.execute("SELECT amount FROM RegistrationFees WHERE class_id=%s", (cid,))
-                reg_res = cursor.fetchone()
-                reg_amt = reg_res[0] if reg_res else 0.0
-                
-                cursor.execute("SELECT month_index, month_name, amount FROM MonthlyFeeSchedule WHERE class_id=%s", (cid,))
-                monthly_fees = cursor.fetchall()
-                
-                cursor.execute("""
-                    SELECT S.id 
-                    FROM Students S
-                    JOIN StudentClassNumbers SCN ON S.id = SCN.student_id 
-                    WHERE SCN.class_id=%s AND SCN.year_id=%s AND S.status='Active'
-                """, (cid, active_year))
-                students = cursor.fetchall()
-                
+                repo = FinanceRepository(conn)
+
+                reg_amt = repo.get_registration_fee(cid)
+                monthly_fees = repo.get_monthly_fee_schedule(cid)
+                students = repo.list_students_in_class(cid, active_year)
+
                 generated_count = 0
                 today_str = QDate.currentDate().toString("yyyy-MM-dd")
-                
+
                 for (sid,) in students:
                     if reg_amt > 0:
-                        cursor.execute("SELECT COUNT(*) FROM StudentDues WHERE student_id=%s AND year_id=%s AND fee_type='Registration'", (sid, active_year))
-                        if cursor.fetchone()[0] == 0:
-                            cursor.execute("""
-                                INSERT INTO StudentDues (student_id, year_id, fee_type, fee_description, original_amount, net_amount, due_date)
-                                VALUES (%s, %s, 'Registration', 'Frais d''inscription', %s, %s, %s)
-                            """, (sid, active_year, reg_amt, reg_amt, today_str))
+                        if repo.count_dues_by_type(sid, active_year, 'Registration') == 0:
+                            repo.add_due(sid, active_year, 'Registration', "Frais d'inscription", reg_amt, reg_amt, today_str)
                             generated_count += 1
-                            
+
                     for m_idx, m_name, m_amt in monthly_fees:
-                        cursor.execute("SELECT COUNT(*) FROM StudentDues WHERE student_id=%s AND year_id=%s AND fee_type=%s", (sid, active_year, f'Month_{m_idx}'))
-                        if cursor.fetchone()[0] == 0:
+                        if repo.count_dues_by_type(sid, active_year, f'Month_{m_idx}') == 0:
                             due_y = datetime.now().year
-                            if m_idx < 9: due_y += 1 
+                            if m_idx < 9:
+                                due_y += 1
                             due_d = f"{due_y}-{m_idx:02d}-05"
-                            
-                            cursor.execute("""
-                                INSERT INTO StudentDues (student_id, year_id, fee_type, fee_description, original_amount, net_amount, due_date)
-                                VALUES (%s, %s, %s, %s, %s, %s, %s)
-                            """, (sid, active_year, f'Month_{m_idx}', f'Mensualité {m_name}', m_amt, m_amt, due_d))
+                            repo.add_due(sid, active_year, f'Month_{m_idx}', f'Mensualité {m_name}', m_amt, m_amt, due_d)
                             generated_count += 1
-                            
+
                 conn.commit()
-                QMessageBox.information(self, "Terminé", f"Opération terminée. {generated_count} factures générées.")
-                self.load_student_dues() 
-                
+
+            QMessageBox.information(self, "Terminé", f"Opération terminée. {generated_count} factures générées.")
+            self.load_student_dues()
+
         except Exception as e:
             QMessageBox.critical(self, "Erreur", str(e))
 
@@ -630,31 +578,10 @@ class StudentDuesWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-
-                cursor.execute("SELECT * FROM SchoolInfo LIMIT 1")
-                school_info = cursor.fetchone()
-
-                cursor.execute("""
-                    SELECT
-                        TRIM(COALESCE(S.first_name_fr, '') || ' ' || COALESCE(S.last_name_fr, '')),
-                        COALESCE(C.class_name_fr, '-'),
-                        COALESCE((SELECT year_label FROM AcademicYears WHERE id = %s), '-')
-                    FROM Students S
-                    LEFT JOIN StudentClassNumbers SCN ON SCN.student_id = S.id AND SCN.year_id = %s
-                    LEFT JOIN Classes C ON C.id = SCN.class_id
-                    WHERE S.id = %s
-                    LIMIT 1
-                """, (active_year, active_year, student_id))
-                student_meta = cursor.fetchone()
-
-                cursor.execute("""
-                    SELECT fee_type, fee_description, due_date, original_amount, discount_amount, net_amount, is_paid
-                    FROM StudentDues
-                    WHERE student_id = %s AND year_id = %s
-                    ORDER BY due_date ASC, id ASC
-                """, (student_id, active_year))
-                dues_rows = cursor.fetchall()
+                repo = FinanceRepository(conn)
+                school_info = repo.get_school_info()
+                student_meta = repo.get_student_meta_for_dues(student_id, active_year)
+                dues_rows = repo.get_dues_for_export(student_id, active_year)
 
             if not dues_rows:
                 QMessageBox.information(self, "Aucune donnée", "Aucune facture à exporter pour cet élève.")
