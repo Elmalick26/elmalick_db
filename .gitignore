@@ -25,3 +25,19 @@ logs/
 # Python virtual environments
 .venv/
 venv/
+
+# Build output (PyInstaller)
+dist_release/
+build/
+*.spec.bak
+
+# Media / personal data (PII)
+school_data/
+staff_photos/
+
+# Test coverage artifacts
+.coverage
+htmlcov/
+
+# VS Code settings (optional)
+.vscode/
