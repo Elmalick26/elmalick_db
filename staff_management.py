@@ -7,6 +7,7 @@ from datetime import datetime
 from database_setup import DatabaseManager, log_audit
 from app_logger import AppLogger
 from repositories.staff_repo import StaffRepository
+from repositories.finance_repo import FinanceRepository
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                              QHBoxLayout, QTableWidget, QTableWidgetItem, 
                              QPushButton, QLabel, QLineEdit, QComboBox, 
@@ -808,16 +809,9 @@ class ModernStaffManagement(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT * FROM SchoolInfo LIMIT 1")
-                school_info = cursor.fetchone()
-
-                cursor.execute("""
-                    SELECT id, first_name || ' ' || last_name, role, specialty, phone, email,
-                           address, hire_date, contract_type, salary_base, hourly_rate, status
-                    FROM Staff ORDER BY status='Actif' DESC, id DESC
-                """)
-                rows = cursor.fetchall()
+                repo = StaffRepository(conn)
+                school_info = FinanceRepository(conn).get_school_info()
+                rows = repo.list_staff_for_report()
 
             pdf = StaffReportPDF(school_info, "LISTE DU PERSONNEL")
             pdf.add_page()
@@ -877,20 +871,18 @@ class ModernStaffManagement(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT id, class_name_fr FROM Classes")
                 self.combo_class_tt.clear()
-                for c in cursor.fetchall(): self.combo_class_tt.addItem(c[1], c[0])
+                for c in StaffRepository(conn).list_classes():
+                    self.combo_class_tt.addItem(c[1], c[0])
         except Exception as e: print(f"Classes TT Load Error: {e}")
 
     def load_subjects_into_combo(self):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT id, subject_name_fr FROM Subjects")
                 self.combo_subject_tt.clear()
-                for s in cursor.fetchall(): self.combo_subject_tt.addItem(s[1], s[0])
+                for s in StaffRepository(conn).list_subjects():
+                    self.combo_subject_tt.addItem(s[1], s[0])
         except Exception as e: print(f"Subjects TT Load Error: {e}")
 
     # ================== خوارزمية فحص التداخل (Conflict Detection) ==================
@@ -983,22 +975,7 @@ class ModernStaffManagement(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                # تم الترتيب منطقياً حسب اليوم والوقت
-                cursor.execute("""
-                    SELECT T.id, S.last_name || ' ' || S.first_name, C.class_name_fr, Sub.subject_name_fr, T.day_of_week, T.start_time || ' - ' || T.end_time
-                    FROM Timetable T
-                    JOIN Staff S ON T.teacher_id = S.id
-                    JOIN Classes C ON T.class_id = C.id
-                    JOIN Subjects Sub ON T.subject_id = Sub.id
-                    ORDER BY 
-                        CASE T.day_of_week 
-                            WHEN 'Lundi' THEN 1 WHEN 'Mardi' THEN 2 WHEN 'Mercredi' THEN 3 
-                            WHEN 'Jeudi' THEN 4 WHEN 'Vendredi' THEN 5 WHEN 'Samedi' THEN 6 WHEN 'Dimanche' THEN 7 
-                        END, 
-                        T.start_time
-                """)
-                rows = cursor.fetchall()
+                rows = StaffRepository(conn).list_timetable()
 
             for row in rows:
                 idx = self.table_tt.rowCount()
@@ -1028,8 +1005,7 @@ class ModernStaffManagement(QMainWindow):
             try:
                 db = DatabaseManager()
                 with db.get_connection() as conn:
-                    cursor = conn.cursor()
-                    cursor.execute("DELETE FROM Timetable WHERE id=%s", (tid,))
+                    StaffRepository(conn).delete_timetable_entry(tid)
                     conn.commit()
                 self.load_timetable()
             except Exception as e:
@@ -1046,25 +1022,8 @@ class ModernStaffManagement(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT * FROM SchoolInfo LIMIT 1")
-                school_info = cursor.fetchone()
-
-                # جلب الجدول الخاص بالفصل مرتباً حسب اليوم والوقت
-                cursor.execute("""
-                    SELECT T.day_of_week, T.start_time, T.end_time, Sub.subject_name_fr, S.last_name || ' ' || S.first_name
-                    FROM Timetable T
-                    JOIN Staff S ON T.teacher_id = S.id
-                    JOIN Subjects Sub ON T.subject_id = Sub.id
-                    WHERE T.class_id = %s
-                    ORDER BY 
-                        CASE T.day_of_week 
-                            WHEN 'Lundi' THEN 1 WHEN 'Mardi' THEN 2 WHEN 'Mercredi' THEN 3 
-                            WHEN 'Jeudi' THEN 4 WHEN 'Vendredi' THEN 5 WHEN 'Samedi' THEN 6 WHEN 'Dimanche' THEN 7 
-                        END, 
-                        T.start_time
-                """, (class_id,))
-                timetable_data = cursor.fetchall()
+                school_info = FinanceRepository(conn).get_school_info()
+                timetable_data = StaffRepository(conn).get_timetable_for_class(class_id)
 
             if not timetable_data:
                 QMessageBox.information(self, "Vide", f"Aucun emploi du temps trouvé pour la classe {class_name}.")

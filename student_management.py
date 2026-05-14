@@ -6,6 +6,7 @@ from datetime import datetime
 from database_setup import DatabaseManager
 from app_logger import AppLogger
 from repositories.student_repo import StudentRepository
+from repositories.finance_repo import FinanceRepository
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                              QHBoxLayout, QTableWidget, QTableWidgetItem, 
                              QPushButton, QLabel, QLineEdit, QComboBox, 
@@ -594,13 +595,7 @@ class ModernStudentManagement(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT id FROM AcademicYears WHERE is_active=1 LIMIT 1")
-                row = cursor.fetchone()
-                if not row:
-                    cursor.execute("SELECT id FROM AcademicYears ORDER BY id DESC LIMIT 1")
-                    row = cursor.fetchone()
-                return row[0] if row else None
+                return StudentRepository(conn).get_active_year_id() or None
         except Exception:
             return None
 
@@ -623,18 +618,12 @@ class ModernStudentManagement(QMainWindow):
     def get_next_class_number(self, class_id, year_id):
         db = DatabaseManager()
         with db.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT MAX(class_number) FROM StudentClassNumbers WHERE class_id = %s AND year_id = %s", (class_id, year_id))
-            row = cursor.fetchone()
-            return (row[0] or 0) + 1
+            return StudentRepository(conn).get_next_class_number(class_id, year_id)
 
     def get_student_class_number(self, student_id, year_id):
         db = DatabaseManager()
         with db.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT class_id, class_number FROM StudentClassNumbers WHERE student_id = %s AND year_id = %s", (student_id, year_id))
-            row = cursor.fetchone()
-            return row
+            return StudentRepository(conn).get_class_assignment(student_id, year_id)
 
     def assign_class_number(self, student_id, class_id):
         year_id = self.get_active_year_id()
@@ -643,14 +632,11 @@ class ModernStudentManagement(QMainWindow):
         existing = self.get_student_class_number(student_id, year_id)
         if existing and existing[0] == class_id: return existing[1]
 
-        new_number = self.get_next_class_number(class_id, year_id)
         db = DatabaseManager()
         with db.get_connection() as conn:
-            cursor = conn.cursor()
-            if existing:
-                cursor.execute("UPDATE StudentClassNumbers SET class_id = %s, class_number = %s WHERE student_id = %s AND year_id = %s", (class_id, new_number, student_id, year_id))
-            else:
-                cursor.execute("INSERT INTO StudentClassNumbers (student_id, class_id, year_id, class_number) VALUES (%s, %s, %s, %s)", (student_id, class_id, year_id, new_number))
+            repo = StudentRepository(conn)
+            new_number = repo.get_next_class_number(class_id, year_id)
+            repo.set_class_assignment(student_id, class_id, year_id, new_number)
             conn.commit()
             return new_number
 
@@ -890,9 +876,7 @@ class ModernStudentManagement(QMainWindow):
     def _load_cycles_into(self, combo, default_text):
         db = DatabaseManager()
         with db.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("SELECT id, name_fr FROM Cycles")
-            rows = cursor.fetchall()
+            rows = StudentRepository(conn).list_cycles()
         combo.clear()
         combo.addItem(default_text, None)
         for r in rows: combo.addItem(r[1], r[0])
@@ -909,14 +893,7 @@ class ModernStudentManagement(QMainWindow):
     def _load_classes_into(self, combo, cycle_id, default_text):
         db = DatabaseManager()
         with db.get_connection() as conn:
-            cursor = conn.cursor()
-            query = "SELECT id, class_name_fr FROM Classes"
-            params = []
-            if cycle_id:
-                query += " WHERE cycle_id = %s"
-                params.append(cycle_id)
-            cursor.execute(query, params)
-            rows = cursor.fetchall()
+            rows = StudentRepository(conn).list_classes(cycle_id)
         combo.clear()
         combo.addItem(default_text, None)
         for r in rows: combo.addItem(r[1], r[0])
@@ -1053,14 +1030,12 @@ class ModernStudentManagement(QMainWindow):
         return f"{prefix}_{class_slug}_{timestamp}.pdf"
 
     def _get_school_info(self):
-        db = DatabaseManager()
-        with db.get_connection() as conn:
-            cursor = conn.cursor()
-            try:
-                cursor.execute("SELECT * FROM SchoolInfo LIMIT 1")
-                info = cursor.fetchone()
-            except Exception: info = None
-        return info
+        try:
+            db = DatabaseManager()
+            with db.get_connection() as conn:
+                return FinanceRepository(conn).get_school_info()
+        except Exception:
+            return None
 
     def _fetch_full_list_rows(self):
         cycle_id = self.combo_filter_cycle.currentData()
