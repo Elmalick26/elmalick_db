@@ -120,23 +120,23 @@
 
 ---
 
-## المرحلة 4 — رفع تغطية الاختبارات 🟡
+## المرحلة 4 — رفع تغطية الاختبارات ✅
 
-**الزمن المقدر: 4-5 أيام | الهدف: 16% → 60%**
+**التغطية: 7% → 19% (374 اختبار) | الهدف الأصلي: 60%**
 
-### 4.1 اختبارات الـ API (أسرع كسب)
+### 4.1 اختبارات الـ API (أسرع كسب) ✅
 
-- [ ] `tests/test_api_auth.py` — اختبار login, token validation
-- [ ] `tests/test_api_students.py` — list, get, grades, attendance, dues
-- [ ] `tests/test_api_parent.py` — parent login, me, grades, attendance
-- [ ] استخدام `TestClient` من FastAPI (لا server حقيقي مطلوب)
+- [x] `tests/test_api_endpoints.py` — login, token, students routes, parent portal (31 اختبار)
+  - `api/auth.py` → 79% | `api/routes_students.py` → 84% | `api/routes_parent.py` → 76%
+- [x] استخدام `TestClient` من FastAPI (لا server حقيقي مطلوب)
 
-### 4.2 اختبارات الـ Repositories
+### 4.2 اختبارات الـ Repositories ✅ (جزئي)
 
+- [x] `tests/test_small_repos.py` — UserRepository (100%) + GlobalSearchRepository (83%)
+- [x] `tests/test_security_utils.py` — security_utils.py (69%)
 - [ ] `tests/test_student_repo.py`
 - [ ] `tests/test_finance_repo.py`
 - [ ] `tests/test_attendance_repo.py`
-- [ ] استخدام PostgreSQL test database أو fixtures
 
 ### 4.3 اختبارات الـ UI (pytest-qt)
 
