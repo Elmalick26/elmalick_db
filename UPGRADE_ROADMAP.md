@@ -93,33 +93,25 @@
 
 ---
 
-## المرحلة 3 — قاعدة البيانات 🟡
+## المرحلة 3 — قاعدة البيانات ✅ مكتملة
 
-**الزمن المقدر: 2-3 أيام | الأولوية: حرج لبيئة الإنتاج**
+**منجزة في commits `1df6d20` (3.1) و `<next>` (3.2/3.3)**
 
-### 3.1 Alembic للـ Database Migrations
+### 3.1 Alembic للـ Database Migrations ✅
 
-- [ ] تثبيت `alembic`
-- [ ] تهيئة `alembic init alembic`
-- [ ] ربط `env.py` بـ `DatabaseManager`
-- [ ] توثيق الـ schema الحالي في migration أولى `001_initial_schema.py`
-- [ ] توثيق كيفية الاستخدام في README
+- [x] تثبيت `alembic==1.13.1`
+- [x] تهيئة `alembic init alembic`
+- [x] ربط `env.py` بـ `ConfigManager` (قراءة كلمة المرور من keyring)
+- [x] توثيق الـ schema الحالي في `alembic/versions/001_initial_schema.py` (30 جدول)
+- [x] أوامر: `alembic history`, `alembic upgrade head`, `alembic downgrade -1`
 
-**الأوامر الأساسية**:
+### 3.2 Connection Pooling ✅
 
-```bash
-alembic revision --autogenerate -m "وصف التغيير"
-alembic upgrade head       # تطبيق جميع migrations
-alembic downgrade -1       # rollback خطوة واحدة
-alembic history            # عرض السجل
-```
-
-### 3.2 Connection Pooling
-
-- [ ] استبدال `psycopg2.connect()` بـ `ThreadedConnectionPool`
-- [ ] pool_minconn=2, pool_maxconn=10
-- [ ] أو الانتقال لـ `psycopg3` (يملك pool built-in)
-- [ ] اختبار الأداء قبل/بعد
+- [x] استبدال `psycopg2.connect()` بـ `ThreadedConnectionPool`
+- [x] pool_minconn=2, pool_maxconn=10
+- [x] Singleton على مستوى الـ class — مشترك بين جميع الـ instances
+- [x] `close_pool()` عند إغلاق التطبيق في `main_dashbord.py`
+- [x] `reset_pool()` لإعادة الإنشاء عند تغيير الإعدادات
 
 ### 3.3 Database Health Check
 

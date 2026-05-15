@@ -906,6 +906,7 @@ class MainWindow(QMainWindow):
         """تنظيف الموارد عند إغلاق البرنامج نهائياً"""
         if hasattr(self, 'backup_system'):
             self.backup_system.stop_auto_backup()
+        DatabaseManager.close_pool()
         AppLogger.info("Main", "Fermeture de l'application.")
         event.accept()
 

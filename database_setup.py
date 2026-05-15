@@ -1,5 +1,8 @@
+import threading
+
 import psycopg2
 from psycopg2 import OperationalError, Error
+from psycopg2 import pool as pg_pool
 import os
 import logging
 from contextlib import contextmanager
@@ -14,23 +17,70 @@ class DatabaseManager:
     مدير مركزي لقاعدة البيانات لضمان:
     1. إدارة الاتصالات بخادم PostgreSQL والإغلاق الآمن (Context Manager).
     2. توحيد مصدر الحقيقة لهيكلة البيانات.
+    3. Connection Pooling عبر ThreadedConnectionPool (minconn=2, maxconn=10).
     """
+
+    # ── Connection Pool — class-level singleton (shared across all instances) ─
+    _pool: "pg_pool.ThreadedConnectionPool | None" = None
+    _pool_lock: threading.Lock = threading.Lock()
 
     def __init__(self):
         # جلب إعدادات الاتصال من مدير الإعدادات
         self.config = ConfigManager()
         self._conn = None
 
+    # ── Pool management ───────────────────────────────────────────────────────
+
+    @classmethod
+    def _get_pool(cls) -> "pg_pool.ThreadedConnectionPool":
+        """Return the shared connection pool, creating it lazily (thread-safe)."""
+        if cls._pool is None:
+            with cls._pool_lock:
+                if cls._pool is None:  # double-checked locking
+                    config = ConfigManager()
+                    min_conn = 2
+                    max_conn = 10
+                    cls._pool = pg_pool.ThreadedConnectionPool(
+                        min_conn,
+                        max_conn,
+                        host=config.db_host,
+                        port=config.db_port,
+                        dbname=config.db_name,
+                        user=config.db_user,
+                        password=config.db_password,
+                        sslmode=config.db_ssl_mode,
+                    )
+                    logger.info(
+                        f"Connection pool initialized: minconn={min_conn}, maxconn={max_conn} "
+                        f"({config.db_host}:{config.db_port}/{config.db_name})"
+                    )
+        return cls._pool
+
+    @classmethod
+    def close_pool(cls) -> None:
+        """Close all pool connections. Call once at application shutdown."""
+        with cls._pool_lock:
+            if cls._pool is not None:
+                cls._pool.closeall()
+                cls._pool = None
+                logger.info("Connection pool closed.")
+
+    @classmethod
+    def reset_pool(cls) -> None:
+        """Force recreate the pool (useful after config change or reconnect)."""
+        with cls._pool_lock:
+            if cls._pool is not None:
+                try:
+                    cls._pool.closeall()
+                except Exception:
+                    pass
+                cls._pool = None
+        logger.info("Connection pool reset. Will be recreated on next use.")
+
+    # ── Context Manager (with DatabaseManager() as db:) ──────────────────────
+
     def __enter__(self):
-        ssl_mode = self.config.db_ssl_mode
-        self._conn = psycopg2.connect(
-            host=self.config.db_host,
-            port=self.config.db_port,
-            dbname=self.config.db_name,
-            user=self.config.db_user,
-            password=self.config.db_password,
-            sslmode=ssl_mode,
-        )
+        self._conn = self._get_pool().getconn()
         return self
 
     def __exit__(self, exc_type, exc_val, exc_tb):
@@ -39,7 +89,7 @@ class DatabaseManager:
                 self._conn.rollback()
             else:
                 self._conn.commit()
-            self._conn.close()
+            self._get_pool().putconn(self._conn)
             self._conn = None
 
     def get_connection(self):
@@ -54,41 +104,32 @@ class DatabaseManager:
     @contextmanager
     def _connection_context(self):
         """
-        Generates a safe database connection to PostgreSQL.
+        Acquires a pooled connection, yields it, then returns it to the pool.
         Usage:
             with db_manager.get_connection() as conn:
                 cursor = conn.cursor()
                 ...
         """
-        conn = None
+        conn = self._get_pool().getconn()
         try:
-            ssl_mode = self.config.db_ssl_mode
-            conn = psycopg2.connect(
-                host=self.config.db_host,
-                port=self.config.db_port,
-                dbname=self.config.db_name,
-                user=self.config.db_user,
-                password=self.config.db_password,
-                sslmode=ssl_mode,
-            )
             yield conn
+            conn.commit()
         except OperationalError as e:
             logger.error(f"Database Connection Error: {e}")
-            if conn:
+            try:
                 conn.rollback()
-            raise e
+            except Error:
+                pass
+            raise
         except Error as e:
             logger.error(f"Database Error: {e}")
-            if conn:
+            try:
                 conn.rollback()
-            raise e
+            except Error:
+                pass
+            raise
         finally:
-            if conn:
-                try:
-                    conn.commit()
-                except Error:
-                    pass
-                conn.close()
+            self._get_pool().putconn(conn)
 
     def initialize_database(self):
         """إنشاء جميع الجداول المطلوبة للنظام دفعة واحدة"""
