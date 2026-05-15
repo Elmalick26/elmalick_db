@@ -60,29 +60,29 @@
 
 ---
 
-## المرحلة 2 — CI/CD وجودة الكود التلقائية 🟡
+## المرحلة 2 — CI/CD وجودة الكود التلقائية ✅ مكتملة
 
-**الزمن المقدر: 2-3 أيام | الأولوية: مهم**
+**منجزة في commit `60a7af4`**
 
 ### 2.1 GitHub Actions — CI Pipeline
 
-- [ ] إنشاء `.github/workflows/ci.yml`
-- [ ] يُشغَّل عند كل push وPR على `main`
-- [ ] خطوات: `pytest` → `flake8` → `black --check` → `mypy services/ repositories/`
+- [x] إنشاء `.github/workflows/ci.yml`
+- [x] يُشغَّل عند كل push وPR على `main`
+- [x] خطوات: `pytest` → `flake8` → `black --check` → `mypy services/ repositories/`
 - [ ] badge الحالة في README
 
 ### 2.2 GitHub Actions — Release Pipeline
 
-- [ ] إنشاء `.github/workflows/release.yml`
-- [ ] يُشغَّل عند إنشاء git tag (`v*`)
-- [ ] يبني PyInstaller ويرفع الـ artifact
+- [x] إنشاء `.github/workflows/release.yml`
+- [x] يُشغَّل عند إنشاء git tag (`v*`)
+- [x] يبني PyInstaller ويرفع الـ artifact
 
 ### 2.3 Pre-commit Hooks
 
-- [ ] تثبيت `pre-commit`
-- [ ] إنشاء `.pre-commit-config.yaml`
-- [ ] Hooks: `black`, `isort`, `flake8`, `mypy` (على services فقط)
-- [ ] `pre-commit install` في التعليمات
+- [x] تثبيت `pre-commit`
+- [x] إنشاء `.pre-commit-config.yaml`
+- [x] Hooks: `black`, `isort`, `flake8`, `mypy` (على services فقط)
+- [x] `pre-commit install` منفذ — hooks جاهزة
 
 ### 2.4 Type Hints الكاملة
 
