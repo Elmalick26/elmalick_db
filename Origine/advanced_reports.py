@@ -1,6 +1,5 @@
 import sys
 import os
-import psycopg2
 from datetime import datetime, timedelta
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
                              QHBoxLayout, QPushButton, QLabel, QComboBox, 
@@ -16,8 +15,6 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from fpdf import FPDF
 from database_setup import DatabaseManager
-from repositories.analytics_repo import AnalyticsRepository
-from repositories.finance_repo import FinanceRepository
 from pdf_report_style import apply_grades_sheet_header, apply_table_header_style, apply_table_body_style, set_zebra_row_fill, get_school_info_row
 from print_export_service import output_pdf, get_report_output_mode
 from app_logger import AppLogger
@@ -38,8 +35,23 @@ class ReportWorker(QThread):
         self.report_type = report_type
         self.params = params
 
-    # ===== تم التعديل: جلب أعمدة الجدول بالطريقة القياسية لـ PostgreSQL =====
-    def _student_name_sql_expr(self, columns: set, alias='s'):
+    def _get_active_year_context(self, cursor):
+        cursor.execute("SELECT id, year_label FROM AcademicYears WHERE is_active=1 ORDER BY id DESC LIMIT 1")
+        row = cursor.fetchone()
+        if row:
+            return row[0], row[1]
+
+        cursor.execute("SELECT id, year_label FROM AcademicYears ORDER BY id DESC LIMIT 1")
+        row = cursor.fetchone()
+        if row:
+            return row[0], row[1]
+
+        return None, "N/A"
+
+    def _student_name_sql_expr(self, cursor, alias='s'):
+        cursor.execute("PRAGMA table_info(Students)")
+        columns = {row[1] for row in cursor.fetchall()}
+
         parts = []
         if {'first_name_fr', 'last_name_fr'}.issubset(columns):
             parts.append(f"TRIM(NULLIF({alias}.first_name_fr, '') || ' ' || NULLIF({alias}.last_name_fr, ''))")
@@ -105,13 +117,39 @@ class ReportWorker(QThread):
         
         db = DatabaseManager()
         with db.get_connection() as conn:
-            repo = AnalyticsRepository(conn)
-            income_data = repo.get_monthly_income_totals(selected_period)
-            expense_data = repo.get_monthly_expense_totals(selected_period)
+            cursor = conn.cursor()
 
+            income_filter = "transaction_date IS NOT NULL"
+            expense_filter = "expense_date IS NOT NULL"
+            income_params = []
+            expense_params = []
+
+            if selected_period == "6 derniers mois":
+                income_filter += " AND date(transaction_date) >= date('now', 'start of month', '-5 months')"
+                expense_filter += " AND date(expense_date) >= date('now', 'start of month', '-5 months')"
+            elif selected_period == "12 derniers mois":
+                income_filter += " AND date(transaction_date) >= date('now', 'start of month', '-11 months')"
+                expense_filter += " AND date(expense_date) >= date('now', 'start of month', '-11 months')"
+            elif selected_period == "Année en cours":
+                current_year = datetime.now().strftime('%Y')
+                income_filter += " AND strftime('%Y', transaction_date) = ?"
+                expense_filter += " AND strftime('%Y', expense_date) = ?"
+                income_params.append(current_year)
+                expense_params.append(current_year)
+            
+            cursor.execute(f"""
+                SELECT strftime('%Y-%m', transaction_date) as month,
+                    COUNT(*) as count,
+                    SUM(amount_paid) as total
+                FROM Payments
+                WHERE {income_filter}
+                GROUP BY month
+                ORDER BY month
+            """, income_params)
+            
             row = 6
             total_income = 0
-            for month, count, total in income_data:
+            for month, count, total in cursor.fetchall():
                 ws[f'A{row}'] = month
                 ws[f'B{row}'] = count
                 ws[f'C{row}'] = f"{total:,.0f} FCFA"
@@ -136,22 +174,32 @@ class ReportWorker(QThread):
                 ws[cell].fill = header_fill
                 ws[cell].font = header_font
             
+            cursor.execute(f"""
+                SELECT strftime('%Y-%m', expense_date) as month,
+                    COUNT(*) as count,
+                    SUM(amount) as total
+                FROM Expenses
+                WHERE {expense_filter}
+                GROUP BY month
+                ORDER BY month
+            """, expense_params)
+            
             exp_row = header_row + 1
             total_expenses = 0
-            for month, count, total in expense_data:
+            for month, count, total in cursor.fetchall():
                 ws[f'A{exp_row}'] = month
                 ws[f'B{exp_row}'] = count
                 ws[f'C{exp_row}'] = f"{total:,.0f} FCFA"
                 total_expenses += total if total else 0
                 exp_row += 1
-
+            
             ws[f'A{exp_row}'] = "TOTAL DÉPENSES"
             ws[f'A{exp_row}'].font = Font(bold=True)
             ws[f'C{exp_row}'] = f"{total_expenses:,.0f} FCFA"
             ws[f'C{exp_row}'].font = Font(bold=True, color="EF4444")
-
+            
             self.progress.emit(80)
-
+            
             balance = total_income - total_expenses
             ws[f'A{exp_row+2}'] = "SOLDE NET"
             ws[f'A{exp_row+2}'].font = Font(bold=True, size=14)
@@ -174,6 +222,7 @@ class ReportWorker(QThread):
         self.progress.emit(100)
         return filepath
 
+    # ===== تم التعديل للاعتماد على SCN =====
     def generate_students_excel(self):
         wb = Workbook()
         ws = wb.active
@@ -184,10 +233,11 @@ class ReportWorker(QThread):
         
         db = DatabaseManager()
         with db.get_connection() as conn:
-            repo = AnalyticsRepository(conn)
-            active_year_id, active_year_label = repo.get_active_year_context()
-            student_cols = repo.get_student_columns()
-            student_name_expr = self._student_name_sql_expr(student_cols, alias='s')
+            cursor = conn.cursor()
+            active_year_id, active_year_label = self._get_active_year_context(cursor)
+            student_name_expr = self._student_name_sql_expr(cursor, alias='s')
+            cursor.execute("PRAGMA table_info(Students)")
+            student_cols = {row[1] for row in cursor.fetchall()}
 
         ws['A1'] = "LISTE DES ÉTUDIANTS"
         ws['A1'].font = Font(bold=True, size=16, color="1E293B")
@@ -218,19 +268,19 @@ class ReportWorker(QThread):
             if active_year_id:
                 cursor.execute(f"""
                     SELECT s.id,
-                        COALESCE(CAST(scn.class_number AS VARCHAR), ''),
+                        COALESCE(scn.class_number, ''),
                         {student_name_expr} as name,
                         c.class_name_fr,
-                        CASE WHEN s.gender='0' OR s.gender='M' THEN 'M' ELSE 'F' END as gender,
-                        CAST(s.birth_date AS VARCHAR),
+                        CASE WHEN s.gender=0 THEN 'M' ELSE 'F' END as gender,
+                        s.birth_date,
                         {birth_place_expr} as birth_place,
                         {parent_expr} as parent_name,
                         {phone_expr} as phone,
                         {address_expr} as address,
-                        CAST({enroll_expr} AS VARCHAR) as registration_date,
+                        {enroll_expr} as registration_date,
                         s.status
                     FROM Students s
-                    JOIN StudentClassNumbers scn ON scn.student_id = s.id AND scn.year_id = %s
+                    JOIN StudentClassNumbers scn ON scn.student_id = s.id AND scn.year_id = ?
                     JOIN Classes c ON scn.class_id = c.id
                     WHERE s.status='Active'
                     ORDER BY c.sort_order, COALESCE(scn.class_number, 9999), name
@@ -241,13 +291,13 @@ class ReportWorker(QThread):
                         '',
                         {student_name_expr} as name,
                         'N/A',
-                        CASE WHEN s.gender='0' OR s.gender='M' THEN 'M' ELSE 'F' END as gender,
-                        CAST(s.birth_date AS VARCHAR),
+                        CASE WHEN s.gender=0 THEN 'M' ELSE 'F' END as gender,
+                        s.birth_date,
                         {birth_place_expr} as birth_place,
                         {parent_expr} as parent_name,
                         {phone_expr} as phone,
                         {address_expr} as address,
-                        CAST({enroll_expr} AS VARCHAR) as registration_date,
+                        {enroll_expr} as registration_date,
                         s.status
                     FROM Students s
                     WHERE s.status='Active'
@@ -284,6 +334,7 @@ class ReportWorker(QThread):
         self.progress.emit(100)
         return filepath
 
+    # ===== تم التعديل للاعتماد على SCN في ربط الطلاب بالفصول =====
     def generate_attendance_excel(self):
         wb = Workbook()
         ws = wb.active
@@ -308,13 +359,31 @@ class ReportWorker(QThread):
 
         db = DatabaseManager()
         with db.get_connection() as conn:
-            repo = AnalyticsRepository(conn)
-            active_year_id, active_year_label = repo.get_active_year_context()
+            cursor = conn.cursor()
+            active_year_id, active_year_label = self._get_active_year_context(cursor)
 
             ws['A3'] = f"Année scolaire: {active_year_label}"
             ws.merge_cells('A3:G3')
 
-            rows = repo.get_attendance_summary_by_class(active_year_id) if active_year_id else []
+            if active_year_id:
+                # استخدمنا SCN هنا للربط
+                cursor.execute("""
+                    SELECT C.class_name_fr,
+                           COUNT(DISTINCT S.id) AS students_count,
+                           SUM(CASE WHEN SA.status='Présent' THEN 1 ELSE 0 END) AS presents,
+                           SUM(CASE WHEN SA.status='Absent' THEN 1 ELSE 0 END) AS absents,
+                           SUM(CASE WHEN SA.status='Retard' THEN 1 ELSE 0 END) AS lates,
+                           COUNT(SA.id) AS attendance_rows
+                    FROM Classes C
+                    LEFT JOIN StudentClassNumbers SCN ON SCN.class_id = C.id AND SCN.year_id = ?
+                    LEFT JOIN Students S ON S.id = SCN.student_id AND S.status='Active'
+                    LEFT JOIN StudentAttendance SA ON SA.student_id = S.id AND SA.year_id = ?
+                    GROUP BY C.id, C.class_name_fr
+                    ORDER BY C.sort_order, C.class_name_fr
+                """, (active_year_id, active_year_id))
+                rows = cursor.fetchall()
+            else:
+                rows = []
 
         row_idx = 5
         for idx, row in enumerate(rows, 1):
@@ -349,6 +418,7 @@ class ReportWorker(QThread):
         self.progress.emit(100)
         return filepath
 
+    # ===== تم التعديل للاعتماد على SCN =====
     def generate_grades_excel(self):
         wb = Workbook()
         ws = wb.active
@@ -373,13 +443,30 @@ class ReportWorker(QThread):
 
         db = DatabaseManager()
         with db.get_connection() as conn:
-            repo = AnalyticsRepository(conn)
-            active_year_id, active_year_label = repo.get_active_year_context()
+            cursor = conn.cursor()
+            active_year_id, active_year_label = self._get_active_year_context(cursor)
 
             ws['A3'] = f"Année scolaire: {active_year_label}"
             ws.merge_cells('A3:F3')
 
-            rows = repo.get_grades_summary_by_class(active_year_id) if active_year_id else []
+            if active_year_id:
+                cursor.execute("""
+                    SELECT C.class_name_fr,
+                           COUNT(DISTINCT S.id) AS students_count,
+                           COUNT(G.id) AS grades_count,
+                           MIN(G.score) AS min_score,
+                           AVG(G.score) AS avg_score,
+                           MAX(G.score) AS max_score
+                    FROM Classes C
+                    LEFT JOIN StudentClassNumbers SCN ON SCN.class_id = C.id AND SCN.year_id = ?
+                    LEFT JOIN Students S ON S.id = SCN.student_id AND S.status='Active'
+                    LEFT JOIN Grades G ON G.student_id = S.id AND G.score IS NOT NULL AND G.year_id = ?
+                    GROUP BY C.id, C.class_name_fr
+                    ORDER BY C.sort_order, C.class_name_fr
+                """, (active_year_id, active_year_id))
+                rows = cursor.fetchall()
+            else:
+                rows = []
 
         row_idx = 5
         for idx, row in enumerate(rows, 1):
@@ -429,6 +516,19 @@ class AdvancedReportsWindow(QMainWindow):
         self.worker = None
         self.init_ui()
 
+    def _get_active_year_context(self, cursor):
+        cursor.execute("SELECT id, year_label FROM AcademicYears WHERE is_active=1 ORDER BY id DESC LIMIT 1")
+        row = cursor.fetchone()
+        if row:
+            return row[0], row[1]
+
+        cursor.execute("SELECT id, year_label FROM AcademicYears ORDER BY id DESC LIMIT 1")
+        row = cursor.fetchone()
+        if row:
+            return row[0], row[1]
+
+        return None, "N/A"
+
     def _sanitize_latin(self, text):
         if text is None:
             return ""
@@ -436,6 +536,18 @@ class AdvancedReportsWindow(QMainWindow):
             text = str(text)
         return text.encode('latin-1', 'ignore').decode('latin-1')
 
+    def _get_class_max_score(self, cursor, class_id):
+        cursor.execute("""
+            SELECT COALESCE(CY.name_fr, '')
+            FROM Classes CL
+            LEFT JOIN Cycles CY ON CL.cycle_id = CY.id
+            WHERE CL.id = ?
+        """, (class_id,))
+        row = cursor.fetchone()
+        cycle_name = (row[0] or "").lower() if row else ""
+        return 10 if ("elem" in cycle_name or "prim" in cycle_name) else 20
+
+    # ===== تم التعديل للاعتماد على SCN في الملخص الشامل =====
     def _build_comprehensive_pdf(self, selected_period):
         pdf = FPDF()
         pdf.add_page()
@@ -453,21 +565,53 @@ class AdvancedReportsWindow(QMainWindow):
 
         db = DatabaseManager()
         with db.get_connection() as conn:
-            repo = AnalyticsRepository(conn)
-            active_year_id, active_year_label = repo.get_active_year_context()
-            total_income = repo.get_total_income_by_period(selected_period)
-            total_expenses = repo.get_total_expense_by_period(selected_period)
+            cursor = conn.cursor()
+            active_year_id, active_year_label = self._get_active_year_context(cursor)
+
+            income_filter = "transaction_date IS NOT NULL"
+            expense_filter = "expense_date IS NOT NULL"
+            income_params = []
+            expense_params = []
+
+            if selected_period == "6 derniers mois":
+                income_filter += " AND date(transaction_date) >= date('now', 'start of month', '-5 months')"
+                expense_filter += " AND date(expense_date) >= date('now', 'start of month', '-5 months')"
+            elif selected_period == "12 derniers mois":
+                income_filter += " AND date(transaction_date) >= date('now', 'start of month', '-11 months')"
+                expense_filter += " AND date(expense_date) >= date('now', 'start of month', '-11 months')"
+            elif selected_period == "Année en cours":
+                current_year = datetime.now().strftime('%Y')
+                income_filter += " AND strftime('%Y', transaction_date) = ?"
+                expense_filter += " AND strftime('%Y', expense_date) = ?"
+                income_params.append(current_year)
+                expense_params.append(current_year)
+
+            cursor.execute(f"SELECT COALESCE(SUM(amount_paid), 0) FROM Payments WHERE {income_filter}", income_params)
+            total_income = float(cursor.fetchone()[0] or 0)
+            cursor.execute(f"SELECT COALESCE(SUM(amount), 0) FROM Expenses WHERE {expense_filter}", expense_params)
+            total_expenses = float(cursor.fetchone()[0] or 0)
             balance = total_income - total_expenses
 
             if active_year_id:
-                stats = AnalyticsRepository(conn).get_comprehensive_stats(active_year_id)
+                cursor.execute("""
+                    SELECT COUNT(DISTINCT S.id) 
+                    FROM Students S
+                    JOIN StudentClassNumbers SCN ON S.id = SCN.student_id
+                    WHERE S.status='Active' AND SCN.year_id=?
+                """, (active_year_id,))
+                active_students = int(cursor.fetchone()[0] or 0)
             else:
-                stats = AnalyticsRepository(conn).get_comprehensive_stats(None)
-            active_students = stats["active_students"]
-            total_classes = stats["total_classes"]
-            presents = stats["presents"]
-            absents = stats["absents"]
-            lates = stats["lates"]
+                active_students = 0
+                
+            cursor.execute("SELECT COUNT(*) FROM Classes")
+            total_classes = int(cursor.fetchone()[0] or 0)
+
+            cursor.execute("SELECT COUNT(*) FROM StudentAttendance WHERE status='Présent' AND (year_id=? OR ? IS NULL)", (active_year_id, active_year_id))
+            presents = int(cursor.fetchone()[0] or 0)
+            cursor.execute("SELECT COUNT(*) FROM StudentAttendance WHERE status='Absent' AND (year_id=? OR ? IS NULL)", (active_year_id, active_year_id))
+            absents = int(cursor.fetchone()[0] or 0)
+            cursor.execute("SELECT COUNT(*) FROM StudentAttendance WHERE status='Retard' AND (year_id=? OR ? IS NULL)", (active_year_id, active_year_id))
+            lates = int(cursor.fetchone()[0] or 0)
 
         apply_table_header_style(pdf, "Arial", 10)
         pdf.cell(0, 8, self._sanitize_latin("Résumé Financier"), 1, 1, 'L', True)
@@ -623,11 +767,38 @@ class AdvancedReportsWindow(QMainWindow):
         ax = self.financial_figure.add_subplot(111)
         selected_period = self.period_combo.currentText() if hasattr(self, 'period_combo') else "12 derniers mois"
 
+        income_filter = "transaction_date IS NOT NULL"
+        expense_filter = "expense_date IS NOT NULL"
+        income_params = []
+        expense_params = []
+
+        if selected_period == "6 derniers mois":
+            income_filter += " AND date(transaction_date) >= date('now', 'start of month', '-5 months')"
+            expense_filter += " AND date(expense_date) >= date('now', 'start of month', '-5 months')"
+        elif selected_period == "12 derniers mois":
+            income_filter += " AND date(transaction_date) >= date('now', 'start of month', '-11 months')"
+            expense_filter += " AND date(expense_date) >= date('now', 'start of month', '-11 months')"
+        elif selected_period == "Année en cours":
+            current_year = datetime.now().strftime('%Y')
+            income_filter += " AND strftime('%Y', transaction_date) = ?"
+            expense_filter += " AND strftime('%Y', expense_date) = ?"
+            income_params.append(current_year)
+            expense_params.append(current_year)
+        
         db = DatabaseManager()
         with db.get_connection() as conn:
-            repo = AnalyticsRepository(conn)
-            income_data = repo.get_monthly_income_totals(selected_period)
-            expense_data = repo.get_monthly_expense_totals(selected_period)
+            cursor = conn.cursor()
+            cursor.execute(f"""
+                SELECT strftime('%Y-%m', transaction_date) as month, SUM(amount_paid) as total
+                FROM Payments WHERE {income_filter} GROUP BY month ORDER BY month
+            """, income_params)
+            income_data = cursor.fetchall()
+            
+            cursor.execute(f"""
+                SELECT strftime('%Y-%m', expense_date) as month, SUM(amount) as total
+                FROM Expenses WHERE {expense_filter} GROUP BY month ORDER BY month
+            """, expense_params)
+            expense_data = cursor.fetchall()
         
         income_dict = {item[0]: item[1] if item[1] else 0 for item in income_data}
         expense_dict = {item[0]: item[1] if item[1] else 0 for item in expense_data}
@@ -703,6 +874,7 @@ class AdvancedReportsWindow(QMainWindow):
         
         return widget
 
+    # ===== تم التعديل للاعتماد على SCN =====
     def generate_student_chart(self):
         self.student_figure.clear()
         ax = self.student_figure.add_subplot(111)
@@ -720,12 +892,19 @@ class AdvancedReportsWindow(QMainWindow):
         max_score = 20
         active_year_label = "N/A"
         with db.get_connection() as conn:
-            repo = AnalyticsRepository(conn)
-            active_year_id, active_year_label = repo.get_active_year_context()
-            max_score = repo.get_class_max_score(class_id)
+            cursor = conn.cursor()
+            active_year_id, active_year_label = self._get_active_year_context(cursor)
+            max_score = self._get_class_max_score(cursor, class_id)
 
             if active_year_id:
-                grades = repo.get_grades_for_class(class_id, active_year_id)
+                cursor.execute("""
+                    SELECT g.score
+                    FROM Grades g
+                    JOIN Students s ON g.student_id = s.id
+                    JOIN StudentClassNumbers scn ON scn.student_id = s.id AND scn.year_id = ?
+                    WHERE scn.class_id = ? AND g.score IS NOT NULL AND g.year_id = ?
+                """, (active_year_id, class_id, active_year_id))
+                grades = [row[0] for row in cursor.fetchall()]
         
         if not grades:
             ax.text(0.5, 0.5, 'Aucune note disponible pour cette classe', ha='center', va='center', fontsize=14, color=colors.TEXT_SECONDARY)
@@ -933,7 +1112,12 @@ class AdvancedReportsWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                for class_id, class_name in FinanceRepository(conn).list_classes():
+                cursor = conn.cursor()
+                try:
+                    cursor.execute("SELECT id, COALESCE(class_name_fr, '-') FROM Classes ORDER BY sort_order")
+                except Exception:
+                    cursor.execute("SELECT id, COALESCE(class_name_fr, '-') FROM Classes ORDER BY class_name_fr")
+                for class_id, class_name in cursor.fetchall():
                     self.class_combo.addItem(str(class_name or "-"), class_id)
         except Exception as e:
             AppLogger.error("AdvancedReports", "Erreur lors du chargement des classes", e)

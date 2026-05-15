@@ -32,6 +32,7 @@ from database_setup import DatabaseManager
 from app_logger import AppLogger
 from ui_styles import ThemeManager, Colors
 from services.grade_service import GradeService
+from repositories.analytics_repo import AnalyticsRepository
 
 
 # ──────────────────────────────────────────────────────────────
@@ -52,65 +53,26 @@ class AnalyticsWorker(QThread):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cur = conn.cursor()
-                self._load_grades(cur)
-                self._load_attendance(cur)
-                self._load_finance(cur)
+                repo = AnalyticsRepository(conn)
+                self._load_grades(repo)
+                self._load_attendance(repo)
+                self._load_finance(repo)
         except Exception as e:
             AppLogger.error("AnalyticsDashboard", f"Worker error: {e}")
             self.error_signal.emit(str(e))
 
-    def _load_grades(self, cur):
-        sql = """
-            SELECT SB.subject_name_fr,
-                   AVG(G.score)       AS avg_score,
-                   SB.coefficient,
-                   MAX(CASE WHEN LOWER(CY.name_fr) SIMILAR TO '%%(elem|prim|ibtida)%%'
-                            THEN 10.0 ELSE 20.0 END) AS max_score
-            FROM Grades G
-            JOIN Subjects SB    ON G.subject_id = SB.id
-            JOIN AssessmentTypes AT ON G.assessment_id = AT.id
-            JOIN StudentClassNumbers SCN ON G.student_id = SCN.student_id
-                                       AND SCN.year_id   = G.year_id
-            JOIN Classes CL     ON SCN.class_id = CL.id
-            JOIN Cycles CY      ON CL.cycle_id  = CY.id
-            WHERE G.year_id = %s
-        """
-        params = [self.year_id]
-        if self.class_id:
-            sql += " AND SCN.class_id = %s"
-            params.append(self.class_id)
-        sql += " GROUP BY SB.id, SB.subject_name_fr, SB.coefficient ORDER BY avg_score DESC"
-
-        cur.execute(sql, params)
-        rows = cur.fetchall()
+    def _load_grades(self, repo: AnalyticsRepository):
+        rows = repo.get_grades_by_subject(self.year_id, self.class_id)
 
         names       = [r[0] for r in rows]
         averages    = [float(r[1]) if r[1] is not None else 0.0 for r in rows]
         max_scores  = [float(r[3]) for r in rows]
-        # نحوّل إلى نسبة مئوية /20
         normalized  = [avg / mx * 20 if mx else 0 for avg, mx in zip(averages, max_scores)]
 
         self.grades_ready.emit(names, normalized, [float(r[2]) for r in rows])
 
-    def _load_attendance(self, cur):
-        sql = """
-            SELECT TO_CHAR(SA.date, 'YYYY-MM') AS month,
-                   COUNT(*)                                    AS total,
-                   COUNT(*) FILTER (WHERE SA.status = 'Present') AS present
-            FROM StudentAttendance SA
-            JOIN StudentClassNumbers SCN ON SA.student_id = SCN.student_id
-                                       AND SCN.year_id = SA.year_id
-            WHERE SA.year_id = %s
-        """
-        params = [self.year_id]
-        if self.class_id:
-            sql += " AND SCN.class_id = %s"
-            params.append(self.class_id)
-        sql += " GROUP BY month ORDER BY month"
-
-        cur.execute(sql, params)
-        rows = cur.fetchall()
+    def _load_attendance(self, repo: AnalyticsRepository):
+        rows = repo.get_monthly_attendance_rate(self.year_id, self.class_id)
 
         monthly = {}
         for row in rows:
@@ -120,36 +82,8 @@ class AnalyticsWorker(QThread):
 
         self.attendance_ready.emit(monthly)
 
-    def _load_finance(self, cur):
-        sql_due = """
-            SELECT COALESCE(SUM(net_amount), 0)
-            FROM StudentDues
-            WHERE year_id = %s
-        """
-        params_due = [self.year_id]
-        if self.class_id:
-            sql_due += """
-                AND student_id IN (
-                    SELECT student_id FROM StudentClassNumbers
-                    WHERE year_id = %s AND class_id = %s
-                )
-            """
-            params_due.extend([self.year_id, self.class_id])
-        cur.execute(sql_due, params_due)
-        total_due = float(cur.fetchone()[0] or 0)
-
-        sql_paid = """
-            SELECT COALESCE(SUM(P.amount_paid), 0)
-            FROM Payments P
-            WHERE P.year_id = %s
-        """
-        params_paid = [self.year_id]
-        if self.class_id:
-            sql_paid += " AND P.student_id IN (SELECT student_id FROM StudentClassNumbers WHERE year_id=%s AND class_id=%s)"
-            params_paid.extend([self.year_id, self.class_id])
-        cur.execute(sql_paid, params_paid)
-        total_paid = float(cur.fetchone()[0] or 0)
-
+    def _load_finance(self, repo: AnalyticsRepository):
+        total_paid, total_due = repo.get_finance_summary(self.year_id, self.class_id)
         self.finance_ready.emit(total_paid, total_due)
 
 
@@ -445,10 +379,8 @@ class AnalyticsDashboardWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cur = conn.cursor()
                 # Academic years
-                cur.execute("SELECT id, year_label, is_active FROM AcademicYears ORDER BY id DESC")
-                years = cur.fetchall()
+                years = AnalyticsRepository(conn).get_academic_years()
                 self.cmb_year.blockSignals(True)
                 self.cmb_year.clear()
                 active_idx = 0
@@ -471,14 +403,7 @@ class AnalyticsDashboardWindow(QMainWindow):
         self.cmb_class.clear()
         self.cmb_class.addItem("Toutes les classes", None)
         try:
-            cur = conn.cursor()
-            cur.execute("""
-                SELECT DISTINCT C.id, C.class_name_fr
-                FROM Classes C
-                JOIN StudentClassNumbers SCN ON SCN.class_id = C.id AND SCN.year_id = %s
-                ORDER BY C.class_name_fr
-            """, (year_id,))
-            for cid, name in cur.fetchall():
+            for cid, name in AnalyticsRepository(conn).get_classes_for_year(year_id):
                 self.cmb_class.addItem(name, cid)
         except Exception as e:
             AppLogger.error("AnalyticsDashboard", f"_load_classes error: {e}")

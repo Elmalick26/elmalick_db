@@ -196,8 +196,9 @@ class TestAnalyticsWorkerGrades:
 
     def test_grades_empty(self):
         w = self._worker()
-        cur = _make_cursor([])
-        w._load_grades(cur)
+        repo = MagicMock()
+        repo.get_grades_by_subject.return_value = []
+        w._load_grades(repo)
         w.grades_ready.emit.assert_called_once_with([], [], [])
 
     def test_grades_normalizes_to_20(self):
@@ -205,8 +206,9 @@ class TestAnalyticsWorkerGrades:
         w = self._worker()
         # (subject_name_fr, avg_score, coefficient, max_score)
         rows = [("Maths", 16.0, 3.0, 20.0), ("Science", 8.0, 2.0, 10.0)]
-        cur = _make_cursor(rows)
-        w._load_grades(cur)
+        repo = MagicMock()
+        repo.get_grades_by_subject.return_value = rows
+        w._load_grades(repo)
         args = w.grades_ready.emit.call_args[0]
         names, averages, coefficients = args
         assert names == ["Maths", "Science"]
@@ -217,36 +219,35 @@ class TestAnalyticsWorkerGrades:
     def test_grades_none_score_treated_as_zero(self):
         w = self._worker()
         rows = [("Arabe", None, 4.0, 20.0)]
-        cur = _make_cursor(rows)
-        w._load_grades(cur)
+        repo = MagicMock()
+        repo.get_grades_by_subject.return_value = rows
+        w._load_grades(repo)
         _, averages, _ = w.grades_ready.emit.call_args[0]
         assert averages[0] == 0.0
 
     def test_grades_max_score_zero_gives_zero(self):
         w = self._worker()
         rows = [("Gym", 5.0, 1.0, 0.0)]
-        cur = _make_cursor(rows)
-        w._load_grades(cur)
+        repo = MagicMock()
+        repo.get_grades_by_subject.return_value = rows
+        w._load_grades(repo)
         _, averages, _ = w.grades_ready.emit.call_args[0]
         assert averages[0] == 0.0
 
     def test_grades_with_class_filter(self):
-        """Si class_id défini, la query doit inclure le filtre."""
+        """Si class_id défini, le repo est appelé avec class_id."""
         w = self._worker(class_id=5)
-        cur = _make_cursor([])
-        w._load_grades(cur)
-        call_args = cur.execute.call_args
-        sql, params = call_args[0]
-        assert "%s" in sql
-        assert 5 in params
+        repo = MagicMock()
+        repo.get_grades_by_subject.return_value = []
+        w._load_grades(repo)
+        repo.get_grades_by_subject.assert_called_once_with(w.year_id, 5)
 
     def test_grades_without_class_filter(self):
         w = self._worker(class_id=None)
-        cur = _make_cursor([])
-        w._load_grades(cur)
-        call_args = cur.execute.call_args
-        _, params = call_args[0]
-        assert None not in params
+        repo = MagicMock()
+        repo.get_grades_by_subject.return_value = []
+        w._load_grades(repo)
+        repo.get_grades_by_subject.assert_called_once_with(w.year_id, None)
 
 
 class TestAnalyticsWorkerAttendance:
@@ -260,15 +261,17 @@ class TestAnalyticsWorkerAttendance:
 
     def test_attendance_empty(self):
         w = self._worker()
-        cur = _make_cursor([])
-        w._load_attendance(cur)
+        repo = MagicMock()
+        repo.get_monthly_attendance_rate.return_value = []
+        w._load_attendance(repo)
         w.attendance_ready.emit.assert_called_once_with({})
 
     def test_attendance_calculates_rate(self):
         rows = [("2026-01", 100, 85), ("2026-02", 80, 72)]
         w = self._worker()
-        cur = _make_cursor(rows)
-        w._load_attendance(cur)
+        repo = MagicMock()
+        repo.get_monthly_attendance_rate.return_value = rows
+        w._load_attendance(repo)
         monthly = w.attendance_ready.emit.call_args[0][0]
         assert monthly["2026-01"] == 85.0
         assert abs(monthly["2026-02"] - 90.0) < 0.1
@@ -276,17 +279,18 @@ class TestAnalyticsWorkerAttendance:
     def test_attendance_skips_zero_total(self):
         rows = [("2026-03", 0, 0)]
         w = self._worker()
-        cur = _make_cursor(rows)
-        w._load_attendance(cur)
+        repo = MagicMock()
+        repo.get_monthly_attendance_rate.return_value = rows
+        w._load_attendance(repo)
         monthly = w.attendance_ready.emit.call_args[0][0]
         assert "2026-03" not in monthly
 
     def test_attendance_with_class_filter(self):
         w = self._worker(class_id=3)
-        cur = _make_cursor([])
-        w._load_attendance(cur)
-        _, params = cur.execute.call_args[0]
-        assert 3 in params
+        repo = MagicMock()
+        repo.get_monthly_attendance_rate.return_value = []
+        w._load_attendance(repo)
+        repo.get_monthly_attendance_rate.assert_called_once_with(w.year_id, 3)
 
 
 class TestAnalyticsWorkerFinance:
@@ -305,25 +309,26 @@ class TestAnalyticsWorkerFinance:
 
     def test_finance_emits_paid_and_due(self):
         w = self._worker()
-        cur = self._cursor_sequence(50000.0, 35000.0)
-        w._load_finance(cur)
+        repo = MagicMock()
+        repo.get_finance_summary.return_value = (35000.0, 50000.0)
+        w._load_finance(repo)
         w.finance_ready.emit.assert_called_once_with(35000.0, 50000.0)
 
     def test_finance_handles_none_values(self):
         w = self._worker()
-        cur = self._cursor_sequence(None, None)
-        w._load_finance(cur)
+        repo = MagicMock()
+        repo.get_finance_summary.return_value = (0.0, 0.0)
+        w._load_finance(repo)
         paid, due = w.finance_ready.emit.call_args[0]
         assert due == 0.0
         assert paid == 0.0
 
     def test_finance_with_class_filter(self):
         w = self._worker(class_id=7)
-        cur = self._cursor_sequence(0, 0)
-        w._load_finance(cur)
-        # Vérifie que class_id apparaît dans au moins un appel execute
-        all_params = [call[0][1] for call in cur.execute.call_args_list]
-        assert any(7 in p for p in all_params)
+        repo = MagicMock()
+        repo.get_finance_summary.return_value = (0.0, 0.0)
+        w._load_finance(repo)
+        repo.get_finance_summary.assert_called_once_with(w.year_id, 7)
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -559,10 +564,11 @@ class TestAnalyticsWorkerRun:
         w = self._worker()
         db, conn, cur = self._mock_db_ctx()
         with patch("analytics_dashboard.DatabaseManager", return_value=db):
-            w.run()
-        w._load_grades.assert_called_once_with(cur)
-        w._load_attendance.assert_called_once_with(cur)
-        w._load_finance.assert_called_once_with(cur)
+            with patch("analytics_dashboard.AnalyticsRepository") as MockRepo:
+                w.run()
+        assert w._load_grades.call_count == 1
+        assert w._load_attendance.call_count == 1
+        assert w._load_finance.call_count == 1
         w.error_signal.emit.assert_not_called()
 
     def test_run_emits_error_on_exception(self):
@@ -574,13 +580,16 @@ class TestAnalyticsWorkerRun:
         assert "DB down" in w.error_signal.emit.call_args[0][0]
 
     def test_run_loaders_receive_cursor(self):
-        """run() passe bien le même cursor aux 3 loaders."""
+        """run() passe bien le même repo aux 3 loaders."""
         w = self._worker()
         db, conn, cur = self._mock_db_ctx()
         with patch("analytics_dashboard.DatabaseManager", return_value=db):
-            w.run()
-        assert w._load_grades.call_args[0][0] is cur
-        assert w._load_finance.call_args[0][0] is cur
+            with patch("analytics_dashboard.AnalyticsRepository") as MockRepo:
+                repo_instance = MagicMock()
+                MockRepo.return_value = repo_instance
+                w.run()
+        assert w._load_grades.call_args[0][0] is repo_instance
+        assert w._load_finance.call_args[0][0] is repo_instance
 
 
 # ═══════════════════════════════════════════════════════════════
