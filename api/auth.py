@@ -13,7 +13,7 @@ import os
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 from pydantic import BaseModel
@@ -24,6 +24,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 from database_setup import DatabaseManager
 from app_logger import AppLogger
 from repositories.login_repo import LoginRepository
+from api.limiter import limiter
 
 # ────────────────────────────────────────── config
 SECRET_KEY: str = os.environ.get("ELMALICK_API_SECRET", "change-me-in-production-!!!")
@@ -108,7 +109,8 @@ def require_role(*allowed_roles: str):
 
 # ────────────────────────────────────────── Routes
 @router.post("/token", response_model=Token, summary="Obtenir un token JWT")
-async def login(form_data: OAuth2PasswordRequestForm = Depends()):
+@limiter.limit("5/minute")
+async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends()):
     user = _verify_user(form_data.username, form_data.password)
     if not user:
         AppLogger.warning("API.Auth", f"Tentative de connexion échouée: {form_data.username}")

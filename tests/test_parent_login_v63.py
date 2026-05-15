@@ -38,8 +38,13 @@ def _make_db_with_row(row):
 
 
 def _run_login(student_code, pin):
+    from starlette.requests import Request
+    from starlette.datastructures import Headers
+    scope = {"type": "http", "method": "POST", "path": "/api/parent/login",
+             "headers": [], "query_string": b""}
+    fake_request = Request(scope)
     req = routes_parent.ParentLoginRequest(student_code=student_code, pin=pin)
-    return asyncio.run(routes_parent.parent_login(req))
+    return asyncio.run(routes_parent.parent_login(fake_request, req))
 
 
 def test_parent_login_not_found_returns_404():

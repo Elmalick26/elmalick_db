@@ -20,7 +20,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 import bcrypt as _bcrypt
 from datetime import timedelta
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel
 from jose import JWTError, jwt
@@ -28,6 +28,7 @@ from jose import JWTError, jwt
 from database_setup import DatabaseManager
 from app_logger import AppLogger
 from api.auth import SECRET_KEY, ALGORITHM, create_access_token, require_role, get_current_user
+from api.limiter import limiter
 from repositories.parent_repo import ParentRepository
 
 router = APIRouter(prefix="/parent", tags=["Parent Portal"])
@@ -73,7 +74,8 @@ async def get_current_parent(token: str = Depends(_parent_oauth2)) -> dict:
 
 # ──────────────────────── Routes
 @router.post("/login", summary="Connexion parent")
-async def parent_login(data: ParentLoginRequest):
+@limiter.limit("10/minute")
+async def parent_login(request: Request, data: ParentLoginRequest):
     """
     Authentification via le code permanent de l'élève (Students.student_code) + PIN.
     - student_code : identifiant fixe EMG-XXXX, invariant d'une année à l'autre.

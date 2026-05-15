@@ -1,0 +1,46 @@
+# config.ini.example — نموذج إعدادات التطبيق
+# انسخ هذا الملف إلى config.ini واملأ القيم الحقيقية
+# NEVER commit config.ini — it contains secrets
+
+[DATABASE]
+host = localhost
+port = 5432
+dbname = elmalick_db
+user = postgres
+# كلمة مرور قاعدة البيانات — يُفضَّل استخدام متغير البيئة DB_PASSWORD
+# password = YOUR_DB_PASSWORD_HERE
+backup_dir = C:/path/to/backups
+auto_backup = True
+backup_interval_hours = 24
+retention_days = 30
+
+[APPLICATION]
+version = 1.0
+icon_path = assets/app_icon.png
+app_name = El Malick Gest
+school_name = اسم المدرسة
+school_location = المدينة
+theme = light
+debug_mode = False
+language = ar
+
+[UI]
+enable_dark_mode = False
+auto_switch_dark_mode = False
+dark_mode_schedule_enabled = False
+dark_mode_start_time = 18:00
+dark_mode_end_time = 06:00
+
+[SECURITY]
+password_min_length = 8
+session_timeout_minutes = 60
+
+[LOGGING]
+enable_logging = True
+log_level = INFO
+
+[NOTIFICATIONS]
+enable_notifications = True
+
+[REPORTS]
+last_save_dir = C:/path/to/reports

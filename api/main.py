@@ -16,14 +16,17 @@ import os, sys
 # ضمان أن الاستيرادات تجد وحدات المشروع
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
 from api.auth import router as auth_router
 from api.routes_students import router as students_router
 from api.routes_parent import router as parent_router
+from api.limiter import limiter
 
 # ──────────────────────────────────────────── App
 app = FastAPI(
@@ -38,6 +41,10 @@ app = FastAPI(
     redoc_url="/api/redoc",
     openapi_url="/api/openapi.json",
 )
+
+# ──────────────────────────────────────────── Rate Limiter state + handler
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # ──────────────────────────────────────────── CORS
 # En production: remplacer ["*"] par les domaines autorisés

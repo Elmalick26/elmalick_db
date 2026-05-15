@@ -22,6 +22,10 @@ school_management.db
 backups/
 logs/
 
+# Configuration files with secrets (use config.ini.example as template)
+config.ini
+.env
+
 # Python virtual environments
 .venv/
 venv/
