@@ -1,3 +1,6 @@
+"""Write the backward-compat shim for database_setup.py."""
+
+shim = '''\
 """
 database_setup.py -- Backward-compatibility shim.
 
@@ -34,3 +37,9 @@ if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
     db = DatabaseManager()
     db.initialize_database()
+'''
+
+with open("database_setup.py", "w", encoding="utf-8") as f:
+    f.write(shim)
+
+print(f"database_setup.py rewritten: {len(shim.splitlines())} lines")

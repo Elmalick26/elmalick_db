@@ -152,40 +152,32 @@
 
 ---
 
-## المرحلة 5 — إعادة هيكلة المشروع 🟢
+## المرحلة 5 — إعادة هيكلة المشروع ✅ (جزئي)
 
-**الزمن المقدر: 3-4 أيام | الأولوية: جودة طويلة الأمد**
+**المنجز: 5.1 + 5.3 | المتبقي: 5.2 (تنظيم المجلدات)**
 
-### 5.1 تفكيك الملفات الضخمة
+### 5.1 تفكيك الملفات الضخمة ✅
 
-| الملف الحالي | السطور | الهدف |
-|---|---|---|
-| `bulletin_generation.py` | 1525 | `bulletin_generator.py` + `bulletin_pdf.py` + `bulletin_data.py` |
-| `student_management.py` | 1205 | `student_list.py` + `student_form.py` |
-| `database_setup.py` | 918 | `db_manager.py` + `db_schema.py` |
-| `admin_documents.py` | 999 | `documents_list.py` + `documents_editor.py` |
+| الملف | قبل | بعد | |
+|---|---|---|---|
+| `database_setup.py` | 1063 سطر | **36 سطر** (shim) | ✅ مُنجز |
+| `db_manager.py` | — | **130 سطر** (pool + context manager) | ✅ جديد |
+| `db_schema.py` | — | **903 سطر** (DDL schema) | ✅ جديد |
+| `bulletin_generation.py` | 1525 | — | ⏸ مؤجل (UI/PyInstaller) |
+| `student_management.py` | 1205 | — | ⏸ مؤجل (UI/PyInstaller) |
 
 ### 5.2 تنظيم هيكل المجلدات
 
-```
-El Malick Gest/
-├── src/
-│   ├── ui/              ← كل نوافذ PyQt6
-│   ├── core/            ← business logic (services, validators)
-│   ├── data/            ← repositories
-│   └── api/             ← FastAPI
-├── tests/
-├── config/
-│   ├── config.ini.example
-│   └── .env.example
-└── main.py
-```
+- [ ] نقل UI files إلى `src/ui/`
+- [ ] نقل repositories إلى `src/data/`
+- [ ] تحديث جميع الـ imports
 
-### 5.3 API Versioning
+### 5.3 API Versioning ✅
 
-- [ ] تحويل `/api/students/` → `/api/v1/students/`
-- [ ] إضافة deprecation headers على `/api/` القديمة
-- [ ] توثيق خطة التوافق العكسي
+- [x] تحويل `/api/students/` → `/api/v1/students/` (canonical)
+- [x] `/api/auth/`, `/api/parent/` → `/api/v1/auth/`, `/api/v1/parent/`
+- [x] إضافة `Deprecation: true` + `Sunset` + `Link` headers على `/api/` القديمة
+- [x] اختبارات: deprecation header present on legacy, absent on v1 (5 tests)
 
 ---
 

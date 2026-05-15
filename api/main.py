@@ -59,9 +59,37 @@ app.add_middleware(
 )
 
 # ──────────────────────────────────────────── Routers
-app.include_router(auth_router, prefix="/api")
-app.include_router(students_router, prefix="/api")
-app.include_router(parent_router, prefix="/api")
+# v1 (current stable) — canonical versioned routes
+app.include_router(auth_router, prefix="/api/v1")
+app.include_router(students_router, prefix="/api/v1")
+app.include_router(parent_router, prefix="/api/v1")
+
+# Legacy unversioned routes — kept for backward compatibility
+# Responses include a Deprecation header to signal migration path.
+app.include_router(auth_router, prefix="/api", include_in_schema=False)
+app.include_router(students_router, prefix="/api", include_in_schema=False)
+app.include_router(parent_router, prefix="/api", include_in_schema=False)
+
+
+# ──────────────────────────────────────────── Deprecation middleware
+@app.middleware("http")
+async def add_deprecation_header(request: Request, call_next):
+    """Add Deprecation header on legacy /api/* routes (not /api/v1/ or /api/docs etc.)."""
+    response = await call_next(request)
+    path = request.url.path
+    # Only flag the old unversioned API paths (not v1, not system endpoints)
+    if (
+        path.startswith("/api/")
+        and not path.startswith("/api/v1/")
+        and not path.startswith("/api/docs")
+        and not path.startswith("/api/redoc")
+        and not path.startswith("/api/openapi")
+        and path not in ("/api/health", "/api/")
+    ):
+        response.headers["Deprecation"] = "true"
+        response.headers["Sunset"] = "Sat, 01 Jan 2027 00:00:00 GMT"
+        response.headers["Link"] = f'<{path.replace("/api/", "/api/v1/", 1)}>; rel="successor-version"'
+    return response
 
 # ──────────────────────────────────────────── Static files (Parent Portal)
 _static_dir = os.path.join(os.path.dirname(__file__), "static")

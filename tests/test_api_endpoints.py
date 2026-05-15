@@ -1,7 +1,7 @@
 """
 tests/test_api_endpoints.py
 اختبارات شاملة لـ REST API باستخدام FastAPI TestClient.
-يغطي: auth, students, parent portal
+يغطي: auth, students, parent portal, API versioning (v1)
 """
 
 import sys
@@ -426,3 +426,67 @@ class TestJWTHelpers:
         token = create_access_token({"sub": "u", "role": "Admin"}, expires_delta=timedelta(minutes=5))
         payload = jose_jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         assert "exp" in payload
+
+
+# ─────────────────────────────────────────────────────────────
+# 6. API Versioning — /api/v1/* routes
+# ─────────────────────────────────────────────────────────────
+
+class TestApiVersioning:
+    def _auth_headers(self) -> dict:
+        return {"Authorization": f"Bearer {_make_admin_token()}"}
+
+    def test_v1_docs_available(self):
+        r = client.get("/api/docs")
+        assert r.status_code == 200
+
+    def test_v1_students_route_exists(self):
+        db, conn = _make_db_mock()
+        repo_mock = MagicMock()
+        repo_mock.get_active_year_id.return_value = 1
+        repo_mock.list_students.return_value = []
+
+        with patch("api.routes_students.DatabaseManager", return_value=db), patch(
+            "api.routes_students.StudentsApiRepository", return_value=repo_mock
+        ):
+            r = client.get("/api/v1/students/", headers=self._auth_headers())
+
+        assert r.status_code == 200
+
+    def test_v1_auth_token_route_exists(self):
+        with patch("api.auth._verify_user", return_value=None):
+            r = client.post(
+                "/api/v1/auth/token",
+                data={"username": "bad", "password": "bad"},
+            )
+        assert r.status_code == 401
+
+    def test_legacy_route_has_deprecation_header(self):
+        db, conn = _make_db_mock()
+        repo_mock = MagicMock()
+        repo_mock.get_active_year_id.return_value = 1
+        repo_mock.list_students.return_value = []
+
+        with patch("api.routes_students.DatabaseManager", return_value=db), patch(
+            "api.routes_students.StudentsApiRepository", return_value=repo_mock
+        ):
+            r = client.get("/api/students/", headers=self._auth_headers())
+
+        assert r.status_code == 200
+        assert r.headers.get("Deprecation") == "true"
+        assert "Sunset" in r.headers
+        assert "/api/v1/students/" in r.headers.get("Link", "")
+
+    def test_v1_route_has_no_deprecation_header(self):
+        db, conn = _make_db_mock()
+        repo_mock = MagicMock()
+        repo_mock.get_active_year_id.return_value = 1
+        repo_mock.list_students.return_value = []
+
+        with patch("api.routes_students.DatabaseManager", return_value=db), patch(
+            "api.routes_students.StudentsApiRepository", return_value=repo_mock
+        ):
+            r = client.get("/api/v1/students/", headers=self._auth_headers())
+
+        assert r.status_code == 200
+        assert "Deprecation" not in r.headers
