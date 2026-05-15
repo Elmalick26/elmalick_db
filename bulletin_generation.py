@@ -92,16 +92,8 @@ class GradeCalculator:
     def get_class_context(self, class_id):
         db = DatabaseManager()
         with db.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT CY.name_fr 
-                FROM Classes CL 
-                JOIN Cycles CY ON CL.cycle_id = CY.id 
-                WHERE CL.id = %s
-            """, (class_id,))
-            res = cursor.fetchone()
-        
-        cycle_name = res[0].lower() if res else ""
+            cycle_name = BulletinRepository(conn).get_cycle_name_for_class(class_id) or ""
+        cycle_name = cycle_name.lower()
         is_primary = "elem" in cycle_name or "prim" in cycle_name or "ibtida" in cycle_name
         max_score = 10.0 if is_primary else 20.0
         return is_primary, max_score
@@ -112,172 +104,28 @@ class GradeCalculator:
             std['rank'] = i + 1
         return students_list
 
-    def get_class_subjects(self, cursor, class_id):
+    def get_class_subjects(self, repo, class_id):
         """إرجاع المواد الفعلية للفصل: من جدول الحصص أولاً، ثم مواد المرحلة."""
-        cursor.execute("""
-            SELECT DISTINCT S.id, S.subject_name_fr, S.subject_name_ar, S.coefficient
-            FROM Timetable T
-            JOIN Subjects S ON T.subject_id = S.id
-            WHERE T.class_id = %s
-            ORDER BY S.id
-        """, (class_id,))
-        subjects = cursor.fetchall()
-        if subjects:
-            return subjects
+        return repo.get_subjects_for_class(class_id)
 
-        cursor.execute("SELECT cycle_id FROM Classes WHERE id=%s", (class_id,))
-        res = cursor.fetchone()
-        if not res:
-            return []
-        cycle_id = res[0]
-        cursor.execute("SELECT id, subject_name_fr, subject_name_ar, coefficient FROM Subjects WHERE cycle_id=%s ORDER BY id", (cycle_id,))
-        return cursor.fetchall()
+    def _get_period_year_id(self, repo, period_id):
+        return repo.get_period_year_id(period_id)
 
-    def _get_period_year_id(self, cursor, period_id):
-        cursor.execute("SELECT year_id FROM AcademicPeriods WHERE id=%s", (period_id,))
-        res = cursor.fetchone()
-        return res[0] if res else None
+    def _get_grade_score(self, repo, student_id, subject_id, assessment_id, year_id):
+        return repo.get_grade_score(student_id, subject_id, assessment_id, year_id)
 
-    def _get_grade_score(self, cursor, student_id, subject_id, assessment_id, year_id):
-        if year_id:
-            cursor.execute("""
-                SELECT score
-                FROM Grades
-                WHERE student_id=%s AND subject_id=%s AND assessment_id=%s
-                AND (year_id=%s OR year_id IS NULL)
-                ORDER BY CASE WHEN year_id=%s THEN 0 ELSE 1 END, id DESC
-                LIMIT 1
-            """, (student_id, subject_id, assessment_id, year_id, year_id))
-        else:
-            cursor.execute(
-                "SELECT score FROM Grades WHERE student_id=%s AND subject_id=%s AND assessment_id=%s ORDER BY id DESC LIMIT 1",
-                (student_id, subject_id, assessment_id)
-            )
-        res = cursor.fetchone()
-        return res[0] if res else 0
+    def _get_attendance_count(self, repo, student_id, status, year_id, period_id=None):
+        return repo.get_attendance_count(student_id, status, year_id, period_id)
 
-    def _get_table_columns(self, cursor, table_name):
-        """Read table columns in PostgreSQL using information_schema."""
-        try:
-            cursor.execute(
-                """
-                SELECT column_name
-                FROM information_schema.columns
-                WHERE table_schema = current_schema()
-                  AND lower(table_name) = lower(%s)
-                """,
-                (table_name,)
-            )
-            return {row[0] for row in cursor.fetchall()}
-        except Exception:
-            return set()
-
-    def _get_attendance_count(self, cursor, student_id, status, year_id, period_id=None):
-        attendance_cols = self._get_table_columns(cursor, "StudentAttendance")
-        has_period_col = "period_id" in attendance_cols
-
-        if period_id and has_period_col:
-            cursor.execute(
-                "SELECT COUNT(*) FROM StudentAttendance WHERE student_id=%s AND status=%s AND period_id=%s",
-                (student_id, status, period_id)
-            )
-            return int(cursor.fetchone()[0] or 0)
-
-        if year_id:
-            cursor.execute(
-                "SELECT COUNT(*) FROM StudentAttendance WHERE student_id=%s AND status=%s AND year_id=%s",
-                (student_id, status, year_id)
-            )
-            return int(cursor.fetchone()[0] or 0)
-
-        cursor.execute(
-            "SELECT COUNT(*) FROM StudentAttendance WHERE student_id=%s AND status=%s",
-            (student_id, status)
-        )
-        return int(cursor.fetchone()[0] or 0)
-
-    def _get_discipline_data(self, cursor, student_id, year_id, is_primary, period_id=None):
-        discipline_cols = self._get_table_columns(cursor, "StudentDiscipline")
-        points_col = "points_deducted" if "points_deducted" in discipline_cols else "0"
-        sanction_col = "sanction" if "sanction" in discipline_cols else ("action_taken" if "action_taken" in discipline_cols else "''")
-        observation_col = "observation" if "observation" in discipline_cols else ("description" if "description" in discipline_cols else "''")
-        has_period_col = "period_id" in discipline_cols
-
-        if period_id and has_period_col:
-            cursor.execute(f"""
-                SELECT COALESCE(SUM({points_col}), 0)
-                FROM StudentDiscipline
-                WHERE student_id=%s AND period_id=%s
-            """, (student_id, period_id))
-            total_deducted = cursor.fetchone()[0]
-
-            cursor.execute(f"""
-                SELECT incident_type, {sanction_col}, {points_col}, {observation_col}
-                FROM StudentDiscipline
-                WHERE student_id=%s AND period_id=%s
-                ORDER BY incident_date DESC
-                LIMIT 5
-            """, (student_id, period_id))
-            discipline_records = cursor.fetchall()
-
-            base_conduct_score = 10.0 if is_primary else 20.0
-            conduct_score = max(0, base_conduct_score - total_deducted)
-
-            return {
-                'conduct_score': conduct_score,
-                'base_score': base_conduct_score,
-                'total_deducted': total_deducted,
-                'records': discipline_records,
-                'appreciation': self.get_conduct_appreciation(conduct_score, base_conduct_score)
-            }
-
-        if year_id:
-            cursor.execute("SELECT COUNT(*) FROM StudentDiscipline WHERE student_id=%s AND year_id=%s", (student_id, year_id))
-            has_year_data = cursor.fetchone()[0] > 0
-        else:
-            has_year_data = False
-
-        if has_year_data:
-            cursor.execute(f"""
-                SELECT COALESCE(SUM({points_col}), 0)
-                FROM StudentDiscipline
-                WHERE student_id=%s AND year_id=%s
-            """, (student_id, year_id))
-            total_deducted = cursor.fetchone()[0]
-
-            cursor.execute(f"""
-                SELECT incident_type, {sanction_col}, {points_col}, {observation_col}
-                FROM StudentDiscipline
-                WHERE student_id=%s AND year_id=%s
-                ORDER BY incident_date DESC
-                LIMIT 5
-            """, (student_id, year_id))
-            discipline_records = cursor.fetchall()
-        else:
-            cursor.execute(f"""
-                SELECT COALESCE(SUM({points_col}), 0)
-                FROM StudentDiscipline
-                WHERE student_id=%s
-            """, (student_id,))
-            total_deducted = cursor.fetchone()[0]
-
-            cursor.execute(f"""
-                SELECT incident_type, {sanction_col}, {points_col}, {observation_col}
-                FROM StudentDiscipline
-                WHERE student_id=%s
-                ORDER BY incident_date DESC
-                LIMIT 5
-            """, (student_id,))
-            discipline_records = cursor.fetchall()
-
+    def _get_discipline_data(self, repo, student_id, year_id, is_primary, period_id=None):
+        total_deducted, records = repo.get_discipline_data_raw(student_id, year_id, period_id)
         base_conduct_score = 10.0 if is_primary else 20.0
         conduct_score = max(0, base_conduct_score - total_deducted)
-
         return {
             'conduct_score': conduct_score,
             'base_score': base_conduct_score,
             'total_deducted': total_deducted,
-            'records': discipline_records,
+            'records': records,
             'appreciation': self.get_conduct_appreciation(conduct_score, base_conduct_score)
         }
 
@@ -287,24 +135,16 @@ class GradeCalculator:
         is_primary, max_score = self.get_class_context(class_id)
 
         with db.get_connection() as conn:
-            cursor = conn.cursor()
-            year_id = self._get_period_year_id(cursor, period_id)
+            repo = BulletinRepository(conn)
+            year_id = self._get_period_year_id(repo, period_id)
 
-            cursor.execute("""
-                SELECT S.id, S.first_name_fr, S.last_name_fr, S.first_name_ar, S.last_name_ar, COALESCE(SCN.class_number, 0)
-                FROM Students S
-                JOIN StudentClassNumbers SCN ON S.id = SCN.student_id
-                WHERE SCN.class_id=%s AND SCN.year_id=%s AND S.status='Active'
-                ORDER BY COALESCE(SCN.class_number, 9999), S.last_name_fr, S.first_name_fr
-            """, (class_id, year_id))
-            students = cursor.fetchall()
-            
-            subjects = self.get_class_subjects(cursor, class_id)
+            students = repo.list_students_in_class_ordered(class_id, year_id)
+
+            subjects = self.get_class_subjects(repo, class_id)
             if not subjects:
                 return []
 
-            cursor.execute("SELECT id, name_fr, type_code, weight_percentage FROM AssessmentTypes WHERE period_id=%s", (period_id,))
-            assessments = cursor.fetchall()
+            assessments = repo.get_assessments_for_period(period_id)
 
             class_results = []
 
@@ -336,7 +176,7 @@ class GradeCalculator:
 
                     for assess in assessments:
                         assess_id, assess_name, assess_code, assess_w = assess
-                        score = self._get_grade_score(cursor, std_id, sub_id, assess_id, year_id)
+                        score = self._get_grade_score(repo, std_id, sub_id, assess_id, year_id)
                         
                         if not is_primary:
                             if 'DEV' in str(assess_code).upper() or 'DEVOIR' in str(assess_name).upper():
@@ -381,7 +221,7 @@ class GradeCalculator:
                     student_data['total_coef'] += sub_coef
 
                 if include_conduct:
-                    discipline_data = self._get_discipline_data(cursor, std_id, year_id, is_primary, period_id)
+                    discipline_data = self._get_discipline_data(repo, std_id, year_id, is_primary, period_id)
                     discipline_coef = 1
                     discipline_points = (discipline_data['conduct_score'] / discipline_data['base_score']) * max_score * discipline_coef
                     student_data['discipline'] = discipline_data
@@ -403,40 +243,33 @@ class GradeCalculator:
 
         db = DatabaseManager()
         with db.get_connection() as conn:
-            cursor = conn.cursor()
-            
-            cursor.execute("SELECT first_name_fr, last_name_fr, first_name_ar, last_name_ar, birth_date, birth_place, parent_name FROM Students WHERE id=%s", (student_id,))
-            target_student['info'] = cursor.fetchone()
-            
-            year_id = self._get_period_year_id(cursor, period_id)
+            repo = BulletinRepository(conn)
 
-            cursor.execute(
-                "SELECT COUNT(*) FROM StudentClassNumbers WHERE class_id=%s AND year_id=%s",
-                (class_id, year_id)
-            )
-            class_size = int(cursor.fetchone()[0] or 0)
-            
-            abs_cnt = self._get_attendance_count(cursor, student_id, 'Absent', year_id, period_id)
-            ret_cnt = self._get_attendance_count(cursor, student_id, 'Retard', year_id, period_id)
+            target_student['info'] = repo.get_student_details(student_id)
+
+            year_id = self._get_period_year_id(repo, period_id)
+
+            class_size = repo.get_class_size(class_id, year_id)
+
+            abs_cnt = self._get_attendance_count(repo, student_id, 'Absent', year_id, period_id)
+            ret_cnt = self._get_attendance_count(repo, student_id, 'Retard', year_id, period_id)
             target_student['attendance'] = {'abs': abs_cnt, 'ret': ret_cnt}
             
             if 'discipline' not in target_student:
                 target_student['discipline'] = self._get_discipline_data(
-                    cursor, student_id, year_id, target_student['is_primary'], period_id
+                    repo, student_id, year_id, target_student['is_primary'], period_id
                 )
             
             target_student['mention'] = self.get_mention(target_student['general_average'], target_student['max_score'])
             target_student['observation'] = self.get_observation(target_student['general_average'], target_student['max_score'])
 
             # Annual Logic
-            cursor.execute("SELECT year_id, cycle_id FROM AcademicPeriods WHERE id=%s", (period_id,))
-            meta = cursor.fetchone()
+            meta = repo.get_period_meta(period_id)
             target_student['annual'] = None
             
             if meta:
                 y_id, c_id = meta
-                cursor.execute("SELECT id, period_name_fr, period_name_ar FROM AcademicPeriods WHERE year_id=%s AND cycle_id=%s ORDER BY sort_order", (y_id, c_id))
-                all_periods = cursor.fetchall()
+                all_periods = repo.list_periods_for_year_and_cycle(y_id, c_id)
                 
                 if all_periods and all_periods[-1][0] == period_id:
                     annual_avgs = []
@@ -446,13 +279,7 @@ class GradeCalculator:
                         period_results_cache[pid] = self.get_student_averages(class_id, pid)
 
                     # ===== تعديل مهم: جلب الطلاب من جدول التسجيل SCN =====
-                    cursor.execute("""
-                        SELECT S.id 
-                        FROM Students S
-                        JOIN StudentClassNumbers SCN ON S.id = SCN.student_id
-                        WHERE SCN.class_id=%s AND SCN.year_id=%s AND S.status='Active'
-                    """, (class_id, y_id))
-                    all_ids = [r[0] for r in cursor.fetchall()]
+                    all_ids = repo.list_student_ids_in_class(class_id, y_id)
                     
                     class_annual_avgs = {}
                     for sid in all_ids:
