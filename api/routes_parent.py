@@ -28,6 +28,7 @@ from jose import JWTError, jwt
 from database_setup import DatabaseManager
 from app_logger import AppLogger
 from api.auth import SECRET_KEY, ALGORITHM, create_access_token, require_role, get_current_user
+from repositories.parent_repo import ParentRepository
 
 router = APIRouter(prefix="/parent", tags=["Parent Portal"])
 _parent_oauth2 = OAuth2PasswordBearer(tokenUrl="/api/parent/login")
@@ -50,14 +51,6 @@ def _verify_pin(pin: str, stored_hash: str) -> bool:
 class ParentLoginRequest(BaseModel):
     student_code: str   # رمز الطالب الثابت (EMG-XXXX) أو الرقم القديم كانتقال
     pin: str            # رمز PIN (4-6 أرقام)
-
-
-# ──────────────────────── Helpers
-def _get_active_year(conn) -> Optional[int]:
-    cur = conn.cursor()
-    cur.execute("SELECT id FROM AcademicYears WHERE is_active = 1 ORDER BY id DESC LIMIT 1")
-    row = cur.fetchone()
-    return row[0] if row else None
 
 
 # ──────────────────────── Dependency
@@ -93,21 +86,10 @@ async def parent_login(data: ParentLoginRequest):
     try:
         db = DatabaseManager()
         with db.get_connection() as conn:
-            cur = conn.cursor()
+            repo = ParentRepository(conn)
             code = data.student_code.strip().upper()
 
-            cur.execute("""
-                SELECT id, first_name_fr, last_name_fr,
-                       parent_name, parent_phone,
-                       COALESCE(parent_pin_hash, '') AS pin_hash,
-                       COALESCE(parent_pin, '')      AS pin_plain,
-                       student_code
-                FROM Students
-                WHERE student_code = %s
-                  AND status != 'Archived'
-                LIMIT 1
-            """, (code,))
-            row = cur.fetchone()
+            row = repo.get_student_for_parent_login(code)
 
             if not row:
                 raise HTTPException(status_code=404, detail=f"Code élève '{code}' introuvable. Vérifiez le code sur le carnet scolaire.")
@@ -124,10 +106,7 @@ async def parent_login(data: ParentLoginRequest):
                     raise HTTPException(status_code=401, detail="PIN incorrect.")
                 # Mise à niveau vers bcrypt
                 new_hash = _hash_pin(data.pin)
-                cur.execute(
-                    "UPDATE Students SET parent_pin_hash = %s, parent_pin = NULL WHERE id = %s",
-                    (new_hash, s_id)
-                )
+                repo.update_student_pin(s_id, new_hash)
                 conn.commit()
                 AppLogger.info("API.Parent", f"PIN migré vers bcrypt — élève {s_id}")
             else:
@@ -135,10 +114,7 @@ async def parent_login(data: ParentLoginRequest):
                 if len(data.pin) < 4 or not data.pin.isdigit():
                     raise HTTPException(status_code=400, detail="Le PIN doit contenir au moins 4 chiffres.")
                 new_hash = _hash_pin(data.pin)
-                cur.execute(
-                    "UPDATE Students SET parent_pin_hash = %s, parent_pin = NULL WHERE id = %s",
-                    (new_hash, s_id)
-                )
+                repo.update_student_pin(s_id, new_hash)
                 conn.commit()
                 AppLogger.info("API.Parent", f"Premier accès — PIN défini pour élève {s_id} ({fn} {ln})")
 
@@ -168,26 +144,12 @@ async def parent_me(parent: dict = Depends(get_current_parent)):
     try:
         db = DatabaseManager()
         with db.get_connection() as conn:
-            cur = conn.cursor()
-            cur.execute("""
-                SELECT S.first_name_fr, S.last_name_fr,
-                       S.first_name_ar, S.last_name_ar,
-                       S.birth_date, S.gender,
-                       S.parent_name, S.parent_phone, S.parent_email,
-                       C.class_name_fr AS class_name,
-                       AY.year_label AS academic_year
-                FROM Students S
-                LEFT JOIN StudentClassNumbers SCN ON S.id = SCN.student_id 
-                    AND SCN.year_id = (SELECT id FROM AcademicYears WHERE is_active = 1 LIMIT 1)
-                LEFT JOIN AcademicYears AY ON SCN.year_id = AY.id AND AY.is_active = 1
-                LEFT JOIN Classes C ON SCN.class_id = C.id
-                WHERE S.id = %s
-            """, (student_id,))
-            row = cur.fetchone()
-            if not row:
+            repo = ParentRepository(conn)
+            year_id = repo.get_active_year_id()
+            result = repo.get_student_info(student_id, year_id)
+            if not result:
                 raise HTTPException(status_code=404, detail="Élève introuvable")
-            cols = [d[0] for d in cur.description]
-            return dict(zip(cols, row))
+            return result
     except HTTPException:
         raise
     except Exception as e:
@@ -201,31 +163,11 @@ async def parent_grades(parent: dict = Depends(get_current_parent)):
     try:
         db = DatabaseManager()
         with db.get_connection() as conn:
-            year_id = _get_active_year(conn)
+            repo = ParentRepository(conn)
+            year_id = repo.get_active_year_id()
             if not year_id:
                 return []
-            
-            cur = conn.cursor()
-            cur.execute("""
-                SELECT G.score,
-                       SB.subject_name_fr AS subject,
-                       SB.coefficient,
-                       AP.period_name_fr AS period,
-                       AT.name_fr AS exam_type,
-                       CASE WHEN LOWER(CY.name_fr) SIMILAR TO '%%(elem|prim|ibtida)%%'
-                            THEN 10.0 ELSE 20.0 END AS max_score
-                FROM Grades G
-                JOIN Subjects SB ON G.subject_id = SB.id
-                JOIN AssessmentTypes AT ON G.assessment_id = AT.id
-                JOIN AcademicPeriods AP ON AT.period_id = AP.id
-                JOIN StudentClassNumbers SCN ON G.student_id = SCN.student_id AND SCN.year_id = G.year_id
-                JOIN Classes CL ON SCN.class_id = CL.id
-                JOIN Cycles CY ON CL.cycle_id = CY.id
-                WHERE G.student_id = %s AND G.year_id = %s
-                ORDER BY AP.sort_order, SB.subject_name_fr
-            """, (student_id, year_id))
-            cols = [d[0] for d in cur.description]
-            return [dict(zip(cols, r)) for r in cur.fetchall()]
+            return repo.get_student_grades(student_id, year_id)
     except Exception as e:
         AppLogger.error("API.Parent", f"parent_grades({student_id}) error: {e}")
         raise HTTPException(status_code=500, detail="Erreur serveur")
@@ -237,17 +179,7 @@ async def parent_attendance(parent: dict = Depends(get_current_parent)):
     try:
         db = DatabaseManager()
         with db.get_connection() as conn:
-            cur = conn.cursor()
-            cur.execute("""
-                SELECT SA.date, SA.status, SA.reason
-                FROM StudentAttendance SA
-                JOIN AcademicYears AY ON SA.year_id = AY.id AND AY.is_active = 1
-                WHERE SA.student_id = %s
-                ORDER BY SA.date DESC
-                LIMIT 60
-            """, (student_id,))
-            cols = [d[0] for d in cur.description]
-            return [dict(zip(cols, r)) for r in cur.fetchall()]
+            return ParentRepository(conn).get_student_attendance(student_id)
     except Exception as e:
         AppLogger.error("API.Parent", f"parent_attendance({student_id}) error: {e}")
         raise HTTPException(status_code=500, detail="Erreur serveur")
@@ -259,19 +191,7 @@ async def parent_dues(parent: dict = Depends(get_current_parent)):
     try:
         db = DatabaseManager()
         with db.get_connection() as conn:
-            cur = conn.cursor()
-            cur.execute("""
-                SELECT SD.fee_description AS label,
-                       SD.net_amount AS amount,
-                       SD.due_date,
-                       SD.is_paid
-                FROM StudentDues SD
-                JOIN AcademicYears AY ON SD.year_id = AY.id AND AY.is_active = 1
-                WHERE SD.student_id = %s
-                ORDER BY SD.due_date
-            """, (student_id,))
-            cols = [d[0] for d in cur.description]
-            return [dict(zip(cols, r)) for r in cur.fetchall()]
+            return ParentRepository(conn).get_student_dues(student_id)
     except Exception as e:
         AppLogger.error("API.Parent", f"parent_dues({student_id}) error: {e}")
         raise HTTPException(status_code=500, detail="Erreur serveur")
@@ -290,14 +210,10 @@ async def reset_parent_pin(
     try:
         db = DatabaseManager()
         with db.get_connection() as conn:
-            cur = conn.cursor()
-            cur.execute("SELECT id FROM Students WHERE id = %s AND status != 'Archived'", (student_id,))
-            if not cur.fetchone():
+            repo = ParentRepository(conn)
+            if not repo.check_student_active(student_id):
                 raise HTTPException(status_code=404, detail="Élève introuvable")
-            cur.execute(
-                "UPDATE Students SET parent_pin_hash = NULL, parent_pin = NULL WHERE id = %s",
-                (student_id,)
-            )
+            repo.reset_student_pin(student_id)
             conn.commit()
             AppLogger.info("API.Parent", f"PIN parent réinitialisé — élève {student_id} par {current_user.username}")
             return {"detail": f"PIN réinitialisé pour l'élève {student_id}. Le parent pourra définir un nouveau PIN à la prochaine connexion."}

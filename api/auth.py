@@ -23,6 +23,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from database_setup import DatabaseManager
 from app_logger import AppLogger
+from repositories.login_repo import LoginRepository
 
 # ────────────────────────────────────────── config
 SECRET_KEY: str = os.environ.get("ELMALICK_API_SECRET", "change-me-in-production-!!!")
@@ -56,19 +57,14 @@ def _verify_user(username: str, password: str) -> Optional[dict]:
         import bcrypt as _bcrypt
         db = DatabaseManager()
         with db.get_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                "SELECT id, username, password_hash, role FROM Users WHERE username = %s",
-                (username,)
-            )
-            row = cursor.fetchone()
+            row = LoginRepository(conn).get_user_for_login(username)
             if not row:
                 return None
-            uid, uname, pw_hash, role = row
+            uid, role, pw_hash, _status = row
             if isinstance(pw_hash, str):
                 pw_hash = pw_hash.encode()
             if _bcrypt.checkpw(password.encode(), pw_hash):
-                return {"id": uid, "username": uname, "role": role}
+                return {"id": uid, "username": username, "role": role}
     except Exception as e:
         AppLogger.error("API.Auth", f"verify_user error: {e}")
     return None
