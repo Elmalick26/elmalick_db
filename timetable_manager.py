@@ -23,6 +23,7 @@ from PyQt6.QtGui import QFont, QColor, QBrush, QAction
 
 from database_setup import DatabaseManager
 from app_logger import AppLogger
+from repositories.timetable_repo import TimetableRepository
 from ui_styles import ThemeManager, Colors
 
 # ──────────────────────────────────────────────────────────────
@@ -365,11 +366,10 @@ class TimetableWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cur = conn.cursor()
+                repo = TimetableRepository(conn)
 
                 # Classes
-                cur.execute("SELECT id, class_name_fr FROM Classes ORDER BY class_name_fr")
-                self._classes = cur.fetchall()
+                self._classes = repo.list_classes()
                 self.cmb_class.blockSignals(True)
                 self.cmb_class.clear()
                 self.cmb_class.addItem("— Sélectionner une classe —", None)
@@ -380,15 +380,10 @@ class TimetableWindow(QMainWindow):
                     self.cmb_class.setCurrentIndex(1)
 
                 # Subjects
-                cur.execute("SELECT id, subject_name_fr FROM Subjects ORDER BY subject_name_fr")
-                self._subjects = cur.fetchall()
+                self._subjects = repo.list_subjects()
 
                 # Staff (teachers)
-                cur.execute(
-                    "SELECT id, CONCAT(first_name_fr, ' ', last_name_fr) FROM Staff "
-                    "WHERE status != 'Archived' ORDER BY last_name_fr"
-                )
-                self._staff = cur.fetchall()
+                self._staff = repo.list_active_staff()
 
         except Exception as e:
             AppLogger.error("Timetable", f"_load_filters error: {e}")
@@ -405,25 +400,7 @@ class TimetableWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cur = conn.cursor()
-                cur.execute("""
-                    SELECT
-                        T.id,
-                        T.day_of_week,
-                        T.start_time,
-                        T.end_time,
-                        T.subject_id,
-                        T.teacher_id,
-                        T.room,
-                        SB.subject_name_fr,
-                        CONCAT(ST.first_name_fr, ' ', ST.last_name_fr) AS teacher_name
-                    FROM Timetable T
-                    JOIN Subjects SB ON T.subject_id = SB.id
-                    LEFT JOIN Staff ST ON T.teacher_id = ST.id
-                    WHERE T.class_id = %s
-                    ORDER BY T.day_of_week, T.start_time
-                """, (self._class_id,))
-                rows = cur.fetchall()
+                rows = TimetableRepository(conn).list_slots_for_class(self._class_id)
 
             slots = [
                 {
@@ -481,21 +458,15 @@ class TimetableWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cur = conn.cursor()
-                cur.execute("""
-                    INSERT INTO Timetable
-                        (class_id, day_of_week, start_time, end_time,
-                         subject_id, teacher_id, room)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
-                """, (
+                TimetableRepository(conn).insert_slot(
                     self._class_id,
                     values["day_of_week"],
                     values["start_time"],
                     values["end_time"],
                     values["subject_id"],
                     values["teacher_id"],
-                    values["room"] or None,
-                ))
+                    values["room"],
+                )
                 conn.commit()
             AppLogger.info("Timetable", f"Heure ajoutée pour class_id={self._class_id}")
             self._load_grid()
@@ -507,25 +478,15 @@ class TimetableWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cur = conn.cursor()
-                cur.execute("""
-                    UPDATE Timetable SET
-                        day_of_week = %s,
-                        start_time  = %s,
-                        end_time    = %s,
-                        subject_id  = %s,
-                        teacher_id  = %s,
-                        room        = %s
-                    WHERE id = %s
-                """, (
+                TimetableRepository(conn).update_slot(
+                    slot_id,
                     values["day_of_week"],
                     values["start_time"],
                     values["end_time"],
                     values["subject_id"],
                     values["teacher_id"],
-                    values["room"] or None,
-                    slot_id,
-                ))
+                    values["room"],
+                )
                 conn.commit()
             AppLogger.info("Timetable", f"Heure modifiée id={slot_id}")
             self._load_grid()
@@ -537,8 +498,7 @@ class TimetableWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cur = conn.cursor()
-                cur.execute("DELETE FROM Timetable WHERE id = %s", (slot_id,))
+                TimetableRepository(conn).delete_slot(slot_id)
                 conn.commit()
             AppLogger.info("Timetable", f"Heure supprimée id={slot_id}")
             self._load_grid()
@@ -562,19 +522,7 @@ class TimetableWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cur = conn.cursor()
-                cur.execute("""
-                    SELECT T.day_of_week, T.start_time, T.end_time,
-                           SB.subject_name_fr,
-                           COALESCE(CONCAT(ST.first_name_fr, ' ', ST.last_name_fr), '—') AS teacher,
-                           COALESCE(T.room, '—') AS room
-                    FROM Timetable T
-                    JOIN Subjects SB ON T.subject_id = SB.id
-                    LEFT JOIN Staff ST ON T.teacher_id = ST.id
-                    WHERE T.class_id = %s
-                    ORDER BY T.day_of_week, T.start_time
-                """, (self._class_id,))
-                rows = cur.fetchall()
+                rows = TimetableRepository(conn).list_slots_for_print(self._class_id)
         except Exception as e:
             QMessageBox.critical(self, "Erreur", str(e))
             return

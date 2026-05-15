@@ -492,24 +492,6 @@ class StudentGradesWindow(QMainWindow):
         finally:
             self.combo_view_period.blockSignals(False)
 
-    def get_class_subjects(self, cursor, class_id):
-        cursor.execute("""
-            SELECT DISTINCT S.id, S.subject_name_fr, S.subject_name_ar, S.coefficient
-            FROM Timetable T
-            JOIN Subjects S ON T.subject_id = S.id
-            WHERE T.class_id = %s
-            ORDER BY S.id
-        """, (class_id,))
-        subjects = cursor.fetchall()
-        if subjects: return subjects
-
-        cursor.execute("SELECT cycle_id FROM Classes WHERE id=%s", (class_id,))
-        res = cursor.fetchone()
-        if not res: return []
-        cycle_id = res[0]
-        cursor.execute("SELECT id, subject_name_fr, subject_name_ar, coefficient FROM Subjects WHERE cycle_id=%s ORDER BY id", (cycle_id,))
-        return cursor.fetchall()
-
     def on_class_changed_entry(self):
         class_id = self.combo_class.currentData()
         self.combo_subject.clear()
@@ -523,15 +505,15 @@ class StudentGradesWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                cursor = conn.cursor()
-                subjects = self.get_class_subjects(cursor, class_id)
+                repo = GradesRepository(conn)
+                subjects = repo.get_class_subjects(class_id)
                 if not subjects: return
 
                 for s in subjects:
                     self.combo_subject.addItem(f"{s[1]} (Coef: {s[3]})", s[0])
 
                 self.combo_period.addItem("- Période -", None)
-                for p in GradesRepository(conn).list_periods_for_class_year(class_id, active_year):
+                for p in repo.list_periods_for_class_year(class_id, active_year):
                     self.combo_period.addItem(p[1], p[0])
         except Exception as e:
             AppLogger.error("StudentGrades", f"Error class changed: {e}")
