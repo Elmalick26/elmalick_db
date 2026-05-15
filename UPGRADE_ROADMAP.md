@@ -181,21 +181,23 @@
 
 ---
 
-## المرحلة 6 — المراقبة والتشخيص 🟢
+## المرحلة 6 — المراقبة والتشخيص ✅
 
-**الزمن المقدر: 2-3 أيام | الأولوية: للإنتاج**
+**المنجز في commit `phase6` | 481 اختبار ✅**
 
-### 6.1 Structured JSON Logging
+### 6.1 Structured JSON Logging ✅
 
-- [ ] تحويل `AppLogger` لينتج JSON logs
-- [ ] إضافة حقول: `timestamp`, `level`, `module`, `user_id`, `duration_ms`
-- [ ] دعم log rotation (حجم أقصى 10MB، الاحتفاظ بـ 7 أيام)
+- [x] تحويل `AppLogger` لينتج JSON logs (`JSONLogFormatter`)
+- [x] إضافة حقول: `timestamp`, `level`, `module`, `user_id`, `duration_ms`
+- [x] دعم log rotation (حجم أقصى 10MB، الاحتفاظ بـ 7 نسخ — `RotatingFileHandler`)
 
-### 6.2 API Request Logging Middleware
+### 6.2 API Request Logging Middleware ✅
 
-- [ ] تسجيل كل طلب: method, path, status_code, duration_ms, user_id
-- [ ] استثناء `/api/health` من التسجيل
-- [ ] تنبيه عند الطلبات البطيئة (> 2 ثانية)
+- [x] تسجيل كل طلب: method, path, status_code, duration_ms, user_id
+- [x] استثناء `/api/health` من التسجيل
+- [x] تنبيه WARNING عند الطلبات البطيئة (> 2000ms)
+- [x] `extract_token_subject()` لاستخراج user_id من JWT
+- [x] 26 اختبار جديد في `tests/test_logging_phase6.py`
 
 ### 6.3 Sentry Integration (اختياري)
 

@@ -12,8 +12,10 @@ api/main.py — نقطة دخول REST API لـ El Malick Gest
 
 from __future__ import annotations
 
+import logging
 import os
 import sys
+import time
 
 # ضمان أن الاستيرادات تجد وحدات المشروع
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
@@ -29,6 +31,8 @@ from api.auth import router as auth_router
 from api.routes_students import router as students_router
 from api.routes_parent import router as parent_router
 from api.limiter import limiter
+
+_req_logger = logging.getLogger("api.requests")
 
 # ──────────────────────────────────────────── App
 app = FastAPI(
@@ -89,6 +93,43 @@ async def add_deprecation_header(request: Request, call_next):
         response.headers["Deprecation"] = "true"
         response.headers["Sunset"] = "Sat, 01 Jan 2027 00:00:00 GMT"
         response.headers["Link"] = f'<{path.replace("/api/", "/api/v1/", 1)}>; rel="successor-version"'
+    return response
+
+
+# ──────────────────────────────────────────── Request logging middleware
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    """Log every API request: method, path, status_code, duration_ms, user_id.
+
+    • Skips /api/health to avoid log noise.
+    • Emits WARNING level for requests that take longer than 2 000 ms.
+    """
+    path = request.url.path
+
+    # Skip health-check endpoint
+    if path in ("/api/health", "/api/v1/health"):
+        return await call_next(request)
+
+    t0 = time.perf_counter()
+    response = await call_next(request)
+    duration_ms = round((time.perf_counter() - t0) * 1000, 1)
+
+    # Extract user identity from Bearer JWT (silently — never raises)
+    user_id: str | None = None
+    auth_header = request.headers.get("Authorization", "")
+    if auth_header.startswith("Bearer "):
+        from api.auth import extract_token_subject
+        user_id = extract_token_subject(auth_header[7:])
+
+    log_msg = (
+        f"{request.method} {path} {response.status_code} "
+        f"{duration_ms}ms user={user_id}"
+    )
+    if duration_ms > 2000:
+        _req_logger.warning("SLOW REQUEST \u2014 %s", log_msg)
+    else:
+        _req_logger.info(log_msg)
+
     return response
 
 # ──────────────────────────────────────────── Static files (Parent Portal)

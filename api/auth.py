@@ -97,6 +97,15 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> TokenData:
         raise credentials_exception
 
 
+def extract_token_subject(token: str) -> "str | None":
+    """Decode JWT silently — returns 'sub' claim or None on any error."""
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        return payload.get("sub")
+    except Exception:
+        return None
+
+
 def require_role(*allowed_roles: str):
     """Dependency factory — vérifie que le rôle de l'utilisateur est autorisé."""
 

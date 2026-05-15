@@ -3,12 +3,47 @@
 Unified Logging & Error Management System
 """
 
+import json
 import logging
 import os
 import sys
 from datetime import datetime
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 import db_path
+
+
+def _build_extra(module: str, kwargs: dict) -> dict:
+    """Build the 'extra' dict for structured log records."""
+    extra: dict = {"app_module": module}
+    if "user_id" in kwargs:
+        extra["user_id"] = kwargs["user_id"]
+    if "duration_ms" in kwargs:
+        extra["duration_ms"] = kwargs["duration_ms"]
+    return extra
+
+
+class JSONLogFormatter(logging.Formatter):
+    """Formatter that outputs one JSON object per line (JSONL)."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        log_obj: dict = {
+            "timestamp": datetime.utcfromtimestamp(record.created).strftime(
+                "%Y-%m-%dT%H:%M:%S.%f"
+            )[:-3] + "Z",
+            "level": record.levelname,
+            "module": getattr(record, "app_module", record.module),
+            "message": record.getMessage(),
+        }
+        user_id = getattr(record, "user_id", None)
+        if user_id is not None:
+            log_obj["user_id"] = user_id
+        duration_ms = getattr(record, "duration_ms", None)
+        if duration_ms is not None:
+            log_obj["duration_ms"] = duration_ms
+        if record.exc_info:
+            log_obj["exception"] = self.formatException(record.exc_info)
+        return json.dumps(log_obj, ensure_ascii=False)
 
 
 class AppLogger:
@@ -41,8 +76,10 @@ class AppLogger:
         self._logger.setLevel(logging.DEBUG)
         self._logger.propagate = False
 
-        # File Handler - مع UTF-8 encoding
-        file_handler = logging.FileHandler(log_file, encoding='utf-8')
+        # Text rotating file handler — 10 MB max, 7 backups
+        file_handler = RotatingFileHandler(
+            log_file, maxBytes=10 * 1024 * 1024, backupCount=7, encoding="utf-8"
+        )
         file_handler.setLevel(logging.DEBUG)
 
         # Console Handler - تأمين ضد بيئات التشغيل التي لا تحتوي على Console (مثل ملفات EXE)
@@ -69,35 +106,48 @@ class AppLogger:
         for handler in self._logger.handlers[:]:
             self._logger.removeHandler(handler)
 
+        # JSON rotating log file — 10 MB max, 7 backups (JSONL format)
+        json_log_file = log_dir / f"app_json_{datetime.now().strftime('%Y%m%d')}.jsonl"
+        json_handler = RotatingFileHandler(
+            json_log_file, maxBytes=10 * 1024 * 1024, backupCount=7, encoding="utf-8"
+        )
+        json_handler.setLevel(logging.DEBUG)
+        json_handler.setFormatter(JSONLogFormatter())
+
         self._logger.addHandler(file_handler)
         self._logger.addHandler(console_handler)
+        self._logger.addHandler(json_handler)
 
     @staticmethod
-    def info(module, message):
+    def info(module, message, **kwargs):
         """تسجيل معلومة"""
         logger = AppLogger()
-        logger._logger.info(f"[{module}] {message}")
+        logger._logger.info(f"[{module}] {message}", extra=_build_extra(module, kwargs))
 
     @staticmethod
-    def error(module, message, exception=None):
+    def error(module, message, exception=None, **kwargs):
         """تسجيل خطأ"""
         logger = AppLogger()
         if exception:
-            logger._logger.error(f"[{module}] {message}", exc_info=exception)
+            logger._logger.error(
+                f"[{module}] {message}",
+                exc_info=exception,
+                extra=_build_extra(module, kwargs),
+            )
         else:
-            logger._logger.error(f"[{module}] {message}")
+            logger._logger.error(f"[{module}] {message}", extra=_build_extra(module, kwargs))
 
     @staticmethod
-    def warning(module, message):
+    def warning(module, message, **kwargs):
         """تسجيل تحذير"""
         logger = AppLogger()
-        logger._logger.warning(f"[{module}] {message}")
+        logger._logger.warning(f"[{module}] {message}", extra=_build_extra(module, kwargs))
 
     @staticmethod
-    def debug(module, message):
+    def debug(module, message, **kwargs):
         """تسجيل معلومة تصحيح"""
         logger = AppLogger()
-        logger._logger.debug(f"[{module}] {message}")
+        logger._logger.debug(f"[{module}] {message}", extra=_build_extra(module, kwargs))
 
 
 class ErrorHandler:

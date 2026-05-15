@@ -204,6 +204,13 @@ from analytics_dashboard import (
     AnalyticsDashboardWindow,
 )
 
+# Release stubs from sys.modules after analytics_dashboard is already imported.
+# analytics_dashboard holds its own references to the stub objects, so tests
+# continue to work. Removing the stubs here prevents them from leaking into
+# unrelated test modules (e.g. test_logging_phase6 which needs the real app_logger).
+for _stub_mod in ("database_setup", "app_logger", "ui_styles"):
+    sys.modules.pop(_stub_mod, None)
+
 
 # ═══════════════════════════════════════════════════════════════
 # Helpers

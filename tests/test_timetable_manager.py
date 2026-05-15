@@ -134,6 +134,13 @@ def _make_qt_stubs():
 _make_qt_stubs()
 
 # ── Stubs internes ───────────────────────────────────────────
+# Save any real modules already loaded so we can restore them afterwards.
+_saved_internal = {
+    mod: sys.modules[mod]
+    for mod in ("database_setup", "app_logger", "ui_styles")
+    if mod in sys.modules
+}
+
 for mod_name, attrs in [
     ("database_setup", {"DatabaseManager": MagicMock()}),
     ("app_logger", {"AppLogger": MagicMock()}),
@@ -152,6 +159,13 @@ from timetable_manager import (
     DAYS_FR,
     SLOT_PALETTE,
 )
+
+# Restore original modules (or remove stubs if nothing was saved).
+for _stub_mod in ("database_setup", "app_logger", "ui_styles"):
+    if _stub_mod in _saved_internal:
+        sys.modules[_stub_mod] = _saved_internal[_stub_mod]
+    else:
+        sys.modules.pop(_stub_mod, None)
 
 
 # ═══════════════════════════════════════════════════════════════
