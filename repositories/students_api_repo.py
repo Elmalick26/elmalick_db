@@ -21,9 +21,7 @@ class StudentsApiRepository:
     def get_active_year_id(self) -> Optional[int]:
         """Return the active academic year id, or None."""
         cursor = self.conn.cursor()
-        cursor.execute(
-            "SELECT id FROM AcademicYears WHERE is_active = 1 ORDER BY id DESC LIMIT 1"
-        )
+        cursor.execute("SELECT id FROM AcademicYears WHERE is_active = 1 ORDER BY id DESC LIMIT 1")
         row = cursor.fetchone()
         return row[0] if row else None
 

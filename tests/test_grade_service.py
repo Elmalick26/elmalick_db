@@ -18,11 +18,12 @@ def svc():
 # calculate_period_average
 # ──────────────────────────────────────────────
 
+
 class TestCalculatePeriodAverage:
     def test_basic(self, svc):
         # (score, coefficient)
         result = svc.calculate_period_average([(10.0, 2.0), (15.0, 1.0)])
-        assert abs(result - (10*2 + 15*1) / 3) < 1e-6
+        assert abs(result - (10 * 2 + 15 * 1) / 3) < 1e-6
 
     def test_all_same_coeff(self, svc):
         result = svc.calculate_period_average([(12.0, 1.0), (14.0, 1.0)])
@@ -46,6 +47,7 @@ class TestCalculatePeriodAverage:
 # calculate_annual_average
 # ──────────────────────────────────────────────
 
+
 class TestCalculateAnnualAverage:
     def test_basic(self, svc):
         result = svc.calculate_annual_average([10.0, 14.0, 12.0])
@@ -65,6 +67,7 @@ class TestCalculateAnnualAverage:
 # ──────────────────────────────────────────────
 # get_promotion_threshold
 # ──────────────────────────────────────────────
+
 
 class TestGetPromotionThreshold:
     def test_elementary_cycle(self, svc):
@@ -91,6 +94,7 @@ class TestGetPromotionThreshold:
 # get_promotion_decision
 # ──────────────────────────────────────────────
 
+
 class TestGetPromotionDecision:
     def test_pass_moyen(self, svc):
         assert svc.get_promotion_decision(10.0, "Moyen") == "Admis"
@@ -112,6 +116,7 @@ class TestGetPromotionDecision:
 # ──────────────────────────────────────────────
 # get_next_class
 # ──────────────────────────────────────────────
+
 
 class TestGetNextClass:
     @pytest.fixture

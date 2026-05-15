@@ -14,7 +14,9 @@ PIN مشفر بـ bcrypt في parent_pin_hash؛ ترقية تلقائية من p
 
 from __future__ import annotations
 
-import os, sys
+import os
+import sys
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 import bcrypt as _bcrypt
@@ -41,6 +43,7 @@ PARENT_TOKEN_EXPIRE_MINUTES = 120
 def _hash_pin(pin: str) -> str:
     return _bcrypt.hashpw(pin.encode(), _bcrypt.gensalt(rounds=10)).decode()
 
+
 def _verify_pin(pin: str, stored_hash: str) -> bool:
     try:
         return _bcrypt.checkpw(pin.encode(), stored_hash.encode())
@@ -50,8 +53,8 @@ def _verify_pin(pin: str, stored_hash: str) -> bool:
 
 # ──────────────────────── Schemas
 class ParentLoginRequest(BaseModel):
-    student_code: str   # رمز الطالب الثابت (EMG-XXXX) أو الرقم القديم كانتقال
-    pin: str            # رمز PIN (4-6 أرقام)
+    student_code: str  # رمز الطالب الثابت (EMG-XXXX) أو الرقم القديم كانتقال
+    pin: str  # رمز PIN (4-6 أرقام)
 
 
 # ──────────────────────── Dependency
@@ -94,7 +97,9 @@ async def parent_login(request: Request, data: ParentLoginRequest):
             row = repo.get_student_for_parent_login(code)
 
             if not row:
-                raise HTTPException(status_code=404, detail=f"Code élève '{code}' introuvable. Vérifiez le code sur le carnet scolaire.")
+                raise HTTPException(
+                    status_code=404, detail=f"Code élève '{code}' introuvable. Vérifiez le code sur le carnet scolaire."
+                )
 
             s_id, fn, ln, p_name, p_phone, pin_hash, pin_plain, scode = row
 
@@ -121,8 +126,7 @@ async def parent_login(request: Request, data: ParentLoginRequest):
                 AppLogger.info("API.Parent", f"Premier accès — PIN défini pour élève {s_id} ({fn} {ln})")
 
             token = create_access_token(
-                {"student_id": s_id, "role": "parent"},
-                expires_delta=timedelta(minutes=PARENT_TOKEN_EXPIRE_MINUTES)
+                {"student_id": s_id, "role": "parent"}, expires_delta=timedelta(minutes=PARENT_TOKEN_EXPIRE_MINUTES)
             )
             AppLogger.info("API.Parent", f"Connexion réussie — {scode} ({fn} {ln})")
             return {
@@ -218,7 +222,9 @@ async def reset_parent_pin(
             repo.reset_student_pin(student_id)
             conn.commit()
             AppLogger.info("API.Parent", f"PIN parent réinitialisé — élève {student_id} par {current_user.username}")
-            return {"detail": f"PIN réinitialisé pour l'élève {student_id}. Le parent pourra définir un nouveau PIN à la prochaine connexion."}
+            return {
+                "detail": f"PIN réinitialisé pour l'élève {student_id}. Le parent pourra définir un nouveau PIN à la prochaine connexion."
+            }
     except HTTPException:
         raise
     except Exception as e:

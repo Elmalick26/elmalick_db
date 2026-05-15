@@ -30,8 +30,24 @@ def make_conn(cursor=None):
 class TestStudentRepository:
 
     def test_get_student_for_edit_found(self):
-        row = ("Ahmed", "Ba", "أحمد", "با", "2010-01-01", "Dakar", "M",
-               "", "Parent", "123", "p@ex.com", "", "2026-01-01", "Active", None, 3)
+        row = (
+            "Ahmed",
+            "Ba",
+            "أحمد",
+            "با",
+            "2010-01-01",
+            "Dakar",
+            "M",
+            "",
+            "Parent",
+            "123",
+            "p@ex.com",
+            "",
+            "2026-01-01",
+            "Active",
+            None,
+            3,
+        )
         cur = make_cursor([row])
         conn = make_conn(cur)
 
@@ -86,12 +102,21 @@ class TestStudentRepository:
         conn = make_conn(cur)
 
         data = {
-            "first_name_fr": "Ali", "last_name_fr": "Sow",
-            "first_name_ar": "علي", "last_name_ar": "صو",
-            "birth_date": "2010-06-15", "birth_place": "Dakar",
-            "gender": "M", "address": "", "parent_name": "Ibra",
-            "parent_phone": "77123", "parent_email": "", "parent_address": "",
-            "registration_date": "2026-09-01", "status": "Active", "photo_path": None,
+            "first_name_fr": "Ali",
+            "last_name_fr": "Sow",
+            "first_name_ar": "علي",
+            "last_name_ar": "صو",
+            "birth_date": "2010-06-15",
+            "birth_place": "Dakar",
+            "gender": "M",
+            "address": "",
+            "parent_name": "Ibra",
+            "parent_phone": "77123",
+            "parent_email": "",
+            "parent_address": "",
+            "registration_date": "2026-09-01",
+            "status": "Active",
+            "photo_path": None,
         }
         new_id = StudentRepository(conn).add_student(data)
         assert new_id == 42
@@ -158,8 +183,7 @@ class TestFinanceRepository:
 class TestStaffRepository:
 
     def test_list_staff_no_filter(self):
-        rows = [(1, "Moussa Diallo", "Professeur", "Maths", "77x",
-                 "CDI", 150000, 0, None, "Actif")]
+        rows = [(1, "Moussa Diallo", "Professeur", "Maths", "77x", "CDI", 150000, 0, None, "Actif")]
         cur = make_cursor(rows)
         conn = make_conn(cur)
 
@@ -175,8 +199,21 @@ class TestStaffRepository:
         assert "ILIKE" in sql
 
     def test_get_staff_details_found(self):
-        row = ("Aissatou", "Ndiaye", "Secretaire", "Admin", "76x",
-               "a@ex.com", "Dakar", "2020-01-01", "CDI", 80000, 0, None, "Actif")
+        row = (
+            "Aissatou",
+            "Ndiaye",
+            "Secretaire",
+            "Admin",
+            "76x",
+            "a@ex.com",
+            "Dakar",
+            "2020-01-01",
+            "CDI",
+            80000,
+            0,
+            None,
+            "Actif",
+        )
         cur = make_cursor([row])
         conn = make_conn(cur)
 
@@ -214,6 +251,3 @@ class TestStaffRepository:
         sql = cur.execute.call_args[0][0]
         assert "Archived" in sql
         assert "id=%s" in sql or "id = %s" in sql
-
-
-

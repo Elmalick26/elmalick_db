@@ -8,6 +8,7 @@ tests/test_timetable_manager.py
   - TimetableWindow: _load_grid, _save_slot, _update_slot, _delete_slot,
                      _add_slot_for_day, _confirm_delete_slot, _edit_slot
 """
+
 from __future__ import annotations
 
 import sys
@@ -17,6 +18,7 @@ from unittest.mock import MagicMock, patch, call
 
 import pytest
 
+
 # ── Stubs PyQt6 ──────────────────────────────────────────────
 def _make_qt_stubs():
     for mod_name in ["PyQt6", "PyQt6.QtWidgets", "PyQt6.QtCore", "PyQt6.QtGui"]:
@@ -25,48 +27,72 @@ def _make_qt_stubs():
 
     widgets = sys.modules["PyQt6.QtWidgets"]
     for cls_name in [
-        "QMainWindow", "QWidget", "QVBoxLayout", "QHBoxLayout",
-        "QLabel", "QComboBox", "QPushButton", "QTableWidget",
-        "QTableWidgetItem", "QHeaderView", "QDialog", "QFormLayout",
-        "QTimeEdit", "QLineEdit", "QDialogButtonBox", "QMessageBox",
-        "QFrame", "QSizePolicy", "QToolButton", "QMenu", "QScrollArea",
+        "QMainWindow",
+        "QWidget",
+        "QVBoxLayout",
+        "QHBoxLayout",
+        "QLabel",
+        "QComboBox",
+        "QPushButton",
+        "QTableWidget",
+        "QTableWidgetItem",
+        "QHeaderView",
+        "QDialog",
+        "QFormLayout",
+        "QTimeEdit",
+        "QLineEdit",
+        "QDialogButtonBox",
+        "QMessageBox",
+        "QFrame",
+        "QSizePolicy",
+        "QToolButton",
+        "QMenu",
+        "QScrollArea",
         "QApplication",
     ]:
-        setattr(widgets, cls_name, type(cls_name, (object,), {
-            "__init__": lambda self, *a, **kw: None,
-            "setStyleSheet": lambda self, *a: None,
-            "addWidget": lambda self, *a: None,
-            "addLayout": lambda self, *a: None,
-            "addStretch": lambda self, *a: None,
-            "setContentsMargins": lambda self, *a: None,
-            "setSpacing": lambda self, *a: None,
-            "blockSignals": lambda self, *a: None,
-            "clear": lambda self, *a: None,
-            "addItem": lambda self, *a: None,
-            "currentData": lambda self: None,
-            "currentIndex": lambda self: 0,
-            "setCurrentIndex": lambda self, *a: None,
-            "setMinimumWidth": lambda self, *a: None,
-            "setMinimumHeight": lambda self, *a: None,
-            "setSizePolicy": lambda self, *a: None,
-            "setFrameShape": lambda self, *a: None,
-            "setWordWrap": lambda self, *a: None,
-            "setFont": lambda self, *a: None,
-            "setText": lambda self, t: None,
-            "setToolTip": lambda self, *a: None,
-            "setCheckable": lambda self, *a: None,
-            "setCursor": lambda self, *a: None,
-            "setWidgetResizable": lambda self, *a: None,
-            "setWidget": lambda self, *a: None,
-            "clicked": MagicMock(),
-            "connect": lambda self, *a: None,
-            "currentIndexChanged": MagicMock(),
-            "exec": lambda self: 1,    # QDialog.exec → accepted
-            "accept": lambda self: None,
-            "reject": lambda self: None,
-            "findData": lambda self, v: 0,
-            "show": lambda self: None,
-        }))
+        setattr(
+            widgets,
+            cls_name,
+            type(
+                cls_name,
+                (object,),
+                {
+                    "__init__": lambda self, *a, **kw: None,
+                    "setStyleSheet": lambda self, *a: None,
+                    "addWidget": lambda self, *a: None,
+                    "addLayout": lambda self, *a: None,
+                    "addStretch": lambda self, *a: None,
+                    "setContentsMargins": lambda self, *a: None,
+                    "setSpacing": lambda self, *a: None,
+                    "blockSignals": lambda self, *a: None,
+                    "clear": lambda self, *a: None,
+                    "addItem": lambda self, *a: None,
+                    "currentData": lambda self: None,
+                    "currentIndex": lambda self: 0,
+                    "setCurrentIndex": lambda self, *a: None,
+                    "setMinimumWidth": lambda self, *a: None,
+                    "setMinimumHeight": lambda self, *a: None,
+                    "setSizePolicy": lambda self, *a: None,
+                    "setFrameShape": lambda self, *a: None,
+                    "setWordWrap": lambda self, *a: None,
+                    "setFont": lambda self, *a: None,
+                    "setText": lambda self, t: None,
+                    "setToolTip": lambda self, *a: None,
+                    "setCheckable": lambda self, *a: None,
+                    "setCursor": lambda self, *a: None,
+                    "setWidgetResizable": lambda self, *a: None,
+                    "setWidget": lambda self, *a: None,
+                    "clicked": MagicMock(),
+                    "connect": lambda self, *a: None,
+                    "currentIndexChanged": MagicMock(),
+                    "exec": lambda self: 1,  # QDialog.exec → accepted
+                    "accept": lambda self: None,
+                    "reject": lambda self: None,
+                    "findData": lambda self, v: 0,
+                    "show": lambda self: None,
+                },
+            ),
+        )
 
     # pytest-qt requires QApplication.instance() as a static/class method
     widgets.QApplication.instance = staticmethod(lambda: None)
@@ -84,18 +110,22 @@ def _make_qt_stubs():
         def __init__(self, h=0, m=0):
             self._h = h
             self._m = m
+
         @classmethod
         def fromString(cls, s, fmt):
             parts = s.split(":")
             return cls(int(parts[0]), int(parts[1]))
+
         def toString(self, fmt):
             return f"{self._h:02d}:{self._m:02d}"
-        def __le__(self, other): return (self._h, self._m) <= (other._h, other._m)
+
+        def __le__(self, other):
+            return (self._h, self._m) <= (other._h, other._m)
 
     core.QTime = FakeQTime
 
     gui = sys.modules["PyQt6.QtGui"]
-    gui.QFont  = MagicMock()
+    gui.QFont = MagicMock()
     gui.QColor = MagicMock()
     gui.QBrush = MagicMock()
     gui.QAction = MagicMock()
@@ -106,8 +136,8 @@ _make_qt_stubs()
 # ── Stubs internes ───────────────────────────────────────────
 for mod_name, attrs in [
     ("database_setup", {"DatabaseManager": MagicMock()}),
-    ("app_logger",     {"AppLogger": MagicMock()}),
-    ("ui_styles",      {"ThemeManager": MagicMock(), "Colors": MagicMock()}),
+    ("app_logger", {"AppLogger": MagicMock()}),
+    ("ui_styles", {"ThemeManager": MagicMock(), "Colors": MagicMock()}),
 ]:
     m = types.ModuleType(mod_name)
     for k, v in attrs.items():
@@ -135,7 +165,7 @@ def _make_conn(rows=None):
     conn = MagicMock()
     conn.cursor.return_value = cur
     conn.__enter__ = lambda self: self
-    conn.__exit__  = MagicMock(return_value=False)
+    conn.__exit__ = MagicMock(return_value=False)
     return conn, cur
 
 
@@ -153,8 +183,8 @@ def _make_db_ctx(rows=None):
 class TestTimetableGrid:
     def _grid(self):
         g = TimetableGrid.__new__(TimetableGrid)
-        g.on_add    = MagicMock()
-        g.on_edit   = MagicMock()
+        g.on_add = MagicMock()
+        g.on_edit = MagicMock()
         g.on_delete = MagicMock()
         g._subject_color_map = {}
         g._color_idx = 0
@@ -186,11 +216,13 @@ class TestTimetableGrid:
         """render([]) ne doit pas lever d'exception."""
         g = self._grid()
         # render nécessite des widgets QFrame, on le teste via mock
-        with patch("timetable_manager.QFrame") as MockFrame, \
-             patch("timetable_manager.QVBoxLayout") as MockVLayout, \
-             patch("timetable_manager.QHBoxLayout") as MockHLayout, \
-             patch("timetable_manager.QLabel") as MockLabel, \
-             patch("timetable_manager.QPushButton") as MockBtn:
+        with (
+            patch("timetable_manager.QFrame") as MockFrame,
+            patch("timetable_manager.QVBoxLayout") as MockVLayout,
+            patch("timetable_manager.QHBoxLayout") as MockHLayout,
+            patch("timetable_manager.QLabel") as MockLabel,
+            patch("timetable_manager.QPushButton") as MockBtn,
+        ):
             MockFrame.return_value = MagicMock()
             MockVLayout.return_value = MagicMock()
             MockHLayout.return_value = MagicMock()
@@ -202,12 +234,14 @@ class TestTimetableGrid:
 
     def test_render_assigns_colors_to_subjects(self):
         g = self._grid()
-        with patch("timetable_manager.QFrame") as MockFrame, \
-             patch("timetable_manager.QVBoxLayout") as MockVLayout, \
-             patch("timetable_manager.QHBoxLayout") as MockHLayout, \
-             patch("timetable_manager.QLabel") as MockLabel, \
-             patch("timetable_manager.QPushButton") as MockBtn, \
-             patch("timetable_manager.SlotCell") as MockCell:
+        with (
+            patch("timetable_manager.QFrame") as MockFrame,
+            patch("timetable_manager.QVBoxLayout") as MockVLayout,
+            patch("timetable_manager.QHBoxLayout") as MockHLayout,
+            patch("timetable_manager.QLabel") as MockLabel,
+            patch("timetable_manager.QPushButton") as MockBtn,
+            patch("timetable_manager.SlotCell") as MockCell,
+        ):
             MockFrame.return_value = MagicMock()
             MockVLayout.return_value = MagicMock()
             MockHLayout.return_value = MagicMock()
@@ -215,9 +249,17 @@ class TestTimetableGrid:
             g._grid_layout.count.return_value = 0
 
             slots = [
-                {"id": 1, "day_of_week": "Lundi", "start_time": "08:00",
-                 "end_time": "09:00", "subject_id": 5, "teacher_id": 1,
-                 "room": "S01", "subject_name_fr": "Maths", "teacher_name": "M. Diallo"},
+                {
+                    "id": 1,
+                    "day_of_week": "Lundi",
+                    "start_time": "08:00",
+                    "end_time": "09:00",
+                    "subject_id": 5,
+                    "teacher_id": 1,
+                    "room": "S01",
+                    "subject_name_fr": "Maths",
+                    "teacher_name": "M. Diallo",
+                },
             ]
             g.render(slots)
             MockCell.assert_called_once()
@@ -231,19 +273,20 @@ class TestTimetableGrid:
 class TestSlotDialog:
     def _dialog(self, slot_data=None):
         from PyQt6.QtCore import QTime
+
         d = SlotDialog.__new__(SlotDialog)
-        d.cmb_day     = MagicMock()
+        d.cmb_day = MagicMock()
         d.cmb_day.currentData.return_value = "Lundi"
         d.cmb_day.findData = MagicMock(return_value=0)
-        d.time_start  = MagicMock()
+        d.time_start = MagicMock()
         d.time_start.time.return_value = QTime(8, 0)
-        d.time_end    = MagicMock()
+        d.time_end = MagicMock()
         d.time_end.time.return_value = QTime(9, 0)
         d.cmb_subject = MagicMock()
         d.cmb_subject.currentData.return_value = 3
         d.cmb_teacher = MagicMock()
         d.cmb_teacher.currentData.return_value = 2
-        d.txt_room    = MagicMock()
+        d.txt_room = MagicMock()
         d.txt_room.text.return_value = "Salle 01"
         return d
 
@@ -251,11 +294,11 @@ class TestSlotDialog:
         d = self._dialog()
         vals = d.get_values()
         assert vals["day_of_week"] == "Lundi"
-        assert vals["start_time"]  == "08:00"
-        assert vals["end_time"]    == "09:00"
-        assert vals["subject_id"]  == 3
-        assert vals["teacher_id"]  == 2
-        assert vals["room"]        == "Salle 01"
+        assert vals["start_time"] == "08:00"
+        assert vals["end_time"] == "09:00"
+        assert vals["subject_id"] == 3
+        assert vals["teacher_id"] == 2
+        assert vals["room"] == "Salle 01"
 
     def test_get_values_empty_room(self):
         d = self._dialog()
@@ -265,9 +308,10 @@ class TestSlotDialog:
 
     def test_validate_rejects_end_before_start(self):
         from PyQt6.QtCore import QTime
+
         d = self._dialog()
         d.time_start.time.return_value = QTime(10, 0)
-        d.time_end.time.return_value   = QTime(9, 0)
+        d.time_end.time.return_value = QTime(9, 0)
         with patch("timetable_manager.QMessageBox") as MockMsgBox:
             MockMsgBox.warning = MagicMock()
             d.accept = MagicMock()
@@ -277,9 +321,10 @@ class TestSlotDialog:
 
     def test_validate_accepts_valid_times(self):
         from PyQt6.QtCore import QTime
+
         d = self._dialog()
         d.time_start.time.return_value = QTime(8, 0)
-        d.time_end.time.return_value   = QTime(9, 0)
+        d.time_end.time.return_value = QTime(9, 0)
         with patch("timetable_manager.QMessageBox") as MockMsgBox:
             d.accept = MagicMock()
             d._validate_and_accept()
@@ -294,9 +339,9 @@ class TestTimetableWindowCrud:
     def _window(self):
         w = TimetableWindow.__new__(TimetableWindow)
         w._class_id = 1
-        w._classes  = [(1, "6ème A"), (2, "5ème B")]
+        w._classes = [(1, "6ème A"), (2, "5ème B")]
         w._subjects = [(1, "Maths"), (2, "Physique")]
-        w._staff    = [(1, "M. Diallo"), (2, "Mme Sow")]
+        w._staff = [(1, "M. Diallo"), (2, "Mme Sow")]
         w.cmb_class = MagicMock()
         w.cmb_class.currentText.return_value = "6ème A"
         w.grid = MagicMock()
@@ -338,8 +383,12 @@ class TestTimetableWindowCrud:
         w = self._window()
         p, db, conn, cur = self._patch_db(w)
         values = {
-            "day_of_week": "Mardi", "start_time": "10:00", "end_time": "11:00",
-            "subject_id": 1, "teacher_id": 1, "room": "S02",
+            "day_of_week": "Mardi",
+            "start_time": "10:00",
+            "end_time": "11:00",
+            "subject_id": 1,
+            "teacher_id": 1,
+            "room": "S02",
         }
         with p:
             w._save_slot(values)
@@ -352,33 +401,47 @@ class TestTimetableWindowCrud:
         w = self._window()
         p, db, conn, cur = self._patch_db(w)
         with p:
-            w._save_slot({
-                "day_of_week": "Lundi", "start_time": "08:00",
-                "end_time": "09:00", "subject_id": 1,
-                "teacher_id": None, "room": "",
-            })
+            w._save_slot(
+                {
+                    "day_of_week": "Lundi",
+                    "start_time": "08:00",
+                    "end_time": "09:00",
+                    "subject_id": 1,
+                    "teacher_id": None,
+                    "room": "",
+                }
+            )
         w.grid.render.assert_called()
 
     def test_save_slot_empty_room_stored_as_none(self):
         w = self._window()
         p, db, conn, cur = self._patch_db(w)
         with p:
-            w._save_slot({
-                "day_of_week": "Lundi", "start_time": "08:00",
-                "end_time": "09:00", "subject_id": 1,
-                "teacher_id": None, "room": "",
-            })
+            w._save_slot(
+                {
+                    "day_of_week": "Lundi",
+                    "start_time": "08:00",
+                    "end_time": "09:00",
+                    "subject_id": 1,
+                    "teacher_id": None,
+                    "room": "",
+                }
+            )
         # First call is INSERT
         params = cur.execute.call_args_list[0][0][1]
-        assert params[6] is None   # room → None si vide
+        assert params[6] is None  # room → None si vide
 
     # ── _update_slot ─────────────────────────────────────────
     def test_update_slot_executes_update(self):
         w = self._window()
         p, db, conn, cur = self._patch_db(w)
         values = {
-            "day_of_week": "Mercredi", "start_time": "11:00", "end_time": "12:00",
-            "subject_id": 2, "teacher_id": 2, "room": "S03",
+            "day_of_week": "Mercredi",
+            "start_time": "11:00",
+            "end_time": "12:00",
+            "subject_id": 2,
+            "teacher_id": 2,
+            "room": "S03",
         }
         with p:
             w._update_slot(42, values)
@@ -386,17 +449,24 @@ class TestTimetableWindowCrud:
         sql = cur.execute.call_args_list[0][0][0]
         assert "UPDATE Timetable" in sql
         params = cur.execute.call_args_list[0][0][1]
-        assert params[-1] == 42     # WHERE id = 42
+        assert params[-1] == 42  # WHERE id = 42
         conn.commit.assert_called_once()
 
     def test_update_slot_reloads_grid(self):
         w = self._window()
         p, db, conn, cur = self._patch_db(w)
         with p:
-            w._update_slot(1, {
-                "day_of_week": "Jeudi", "start_time": "09:00", "end_time": "10:00",
-                "subject_id": 1, "teacher_id": 1, "room": "S01",
-            })
+            w._update_slot(
+                1,
+                {
+                    "day_of_week": "Jeudi",
+                    "start_time": "09:00",
+                    "end_time": "10:00",
+                    "subject_id": 1,
+                    "teacher_id": 1,
+                    "room": "S01",
+                },
+            )
         w.grid.render.assert_called()
 
     # ── _delete_slot ─────────────────────────────────────────
@@ -431,8 +501,12 @@ class TestTimetableWindowCrud:
     def test_add_slot_dialog_accepted_saves(self):
         w = self._window()
         fake_vals = {
-            "day_of_week": "Lundi", "start_time": "08:00", "end_time": "09:00",
-            "subject_id": 1, "teacher_id": 1, "room": "S01",
+            "day_of_week": "Lundi",
+            "start_time": "08:00",
+            "end_time": "09:00",
+            "subject_id": 1,
+            "teacher_id": 1,
+            "room": "S01",
         }
         with patch("timetable_manager.SlotDialog") as MockDlg:
             dlg_inst = MagicMock()
@@ -458,8 +532,15 @@ class TestTimetableWindowCrud:
     # ── _edit_slot ───────────────────────────────────────────
     def test_edit_slot_dialog_accepted_updates(self):
         w = self._window()
-        slot = {"id": 10, "day_of_week": "Lundi", "start_time": "08:00",
-                "end_time": "09:00", "subject_id": 1, "teacher_id": 1, "room": ""}
+        slot = {
+            "id": 10,
+            "day_of_week": "Lundi",
+            "start_time": "08:00",
+            "end_time": "09:00",
+            "subject_id": 1,
+            "teacher_id": 1,
+            "room": "",
+        }
         new_vals = {**slot, "room": "S02"}
         with patch("timetable_manager.SlotDialog") as MockDlg:
             dlg_inst = MagicMock()
@@ -494,8 +575,7 @@ class TestTimetableWindowCrud:
     # ── refresh_data ─────────────────────────────────────────
     def test_refresh_data_calls_load_filters(self):
         w = self._window()
-        with patch.object(w, "_load_filters") as mock_lf, \
-             patch.object(w, "_load_grid") as mock_lg:
+        with patch.object(w, "_load_filters") as mock_lf, patch.object(w, "_load_grid") as mock_lg:
             w.refresh_data()
             mock_lf.assert_called_once()
             mock_lg.assert_called_once()
@@ -503,8 +583,7 @@ class TestTimetableWindowCrud:
     def test_refresh_data_skips_grid_if_no_class(self):
         w = self._window()
         w._class_id = None
-        with patch.object(w, "_load_filters"), \
-             patch.object(w, "_load_grid") as mock_lg:
+        with patch.object(w, "_load_filters"), patch.object(w, "_load_grid") as mock_lg:
             w.refresh_data()
             mock_lg.assert_not_called()
 
@@ -516,9 +595,9 @@ class TestTimetableWindowFilters:
     def _window(self):
         w = TimetableWindow.__new__(TimetableWindow)
         w._class_id = None
-        w._classes  = []
+        w._classes = []
         w._subjects = []
-        w._staff    = []
+        w._staff = []
         w.cmb_class = MagicMock()
         w.cmb_class.currentData.return_value = None
         w.cmb_class.currentText.return_value = "6ème A"
@@ -531,16 +610,16 @@ class TestTimetableWindowFilters:
         conn = MagicMock()
         conn.cursor.return_value = cur
         conn.__enter__ = lambda self: self
-        conn.__exit__  = MagicMock(return_value=False)
+        conn.__exit__ = MagicMock(return_value=False)
         db = MagicMock()
         db.get_connection.return_value = conn
         return db, cur
 
     def test_load_filters_populates_class_combo(self):
         w = self._window()
-        classes  = [(1, "6ème A"), (2, "5ème B")]
+        classes = [(1, "6ème A"), (2, "5ème B")]
         subjects = [(10, "Maths"), (11, "Arabe")]
-        staff    = [(20, "M. Diop")]
+        staff = [(20, "M. Diop")]
         db, cur = self._mock_db(classes, subjects, staff)
         with patch("timetable_manager.DatabaseManager", return_value=db):
             w._load_filters()
@@ -561,7 +640,7 @@ class TestTimetableWindowFilters:
         w = self._window()
         with patch("timetable_manager.DatabaseManager") as MockDB:
             MockDB.return_value.get_connection.side_effect = Exception("conn fail")
-            w._load_filters()   # ne doit pas lever d'exception
+            w._load_filters()  # ne doit pas lever d'exception
 
     def test_on_class_changed_sets_class_id_and_loads_grid(self):
         w = self._window()
@@ -581,8 +660,7 @@ class TestTimetableWindowFilters:
     def test_load_grid_error_shows_warning(self):
         w = self._window()
         w._class_id = 1
-        with patch("timetable_manager.DatabaseManager") as MockDB, \
-             patch("timetable_manager.QMessageBox") as MockMsg:
+        with patch("timetable_manager.DatabaseManager") as MockDB, patch("timetable_manager.QMessageBox") as MockMsg:
             MockDB.return_value.get_connection.side_effect = Exception("grid fail")
             MockMsg.warning = MagicMock()
             w._load_grid()
@@ -591,36 +669,44 @@ class TestTimetableWindowFilters:
     def test_save_slot_error_shows_critical(self):
         w = self._window()
         w._class_id = 1
-        with patch("timetable_manager.DatabaseManager") as MockDB, \
-             patch("timetable_manager.QMessageBox") as MockMsg:
+        with patch("timetable_manager.DatabaseManager") as MockDB, patch("timetable_manager.QMessageBox") as MockMsg:
             MockDB.return_value.get_connection.side_effect = Exception("save fail")
             MockMsg.critical = MagicMock()
-            w._save_slot({
-                "day_of_week": "Lundi", "start_time": "08:00",
-                "end_time": "09:00", "subject_id": 1,
-                "teacher_id": 1, "room": "",
-            })
+            w._save_slot(
+                {
+                    "day_of_week": "Lundi",
+                    "start_time": "08:00",
+                    "end_time": "09:00",
+                    "subject_id": 1,
+                    "teacher_id": 1,
+                    "room": "",
+                }
+            )
         MockMsg.critical.assert_called_once()
 
     def test_update_slot_error_shows_critical(self):
         w = self._window()
         w._class_id = 1
-        with patch("timetable_manager.DatabaseManager") as MockDB, \
-             patch("timetable_manager.QMessageBox") as MockMsg:
+        with patch("timetable_manager.DatabaseManager") as MockDB, patch("timetable_manager.QMessageBox") as MockMsg:
             MockDB.return_value.get_connection.side_effect = Exception("upd fail")
             MockMsg.critical = MagicMock()
-            w._update_slot(42, {
-                "day_of_week": "Lundi", "start_time": "08:00",
-                "end_time": "09:00", "subject_id": 1,
-                "teacher_id": 1, "room": "",
-            })
+            w._update_slot(
+                42,
+                {
+                    "day_of_week": "Lundi",
+                    "start_time": "08:00",
+                    "end_time": "09:00",
+                    "subject_id": 1,
+                    "teacher_id": 1,
+                    "room": "",
+                },
+            )
         MockMsg.critical.assert_called_once()
 
     def test_delete_slot_error_shows_critical(self):
         w = self._window()
         w._class_id = 1
-        with patch("timetable_manager.DatabaseManager") as MockDB, \
-             patch("timetable_manager.QMessageBox") as MockMsg:
+        with patch("timetable_manager.DatabaseManager") as MockDB, patch("timetable_manager.QMessageBox") as MockMsg:
             MockDB.return_value.get_connection.side_effect = Exception("del fail")
             MockMsg.critical = MagicMock()
             w._delete_slot(7)
@@ -638,16 +724,22 @@ class TestTimetableWindowFilters:
         w = self._window()
         w._class_id = 1
         # Remove fpdf from sys.modules to simulate ImportError
-        with patch.dict(sys.modules, {"fpdf": None}), \
-             patch("timetable_manager.QMessageBox") as MockMsg:
+        with patch.dict(sys.modules, {"fpdf": None}), patch("timetable_manager.QMessageBox") as MockMsg:
             MockMsg.warning = MagicMock()
             w._print_timetable()
         MockMsg.warning.assert_called_once()
 
     def test_edit_slot_cancelled_no_update(self):
         w = self._window()
-        slot = {"id": 10, "day_of_week": "Lundi", "start_time": "08:00",
-                "end_time": "09:00", "subject_id": 1, "teacher_id": 1, "room": ""}
+        slot = {
+            "id": 10,
+            "day_of_week": "Lundi",
+            "start_time": "08:00",
+            "end_time": "09:00",
+            "subject_id": 1,
+            "teacher_id": 1,
+            "room": "",
+        }
         with patch("timetable_manager.SlotDialog") as MockDlg:
             dlg_inst = MagicMock()
             dlg_inst.exec.return_value = 0

@@ -3,6 +3,7 @@
 Covers: SchoolInfo, AcademicYears, Cycles, Classes, Subjects,
         AcademicPeriods, AssessmentTypes.
 """
+
 from __future__ import annotations
 
 
@@ -63,13 +64,9 @@ class AcademicRepository:
     def upsert_year(self, year_id: int | None, label: str) -> None:
         cursor = self.conn.cursor()
         if year_id:
-            cursor.execute(
-                "UPDATE AcademicYears SET year_label=%s WHERE id=%s", (label, year_id)
-            )
+            cursor.execute("UPDATE AcademicYears SET year_label=%s WHERE id=%s", (label, year_id))
         else:
-            cursor.execute(
-                "INSERT INTO AcademicYears (year_label, is_active) VALUES (%s, 0)", (label,)
-            )
+            cursor.execute("INSERT INTO AcademicYears (year_label, is_active) VALUES (%s, 0)", (label,))
 
     def activate_year(self, year_id: int) -> None:
         cursor = self.conn.cursor()
@@ -96,9 +93,7 @@ class AcademicRepository:
     def upsert_cycle(self, cycle_id: int | None, fr: str, ar: str) -> None:
         cursor = self.conn.cursor()
         if cycle_id:
-            cursor.execute(
-                "UPDATE Cycles SET name_fr=%s, name_ar=%s WHERE id=%s", (fr, ar, cycle_id)
-            )
+            cursor.execute("UPDATE Cycles SET name_fr=%s, name_ar=%s WHERE id=%s", (fr, ar, cycle_id))
         else:
             cursor.execute("INSERT INTO Cycles (name_fr, name_ar) VALUES (%s, %s)", (fr, ar))
 
@@ -121,26 +116,21 @@ class AcademicRepository:
     def get_class(self, class_id: int) -> tuple | None:
         cursor = self.conn.cursor()
         cursor.execute(
-            "SELECT cycle_id, class_name_fr, class_name_ar, sort_order"
-            " FROM Classes WHERE id=%s",
+            "SELECT cycle_id, class_name_fr, class_name_ar, sort_order" " FROM Classes WHERE id=%s",
             (class_id,),
         )
         return cursor.fetchone()
 
-    def upsert_class(
-        self, class_id: int | None, cycle_id: int, fr: str, ar: str, order: int
-    ) -> None:
+    def upsert_class(self, class_id: int | None, cycle_id: int, fr: str, ar: str, order: int) -> None:
         cursor = self.conn.cursor()
         if class_id:
             cursor.execute(
-                "UPDATE Classes SET cycle_id=%s, class_name_fr=%s,"
-                " class_name_ar=%s, sort_order=%s WHERE id=%s",
+                "UPDATE Classes SET cycle_id=%s, class_name_fr=%s," " class_name_ar=%s, sort_order=%s WHERE id=%s",
                 (cycle_id, fr, ar, order, class_id),
             )
         else:
             cursor.execute(
-                "INSERT INTO Classes (cycle_id, class_name_fr, class_name_ar, sort_order)"
-                " VALUES (%s, %s, %s, %s)",
+                "INSERT INTO Classes (cycle_id, class_name_fr, class_name_ar, sort_order)" " VALUES (%s, %s, %s, %s)",
                 (cycle_id, fr, ar, order),
             )
 
@@ -163,8 +153,7 @@ class AcademicRepository:
     def get_subject(self, subject_id: int) -> tuple | None:
         cursor = self.conn.cursor()
         cursor.execute(
-            "SELECT cycle_id, subject_name_fr, subject_name_ar, coefficient, subject_lang"
-            " FROM Subjects WHERE id=%s",
+            "SELECT cycle_id, subject_name_fr, subject_name_ar, coefficient, subject_lang" " FROM Subjects WHERE id=%s",
             (subject_id,),
         )
         return cursor.fetchone()
@@ -216,9 +205,7 @@ class AcademicRepository:
         cursor = self.conn.cursor()
         cursor.execute("DELETE FROM AssessmentTypes WHERE id=%s", (eval_id,))
 
-    def generate_periods_and_assessments(
-        self, year_id: int, cycle_id: int, is_elementary: bool
-    ) -> None:
+    def generate_periods_and_assessments(self, year_id: int, cycle_id: int, is_elementary: bool) -> None:
         """Delete existing periods/assessments for (year, cycle) then regenerate."""
         cursor = self.conn.cursor()
         cursor.execute(

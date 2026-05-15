@@ -1,4 +1,5 @@
 """UserRepository — طبقة الوصول إلى بيانات المستخدمين وسجل المراجعة."""
+
 from __future__ import annotations
 
 
@@ -63,9 +64,7 @@ class UserRepository:
     def list_active_staff(self) -> list[tuple]:
         """Return (id, first_name, last_name) for active staff, ordered by last_name."""
         cursor = self.conn.cursor()
-        cursor.execute(
-            "SELECT id, first_name, last_name FROM Staff WHERE status='Actif' ORDER BY last_name"
-        )
+        cursor.execute("SELECT id, first_name, last_name FROM Staff WHERE status='Actif' ORDER BY last_name")
         return cursor.fetchall()
 
     def get_staff_email(self, staff_id: int) -> str:

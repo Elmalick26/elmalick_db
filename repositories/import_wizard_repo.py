@@ -65,15 +65,11 @@ class ImportWizardRepository:
     def list_academic_years(self) -> list:
         """(id, year_label) ORDER BY is_active DESC, id DESC."""
         with self.conn.cursor() as cur:
-            cur.execute(
-                "SELECT id, year_label FROM AcademicYears ORDER BY is_active DESC, id DESC"
-            )
+            cur.execute("SELECT id, year_label FROM AcademicYears ORDER BY is_active DESC, id DESC")
             return cur.fetchall()
 
     def list_classes(self) -> list:
         """(id, class_name_fr) ORDER BY sort_order, id."""
         with self.conn.cursor() as cur:
-            cur.execute(
-                "SELECT id, class_name_fr FROM Classes ORDER BY sort_order, id"
-            )
+            cur.execute("SELECT id, class_name_fr FROM Classes ORDER BY sort_order, id")
             return cur.fetchall()

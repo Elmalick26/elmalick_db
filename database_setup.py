@@ -8,13 +8,14 @@ from config_manager import ConfigManager
 # استخدام Logger قياسي وسيتولى AppLogger إدارته لاحقاً
 logger = logging.getLogger("DatabaseManager")
 
+
 class DatabaseManager:
     """
     مدير مركزي لقاعدة البيانات لضمان:
     1. إدارة الاتصالات بخادم PostgreSQL والإغلاق الآمن (Context Manager).
     2. توحيد مصدر الحقيقة لهيكلة البيانات.
     """
-    
+
     def __init__(self):
         # جلب إعدادات الاتصال من مدير الإعدادات
         self.config = ConfigManager()
@@ -28,7 +29,7 @@ class DatabaseManager:
             dbname=self.config.db_name,
             user=self.config.db_user,
             password=self.config.db_password,
-            sslmode=ssl_mode
+            sslmode=ssl_mode,
         )
         return self
 
@@ -68,7 +69,7 @@ class DatabaseManager:
                 dbname=self.config.db_name,
                 user=self.config.db_user,
                 password=self.config.db_password,
-                sslmode=ssl_mode
+                sslmode=ssl_mode,
             )
             yield conn
         except OperationalError as e:
@@ -92,7 +93,7 @@ class DatabaseManager:
     def initialize_database(self):
         """إنشاء جميع الجداول المطلوبة للنظام دفعة واحدة"""
         logger.info("🔄 جاري تهيئة قاعدة البيانات والتحقق من الهيكلة (PostgreSQL)...")
-        
+
         with self.get_connection() as conn:
             cursor = conn.cursor()
 
@@ -100,7 +101,7 @@ class DatabaseManager:
                 # في PostgreSQL نبحث في information_schema والجداول تحفظ بأحرف صغيرة
                 cursor.execute(
                     "SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = %s;",
-                    (table_name.lower(),)
+                    (table_name.lower(),),
                 )
                 return [row[0] for row in cursor.fetchall()]
 
@@ -127,9 +128,10 @@ class DatabaseManager:
                 except Error as err:
                     cursor.execute("ROLLBACK TO SAVEPOINT sp_safe_execute;")
                     logger.warning(f"Migration statement skipped -> {err}")
-            
+
             # --- 1. System & Users ---
-            cursor.execute("""
+            cursor.execute(
+                """
                 CREATE TABLE IF NOT EXISTS Users (
                     id SERIAL PRIMARY KEY,
                     staff_id INTEGER,
@@ -140,9 +142,11 @@ class DatabaseManager:
                     status TEXT DEFAULT 'Actif',
                     created_date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
-            """)
-            
-            cursor.execute("""
+            """
+            )
+
+            cursor.execute(
+                """
                 CREATE TABLE IF NOT EXISTS AuditLogs (
                     id SERIAL PRIMARY KEY,
                     actor TEXT,
@@ -150,9 +154,11 @@ class DatabaseManager:
                     target TEXT,
                     timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
-            """)
+            """
+            )
 
-            cursor.execute("""
+            cursor.execute(
+                """
                 CREATE TABLE IF NOT EXISTS EmailSettings (
                     id SERIAL PRIMARY KEY,
                     smtp_server TEXT,
@@ -160,9 +166,11 @@ class DatabaseManager:
                     email_address TEXT,
                     email_password TEXT
                 )
-            """)
-            
-            cursor.execute("""
+            """
+            )
+
+            cursor.execute(
+                """
                 CREATE TABLE IF NOT EXISTS NotificationLogs (
                     id SERIAL PRIMARY KEY,
                     recipient_type TEXT,
@@ -172,34 +180,42 @@ class DatabaseManager:
                     error_msg TEXT,
                     sent_at TEXT
                 )
-            """)
+            """
+            )
 
-            cursor.execute("""
+            cursor.execute(
+                """
                 CREATE TABLE IF NOT EXISTS SchoolInfo (
                     id SERIAL PRIMARY KEY,
                     republic TEXT, ia TEXT, ief TEXT, school_name TEXT, 
                     auth_number TEXT, address TEXT, phone TEXT, logo_path TEXT, director_name TEXT
                 )
-            """)
+            """
+            )
 
             # --- 2. Academic Structure ---
-            cursor.execute("""
+            cursor.execute(
+                """
                 CREATE TABLE IF NOT EXISTS AcademicYears (
                     id SERIAL PRIMARY KEY,
                     year_label TEXT UNIQUE NOT NULL,
                     is_active INTEGER DEFAULT 0
                 )
-            """)
-            
-            cursor.execute("""
+            """
+            )
+
+            cursor.execute(
+                """
                 CREATE TABLE IF NOT EXISTS Cycles (
                     id SERIAL PRIMARY KEY,
                     name_ar TEXT,
                     name_fr TEXT
                 )
-            """)
-            
-            cursor.execute("""
+            """
+            )
+
+            cursor.execute(
+                """
                 CREATE TABLE IF NOT EXISTS Classes (
                     id SERIAL PRIMARY KEY,
                     cycle_id INTEGER,
@@ -208,9 +224,11 @@ class DatabaseManager:
                     sort_order INTEGER DEFAULT 0,
                     FOREIGN KEY (cycle_id) REFERENCES Cycles(id) ON DELETE CASCADE
                 )
-            """)
+            """
+            )
 
-            cursor.execute("""
+            cursor.execute(
+                """
                 CREATE TABLE IF NOT EXISTS AcademicPeriods (
                     id SERIAL PRIMARY KEY,
                     year_id INTEGER,
@@ -221,9 +239,11 @@ class DatabaseManager:
                     FOREIGN KEY (year_id) REFERENCES AcademicYears(id),
                     FOREIGN KEY (cycle_id) REFERENCES Cycles(id)
                 )
-            """)
-            
-            cursor.execute("""
+            """
+            )
+
+            cursor.execute(
+                """
                 CREATE TABLE IF NOT EXISTS Subjects (
                     id SERIAL PRIMARY KEY,
                     cycle_id INTEGER,
@@ -233,9 +253,11 @@ class DatabaseManager:
                     subject_lang TEXT DEFAULT 'Français',
                     FOREIGN KEY (cycle_id) REFERENCES Cycles(id)
                 )
-            """)
-            
-            cursor.execute("""
+            """
+            )
+
+            cursor.execute(
+                """
                 CREATE TABLE IF NOT EXISTS AssessmentTypes (
                     id SERIAL PRIMARY KEY,
                     period_id INTEGER,
@@ -245,10 +267,12 @@ class DatabaseManager:
                     weight_percentage REAL DEFAULT 1.0,
                     FOREIGN KEY (period_id) REFERENCES AcademicPeriods(id)
                 )
-            """)
+            """
+            )
 
             # --- 3. People (Students & Staff) ---
-            cursor.execute("""
+            cursor.execute(
+                """
                 CREATE TABLE IF NOT EXISTS Students (
                     id SERIAL PRIMARY KEY,
                     first_name_fr TEXT NOT NULL, last_name_fr TEXT NOT NULL,
@@ -261,9 +285,11 @@ class DatabaseManager:
                     status TEXT DEFAULT 'Active',
                     photo_path TEXT
                 )
-            """)
+            """
+            )
 
-            cursor.execute("""
+            cursor.execute(
+                """
                 CREATE TABLE IF NOT EXISTS StudentClassNumbers (
                     id SERIAL PRIMARY KEY,
                     student_id INTEGER,
@@ -277,9 +303,11 @@ class DatabaseManager:
                     UNIQUE (student_id, year_id),
                     UNIQUE (class_id, year_id, class_number)
                 )
-            """)
+            """
+            )
 
-            cursor.execute("""
+            cursor.execute(
+                """
                 CREATE TABLE IF NOT EXISTS Staff (
                     id SERIAL PRIMARY KEY,
                     first_name TEXT,
@@ -296,17 +324,21 @@ class DatabaseManager:
                     photo_path TEXT,
                     status TEXT DEFAULT 'Actif'
                 )
-            """)
+            """
+            )
 
             # إضافة الـ Foreign Key الخاص بجدول Users بعد إنشاء Staff
-            _safe_execute("""
+            _safe_execute(
+                """
                 ALTER TABLE Users 
                 ADD CONSTRAINT fk_staff 
                 FOREIGN KEY (staff_id) REFERENCES Staff(id) ON DELETE SET NULL;
-            """)
+            """
+            )
 
             # --- 4. Academic Data (Grades, Attendance, Discipline) ---
-            cursor.execute("""
+            cursor.execute(
+                """
                 CREATE TABLE IF NOT EXISTS Grades (
                     id SERIAL PRIMARY KEY,
                     student_id INTEGER,
@@ -321,18 +353,20 @@ class DatabaseManager:
                     FOREIGN KEY(assessment_id) REFERENCES AssessmentTypes(id),
                     FOREIGN KEY(year_id) REFERENCES AcademicYears(id)
                 )
-            """)
+            """
+            )
 
             index_statements = [
                 "CREATE INDEX IF NOT EXISTS idx_grades_student_subject ON Grades(student_id, subject_id)",
                 "CREATE INDEX IF NOT EXISTS idx_grades_assessment ON Grades(assessment_id)",
                 "CREATE INDEX IF NOT EXISTS idx_grades_date ON Grades(date_recorded)",
-                "CREATE INDEX IF NOT EXISTS idx_grades_year ON Grades(year_id)"
+                "CREATE INDEX IF NOT EXISTS idx_grades_year ON Grades(year_id)",
             ]
             for stmt in index_statements:
                 cursor.execute(stmt)
 
-            cursor.execute("""
+            cursor.execute(
+                """
                CREATE TABLE IF NOT EXISTS StudentAttendance (
                     id SERIAL PRIMARY KEY,
                     student_id INTEGER,
@@ -348,9 +382,11 @@ class DatabaseManager:
                     FOREIGN KEY (year_id) REFERENCES AcademicYears(id),
                     FOREIGN KEY (period_id) REFERENCES AcademicPeriods(id)
                ) 
-            """)
+            """
+            )
 
-            cursor.execute("""
+            cursor.execute(
+                """
                CREATE TABLE IF NOT EXISTS StaffAttendance (
                     id SERIAL PRIMARY KEY,
                     staff_id INTEGER,
@@ -361,9 +397,11 @@ class DatabaseManager:
                     note TEXT,
                     FOREIGN KEY (staff_id) REFERENCES Staff(id)
                ) 
-            """)
+            """
+            )
 
-            cursor.execute("""
+            cursor.execute(
+                """
                 CREATE TABLE IF NOT EXISTS StaffLeaves (
                     id SERIAL PRIMARY KEY,
                     staff_id INTEGER,
@@ -375,9 +413,11 @@ class DatabaseManager:
                     status TEXT DEFAULT 'En Attente',
                     FOREIGN KEY(staff_id) REFERENCES Staff(id)
                 )
-            """)
+            """
+            )
 
-            cursor.execute("""
+            cursor.execute(
+                """
                 CREATE TABLE IF NOT EXISTS StudentDiscipline (
                     id SERIAL PRIMARY KEY,
                     student_id INTEGER,
@@ -390,9 +430,11 @@ class DatabaseManager:
                     period_id INTEGER,
                     FOREIGN KEY (student_id) REFERENCES Students(id)
                 )
-            """)
+            """
+            )
 
-            cursor.execute("""
+            cursor.execute(
+                """
                 CREATE TABLE IF NOT EXISTS Timetable (
                     id SERIAL PRIMARY KEY,
                     class_id INTEGER,
@@ -406,19 +448,23 @@ class DatabaseManager:
                     FOREIGN KEY (subject_id) REFERENCES Subjects(id),
                     FOREIGN KEY (teacher_id) REFERENCES Staff(id)
                 )
-            """)
+            """
+            )
 
             # --- 5. Finance ---
-            cursor.execute("""
+            cursor.execute(
+                """
                 CREATE TABLE IF NOT EXISTS RegistrationFees (
                     id SERIAL PRIMARY KEY,
                     class_id INTEGER,
                     amount REAL,
                     FOREIGN KEY (class_id) REFERENCES Classes(id)
                 )
-            """)
-            
-            cursor.execute("""
+            """
+            )
+
+            cursor.execute(
+                """
                 CREATE TABLE IF NOT EXISTS MonthlyFeeSchedule (
                     id SERIAL PRIMARY KEY,
                     class_id INTEGER,
@@ -427,9 +473,11 @@ class DatabaseManager:
                     amount REAL,
                     FOREIGN KEY (class_id) REFERENCES Classes(id)
                 )
-            """)
+            """
+            )
 
-            cursor.execute("""
+            cursor.execute(
+                """
                 CREATE TABLE IF NOT EXISTS Payments (
                     id SERIAL PRIMARY KEY,
                     student_id INTEGER,
@@ -444,9 +492,11 @@ class DatabaseManager:
                     FOREIGN KEY (student_id) REFERENCES Students(id) ON DELETE RESTRICT,
                     FOREIGN KEY (year_id) REFERENCES AcademicYears(id)
                 )
-            """)
+            """
+            )
 
-            cursor.execute("""
+            cursor.execute(
+                """
                 CREATE TABLE IF NOT EXISTS StudentDues (
                     id SERIAL PRIMARY KEY,
                     student_id INTEGER,
@@ -461,9 +511,11 @@ class DatabaseManager:
                     FOREIGN KEY (student_id) REFERENCES Students(id),
                     FOREIGN KEY (year_id) REFERENCES AcademicYears(id)
                 )
-            """)
+            """
+            )
 
-            cursor.execute("""
+            cursor.execute(
+                """
                 CREATE TABLE IF NOT EXISTS MonthlyPaymentsStatus (
                     id SERIAL PRIMARY KEY,
                     student_id INTEGER,
@@ -475,9 +527,11 @@ class DatabaseManager:
                     FOREIGN KEY (due_id) REFERENCES StudentDues(id),
                     FOREIGN KEY (payment_id) REFERENCES Payments(id)
                 )
-            """)
+            """
+            )
 
-            cursor.execute("""
+            cursor.execute(
+                """
                 CREATE TABLE IF NOT EXISTS Expenses (
                     id SERIAL PRIMARY KEY,
                     category TEXT,
@@ -487,9 +541,11 @@ class DatabaseManager:
                     paid_to TEXT,
                     created_at TEXT
                 )
-            """)
+            """
+            )
 
-            cursor.execute("""
+            cursor.execute(
+                """
                 CREATE TABLE IF NOT EXISTS SalarySlips (
                     id SERIAL PRIMARY KEY,
                     staff_id INTEGER,
@@ -502,9 +558,11 @@ class DatabaseManager:
                     payment_date TEXT,
                     FOREIGN KEY (staff_id) REFERENCES Staff(id)
                 )
-            """)
+            """
+            )
 
-            cursor.execute("""
+            cursor.execute(
+                """
                 CREATE TABLE IF NOT EXISTS InventoryItems (
                     id SERIAL PRIMARY KEY,
                     name_fr TEXT,
@@ -515,9 +573,11 @@ class DatabaseManager:
                     unit_price REAL DEFAULT 0.0,
                     location TEXT
                 )
-            """)
+            """
+            )
 
-            cursor.execute("""
+            cursor.execute(
+                """
                 CREATE TABLE IF NOT EXISTS InventoryLog (
                     id SERIAL PRIMARY KEY,
                     item_id INTEGER,
@@ -529,27 +589,32 @@ class DatabaseManager:
                     expense_id INTEGER,
                     FOREIGN KEY (item_id) REFERENCES InventoryItems(id)
                 )
-            """)
+            """
+            )
 
             # --- 5.b Schema Migrations (backward compatibility) ---
             _ensure_column("AcademicYears", "year_label", "TEXT")
             academic_year_cols = _table_columns("AcademicYears")
             if "year_name" in academic_year_cols:
-                _safe_execute("""
+                _safe_execute(
+                    """
                     UPDATE AcademicYears
                     SET year_label = COALESCE(NULLIF(year_label, ''), year_name)
                     WHERE year_label IS NULL OR year_label = ''
-                """)
+                """
+                )
             if "start_date" in academic_year_cols and "end_date" in academic_year_cols:
                 # استخدام PostgreSQL Syntax للتاريخ TO_CHAR بدلاً من strftime
-                _safe_execute("""
+                _safe_execute(
+                    """
                     UPDATE AcademicYears
                     SET year_label = COALESCE(
                         NULLIF(year_label, ''),
                         TO_CHAR(CAST(start_date AS DATE), 'YYYY') || '-' || TO_CHAR(CAST(end_date AS DATE), 'YYYY')
                     )
                     WHERE year_label IS NULL OR year_label = ''
-                """)
+                """
+                )
 
             _ensure_column("Staff", "first_name", "TEXT")
             _ensure_column("Staff", "last_name", "TEXT")
@@ -563,28 +628,36 @@ class DatabaseManager:
 
             staff_cols = _table_columns("Staff")
             if "staff_name" in staff_cols:
-                _safe_execute("""
+                _safe_execute(
+                    """
                     UPDATE Staff
                     SET first_name = COALESCE(NULLIF(first_name, ''), staff_name)
                     WHERE first_name IS NULL OR first_name = ''
-                """)
-            _safe_execute("""
+                """
+                )
+            _safe_execute(
+                """
                 UPDATE Staff
                 SET last_name = COALESCE(NULLIF(last_name, ''), '')
                 WHERE last_name IS NULL
-            """)
+            """
+            )
             if "position" in staff_cols:
-                _safe_execute("""
+                _safe_execute(
+                    """
                     UPDATE Staff
                     SET role = COALESCE(NULLIF(role, ''), position)
                     WHERE role IS NULL OR role = ''
-                """)
+                """
+                )
             if "salary" in staff_cols:
-                _safe_execute("""
+                _safe_execute(
+                    """
                     UPDATE Staff
                     SET salary_base = COALESCE(salary_base, salary)
                     WHERE salary_base IS NULL OR salary_base = 0
-                """)
+                """
+                )
 
             _ensure_column("Students", "first_name_fr", "TEXT")
             _ensure_column("Students", "last_name_fr", "TEXT")
@@ -598,31 +671,41 @@ class DatabaseManager:
 
             student_cols = _table_columns("Students")
             if "student_name" in student_cols:
-                _safe_execute("""
+                _safe_execute(
+                    """
                     UPDATE Students
                     SET first_name_fr = COALESCE(NULLIF(first_name_fr, ''), student_name)
                     WHERE first_name_fr IS NULL OR first_name_fr = ''
-                """)
-            _safe_execute("""
+                """
+                )
+            _safe_execute(
+                """
                 UPDATE Students
                 SET first_name_fr = COALESCE(NULLIF(first_name_fr, ''), 'Élève')
                 WHERE first_name_fr IS NULL OR first_name_fr = ''
-            """)
-            _safe_execute("""
+            """
+            )
+            _safe_execute(
+                """
                 UPDATE Students
                 SET last_name_fr = COALESCE(last_name_fr, '')
                 WHERE last_name_fr IS NULL
-            """)
-            _safe_execute("""
+            """
+            )
+            _safe_execute(
+                """
                 UPDATE Students
                 SET first_name_ar = COALESCE(first_name_ar, '')
                 WHERE first_name_ar IS NULL
-            """)
-            _safe_execute("""
+            """
+            )
+            _safe_execute(
+                """
                 UPDATE Students
                 SET last_name_ar = COALESCE(last_name_ar, '')
                 WHERE last_name_ar IS NULL
-            """)
+            """
+            )
 
             _ensure_column("RegistrationFees", "class_id", "INTEGER")
             _ensure_column("MonthlyFeeSchedule", "class_id", "INTEGER")
@@ -630,7 +713,8 @@ class DatabaseManager:
 
             reg_cols = _table_columns("RegistrationFees")
             if "cycle_id" in reg_cols:
-                _safe_execute("""
+                _safe_execute(
+                    """
                     UPDATE RegistrationFees
                     SET class_id = (
                         SELECT id FROM Classes c
@@ -639,11 +723,13 @@ class DatabaseManager:
                         LIMIT 1
                     )
                     WHERE (class_id IS NULL OR class_id = 0) AND cycle_id IS NOT NULL
-                """)
+                """
+                )
 
             mfs_cols = _table_columns("MonthlyFeeSchedule")
             if "cycle_id" in mfs_cols:
-                _safe_execute("""
+                _safe_execute(
+                    """
                     UPDATE MonthlyFeeSchedule
                     SET class_id = (
                         SELECT id FROM Classes c
@@ -652,12 +738,15 @@ class DatabaseManager:
                         LIMIT 1
                     )
                     WHERE (class_id IS NULL OR class_id = 0) AND cycle_id IS NOT NULL
-                """)
-            _safe_execute("""
+                """
+                )
+            _safe_execute(
+                """
                 UPDATE MonthlyFeeSchedule
                 SET month_name = COALESCE(NULLIF(month_name, ''), 'Mois ' || month_index)
                 WHERE month_name IS NULL OR month_name = ''
-            """)
+            """
+            )
 
             _ensure_column("StaffAttendance", "attendance_date", "TEXT")
             _ensure_column("StaffAttendance", "check_in_time", "TEXT")
@@ -666,17 +755,21 @@ class DatabaseManager:
             _ensure_column("StaffAttendance", "note", "TEXT")
             staff_att_cols = _table_columns("StaffAttendance")
             if "date" in staff_att_cols:
-                _safe_execute("""
+                _safe_execute(
+                    """
                     UPDATE StaffAttendance
                     SET attendance_date = COALESCE(NULLIF(attendance_date, ''), date)
                     WHERE attendance_date IS NULL OR attendance_date = ''
-                """)
+                """
+                )
             if "notes" in staff_att_cols:
-                _safe_execute("""
+                _safe_execute(
+                    """
                     UPDATE StaffAttendance
                     SET note = COALESCE(NULLIF(note, ''), notes)
                     WHERE note IS NULL OR note = ''
-                """)
+                """
+                )
 
             _ensure_column("InventoryLog", "transaction_type", "TEXT")
             _ensure_column("InventoryLog", "quantity", "INTEGER")
@@ -684,35 +777,45 @@ class DatabaseManager:
             _ensure_column("InventoryLog", "notes", "TEXT")
             inv_cols = _table_columns("InventoryLog")
             if "trasaction_type" in inv_cols:
-                _safe_execute("""
+                _safe_execute(
+                    """
                     UPDATE InventoryLog
                     SET transaction_type = COALESCE(NULLIF(transaction_type, ''), trasaction_type)
                     WHERE transaction_type IS NULL OR transaction_type = ''
-                """)
+                """
+                )
             if "action" in inv_cols:
-                _safe_execute("""
+                _safe_execute(
+                    """
                     UPDATE InventoryLog
                     SET transaction_type = COALESCE(NULLIF(transaction_type, ''), action)
                     WHERE transaction_type IS NULL OR transaction_type = ''
-                """)
+                """
+                )
             if "quantity_change" in inv_cols:
-                _safe_execute("""
+                _safe_execute(
+                    """
                     UPDATE InventoryLog
                     SET quantity = COALESCE(quantity, quantity_change)
                     WHERE quantity IS NULL
-                """)
+                """
+                )
             if "date_time" in inv_cols:
-                _safe_execute("""
+                _safe_execute(
+                    """
                     UPDATE InventoryLog
                     SET transaction_date = COALESCE(NULLIF(transaction_date, ''), date_time)
                     WHERE transaction_date IS NULL OR transaction_date = ''
-                """)
+                """
+                )
             if "reason" in inv_cols:
-                _safe_execute("""
+                _safe_execute(
+                    """
                     UPDATE InventoryLog
                     SET notes = COALESCE(NULLIF(notes, ''), reason)
                     WHERE notes IS NULL OR notes = ''
-                """)
+                """
+                )
 
             _ensure_column("AcademicPeriods", "year_id", "INTEGER")
             _ensure_column("Grades", "year_id", "INTEGER")
@@ -727,19 +830,24 @@ class DatabaseManager:
 
             discipline_cols = _table_columns("StudentDiscipline")
             if "action_taken" in discipline_cols:
-                _safe_execute("""
+                _safe_execute(
+                    """
                     UPDATE StudentDiscipline
                     SET sanction = COALESCE(NULLIF(sanction, ''), action_taken)
                     WHERE sanction IS NULL OR sanction = ''
-                """)
+                """
+                )
             if "description" in discipline_cols:
-                _safe_execute("""
+                _safe_execute(
+                    """
                     UPDATE StudentDiscipline
                     SET observation = COALESCE(NULLIF(observation, ''), description)
                     WHERE observation IS NULL OR observation = ''
-                """)
+                """
+                )
             if "severity_level" in discipline_cols:
-                _safe_execute("""
+                _safe_execute(
+                    """
                     UPDATE StudentDiscipline
                     SET points_deducted = CASE
                         WHEN points_deducted IS NULL THEN
@@ -751,24 +859,29 @@ class DatabaseManager:
                             END
                         ELSE points_deducted
                     END
-                """)
-            _safe_execute("""
+                """
+                )
+            _safe_execute(
+                """
                 UPDATE StudentDiscipline
                 SET points_deducted = COALESCE(points_deducted, 0)
                 WHERE points_deducted IS NULL
-            """)
+            """
+            )
 
             _ensure_column("Payments", "year_id", "INTEGER")
             _ensure_column("StudentDues", "year_id", "INTEGER")
             _ensure_column("StudentDues", "fee_description", "TEXT")
             _ensure_column("MonthlyPaymentsStatus", "due_id", "INTEGER")
-            
-            _safe_execute("""
+
+            _safe_execute(
+                """
                 UPDATE MonthlyPaymentsStatus
                 SET due_id = month_index
                 WHERE (due_id IS NULL OR due_id = 0)
                     AND month_index IS NOT NULL
-            """)
+            """
+            )
 
             # Core reporting indexes
             reporting_index_statements = [
@@ -785,7 +898,7 @@ class DatabaseManager:
                 "CREATE INDEX IF NOT EXISTS idx_payments_date ON Payments(transaction_date)",
                 "CREATE INDEX IF NOT EXISTS idx_expenses_date ON Expenses(expense_date)",
                 "CREATE INDEX IF NOT EXISTS idx_student_dues_student_year ON StudentDues(student_id, year_id)",
-                "CREATE INDEX IF NOT EXISTS idx_monthly_payments_due_id ON MonthlyPaymentsStatus(due_id)"
+                "CREATE INDEX IF NOT EXISTS idx_monthly_payments_due_id ON MonthlyPaymentsStatus(due_id)",
             ]
             for stmt in reporting_index_statements:
                 try:
@@ -801,8 +914,7 @@ class DatabaseManager:
             # Phase 5.4 — دعم متعدد المدارس (Schema)
             # Phase 6.3 — رمز ثابت وفريد للطالب (student_code) + تشفير PIN
             # ─────────────────────────────────────────────────────────────
-            _ensure_column("Students", "parent_pin",
-                           "TEXT DEFAULT NULL")
+            _ensure_column("Students", "parent_pin", "TEXT DEFAULT NULL")
 
             # student_code: معرّف ثابت وفريد للطالب يُستعمل في بوابة الأولياء
             # الصيغة: EMG-XXXX — لا يتغير عبر السنوات ولا يتأثر بتغيير الفصل
@@ -816,8 +928,7 @@ class DatabaseManager:
             for (sid,) in students_without_code:
                 code = f"EMG-{sid:04d}"
                 cursor.execute(
-                    "UPDATE Students SET student_code = %s WHERE id = %s AND student_code IS NULL",
-                    (code, sid)
+                    "UPDATE Students SET student_code = %s WHERE id = %s AND student_code IS NULL", (code, sid)
                 )
             if students_without_code:
                 logger.info(f"🔑 Migration: student_code généré pour {len(students_without_code)} élève(s).")
@@ -827,7 +938,8 @@ class DatabaseManager:
             _ensure_column("Students", "parent_pin_hash", "TEXT DEFAULT NULL")
 
             # جدول المدارس المرجعي (للاستخدام الحالي والمستقبلي)
-            _safe_execute("""
+            _safe_execute(
+                """
                 CREATE TABLE IF NOT EXISTS Schools (
                     id SERIAL PRIMARY KEY,
                     name TEXT UNIQUE NOT NULL,
@@ -835,19 +947,16 @@ class DatabaseManager:
                     is_active INTEGER DEFAULT 1,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
-            """)
+            """
+            )
             _safe_execute(
                 "INSERT INTO Schools (id, name, code, is_active) VALUES (1, 'École Principale', 'MAIN', 1) ON CONFLICT (id) DO NOTHING"
             )
 
-            _ensure_column("Students", "school_id",
-                           "INTEGER DEFAULT 1")
-            _ensure_column("Staff", "school_id",
-                           "INTEGER DEFAULT 1")
-            _ensure_column("Classes", "school_id",
-                           "INTEGER DEFAULT 1")
-            _ensure_column("AcademicYears", "school_id",
-                           "INTEGER DEFAULT 1")
+            _ensure_column("Students", "school_id", "INTEGER DEFAULT 1")
+            _ensure_column("Staff", "school_id", "INTEGER DEFAULT 1")
+            _ensure_column("Classes", "school_id", "INTEGER DEFAULT 1")
+            _ensure_column("AcademicYears", "school_id", "INTEGER DEFAULT 1")
 
             # توحيد البيانات الحالية على المدرسة الافتراضية
             _safe_execute("UPDATE Students SET school_id = 1 WHERE school_id IS NULL")
@@ -856,18 +965,10 @@ class DatabaseManager:
             _safe_execute("UPDATE AcademicYears SET school_id = 1 WHERE school_id IS NULL")
 
             # فهارس للأداء
-            _safe_execute(
-                "CREATE INDEX IF NOT EXISTS idx_students_school ON Students(school_id)"
-            )
-            _safe_execute(
-                "CREATE INDEX IF NOT EXISTS idx_staff_school ON Staff(school_id)"
-            )
-            _safe_execute(
-                "CREATE INDEX IF NOT EXISTS idx_classes_school ON Classes(school_id)"
-            )
-            _safe_execute(
-                "CREATE INDEX IF NOT EXISTS idx_years_school ON AcademicYears(school_id)"
-            )
+            _safe_execute("CREATE INDEX IF NOT EXISTS idx_students_school ON Students(school_id)")
+            _safe_execute("CREATE INDEX IF NOT EXISTS idx_staff_school ON Staff(school_id)")
+            _safe_execute("CREATE INDEX IF NOT EXISTS idx_classes_school ON Classes(school_id)")
+            _safe_execute("CREATE INDEX IF NOT EXISTS idx_years_school ON AcademicYears(school_id)")
             _safe_execute(
                 "CREATE INDEX IF NOT EXISTS idx_students_parent_pin ON Students(parent_pin) WHERE parent_pin IS NOT NULL"
             )
@@ -876,11 +977,13 @@ class DatabaseManager:
             conn.commit()
             logger.info("✅ قاعدة البيانات جاهزة ومحدثة (PostgreSQL Structures verified).")
 
+
 # عند تشغيل الملف مباشرة
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Audit Log Helper
 # ─────────────────────────────────────────────────────────────────────────────
+
 
 def log_audit(conn, actor: str, action: str, target: str) -> None:
     """
@@ -908,6 +1011,7 @@ def log_audit(conn, actor: str, action: str, target: str) -> None:
     except Exception as e:
         # لا نوقف العملية الرئيسية بسبب فشل تسجيل الـ audit
         import logging as _logging
+
         _logging.getLogger("DatabaseManager").warning(f"Audit log failed: {e}")
 
 

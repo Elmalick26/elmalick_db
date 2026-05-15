@@ -22,9 +22,16 @@ class InventoryRepository:
         cursor = self.conn.cursor()
         cursor.execute("UPDATE InventoryItems SET quantity=%s WHERE id=%s", (new_qty, item_id))
 
-    def insert_item(self, name_fr: str, name_ar: str, category: str,
-                    quantity: int, min_quantity: int,
-                    unit_price: float, location: str) -> int:
+    def insert_item(
+        self,
+        name_fr: str,
+        name_ar: str,
+        category: str,
+        quantity: int,
+        min_quantity: int,
+        unit_price: float,
+        location: str,
+    ) -> int:
         cursor = self.conn.cursor()
         cursor.execute(
             """
@@ -38,8 +45,7 @@ class InventoryRepository:
 
     # --- Movement log ---
 
-    def insert_movement_log(self, item_id: int, m_type: str, qty: int,
-                            date_str: str, notes: str) -> None:
+    def insert_movement_log(self, item_id: int, m_type: str, qty: int, date_str: str, notes: str) -> None:
         cursor = self.conn.cursor()
         cursor.execute(
             """

@@ -1,0 +1,59 @@
+[tool.black]
+line-length = 120
+target-version = ["py312"]
+skip-string-normalization = true
+extend-exclude = '''
+/(
+    \.venv
+  | dist_release
+  | build
+  | Origine
+)/
+'''
+
+[tool.isort]
+profile = "black"
+line_length = 120
+known_first_party = [
+    "database_setup", "config_manager", "app_logger", "db_path",
+    "ui_styles", "security_utils", "validators",
+    "repositories", "services", "api",
+]
+skip_glob = [".venv/*", "dist_release/*", "Origine/*"]
+
+[tool.mypy]
+python_version = "3.12"
+strict = false
+ignore_missing_imports = true
+warn_return_any = true
+warn_unused_ignores = true
+disallow_untyped_defs = true
+check_untyped_defs = true
+# نطبق الصرامة فقط على services و repositories
+files = ["services", "repositories"]
+
+[[tool.mypy.overrides]]
+module = ["PyQt6.*", "fpdf.*", "matplotlib.*", "psycopg2.*", "bcrypt.*", "jose.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q --tb=short"
+qt_api = "pyqt6"
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.coverage.run]
+omit = [
+    ".venv/*",
+    "dist_release/*",
+    "Origine/*",
+    "tests/*",
+    "*/test_*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
+]

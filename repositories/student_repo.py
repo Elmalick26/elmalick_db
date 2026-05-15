@@ -58,7 +58,9 @@ class StudentRepository:
         cursor.execute(query, params)
         return cursor.fetchall()
 
-    def list_students_detailed(self, year_id: int, cycle_id=None, class_id=None, search: str = "", date_from=None, date_to=None):
+    def list_students_detailed(
+        self, year_id: int, cycle_id=None, class_id=None, search: str = "", date_from=None, date_to=None
+    ):
         cursor = self.conn.cursor()
         query = """
             SELECT S.id, S.first_name_fr, S.last_name_fr, S.first_name_ar, S.last_name_ar,
@@ -114,12 +116,21 @@ class StudentRepository:
             RETURNING id
             """,
             (
-                data["first_name_fr"], data["last_name_fr"],
-                data["first_name_ar"], data["last_name_ar"],
-                data["birth_date"], data["birth_place"], data["gender"],
-                data["address"], data["parent_name"], data["parent_phone"],
-                data["parent_email"], data["parent_address"],
-                data["registration_date"], data["status"], data.get("photo_path"),
+                data["first_name_fr"],
+                data["last_name_fr"],
+                data["first_name_ar"],
+                data["last_name_ar"],
+                data["birth_date"],
+                data["birth_place"],
+                data["gender"],
+                data["address"],
+                data["parent_name"],
+                data["parent_phone"],
+                data["parent_email"],
+                data["parent_address"],
+                data["registration_date"],
+                data["status"],
+                data.get("photo_path"),
             ),
         )
         return cursor.fetchone()[0]
@@ -132,12 +143,20 @@ class StudentRepository:
         """
         cursor = self.conn.cursor()
         base_params = [
-            data["first_name_fr"], data["last_name_fr"],
-            data["first_name_ar"], data["last_name_ar"],
-            data["birth_date"], data["birth_place"], data["gender"],
-            data["address"], data["parent_name"], data["parent_phone"],
-            data["parent_email"], data["parent_address"],
-            data["registration_date"], data["status"],
+            data["first_name_fr"],
+            data["last_name_fr"],
+            data["first_name_ar"],
+            data["last_name_ar"],
+            data["birth_date"],
+            data["birth_place"],
+            data["gender"],
+            data["address"],
+            data["parent_name"],
+            data["parent_phone"],
+            data["parent_email"],
+            data["parent_address"],
+            data["registration_date"],
+            data["status"],
         ]
         if data.get("photo_path"):
             query = """
@@ -245,7 +264,7 @@ class StudentRepository:
         cursor = self.conn.cursor()
         cursor.execute(
             "SELECT COUNT(*) FROM Students S JOIN StudentClassNumbers SCN ON S.id=SCN.student_id WHERE S.status='Active' AND SCN.year_id=%s",
-            (year_id,)
+            (year_id,),
         )
         row = cursor.fetchone()
         return row[0] if row else 0
@@ -268,6 +287,6 @@ class StudentRepository:
             WHERE S.status='Active' AND SCN.year_id=%s
             GROUP BY CY.id, CY.name_fr
             """,
-            (year_id,)
+            (year_id,),
         )
         return cursor.fetchall()

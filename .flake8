@@ -1,0 +1,30 @@
+[flake8]
+max-line-length = 120
+extend-ignore =
+    # E501: line too long (handled by black)
+    E501,
+    # W503: line break before binary operator (black style)
+    W503,
+    # E203: whitespace before ':' (black style)
+    E203,
+    # F401: imported but unused (allow in __init__.py files)
+    F401,
+exclude =
+    .venv,
+    dist_release,
+    build,
+    Origine,
+    __pycache__,
+    .git,
+per-file-ignores =
+    # ملفات الاختبار: sys.path.insert ضروري + تجاهل بعض التحذيرات
+    tests/*:E402,E501,F811,F841,
+    # ملفات الواجهة: تجاهل تعقيد الدوال الكبيرة
+    *_management.py:C901,
+    *_generation.py:C901,
+    bulletin_generation.py:C901,E501,
+    # ملفات API: sys.path.insert ضروري للاستيراد الصحيح
+    api/*.py:E402,
+    # validators.py: re-import في __main__ block
+    validators.py:F811,
+max-complexity = 15

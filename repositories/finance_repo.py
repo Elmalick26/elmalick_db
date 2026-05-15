@@ -448,9 +448,7 @@ class FinanceRepository:
         cursor.execute("SELECT * FROM SchoolInfo LIMIT 1")
         return cursor.fetchone()
 
-    def get_late_dues_students(
-        self, year_id: int, days_overdue: int = 30, limit: int = 20
-    ) -> list[tuple]:
+    def get_late_dues_students(self, year_id: int, days_overdue: int = 30, limit: int = 20) -> list[tuple]:
         """Return (full_name, total_debt) for students with unpaid dues older than days_overdue."""
         cursor = self.conn.cursor()
         cursor.execute(
@@ -495,9 +493,7 @@ class FinanceRepository:
         """Return (class_name_fr, amount) for all registration fees."""
         cursor = self.conn.cursor()
         cursor.execute(
-            "SELECT C.class_name_fr, R.amount"
-            " FROM RegistrationFees R"
-            " JOIN Classes C ON R.class_id = C.id"
+            "SELECT C.class_name_fr, R.amount" " FROM RegistrationFees R" " JOIN Classes C ON R.class_id = C.id"
         )
         return cursor.fetchall()
 
@@ -509,8 +505,7 @@ class FinanceRepository:
         cursor.execute("DELETE FROM MonthlyFeeSchedule WHERE class_id=%s", (class_id,))
         for month_index, month_name, amount in entries:
             cursor.execute(
-                "INSERT INTO MonthlyFeeSchedule (class_id, month_index, month_name, amount)"
-                " VALUES (%s, %s, %s, %s)",
+                "INSERT INTO MonthlyFeeSchedule (class_id, month_index, month_name, amount)" " VALUES (%s, %s, %s, %s)",
                 (class_id, month_index, month_name, amount),
             )
 
@@ -656,9 +651,17 @@ class FinanceRepository:
         )
         return cursor.fetchall()
 
-    def insert_salary_slip(self, staff_id: int, month_str: str, basic_amount: float,
-                           hours_worked: float, bonuses: float, deductions: float,
-                           net_amount: float, payment_date: str) -> None:
+    def insert_salary_slip(
+        self,
+        staff_id: int,
+        month_str: str,
+        basic_amount: float,
+        hours_worked: float,
+        bonuses: float,
+        deductions: float,
+        net_amount: float,
+        payment_date: str,
+    ) -> None:
         cursor = self.conn.cursor()
         cursor.execute(
             """
@@ -674,9 +677,4 @@ class FinanceRepository:
             "SELECT first_name || ' ' || last_name, role FROM Staff WHERE id=%s",
             (staff_id,),
         )
-        return cursor.fetchone()
-
-    def get_school_info(self) -> tuple | None:
-        cursor = self.conn.cursor()
-        cursor.execute("SELECT * FROM SchoolInfo LIMIT 1")
         return cursor.fetchone()

@@ -76,11 +76,19 @@ class StaffRepository:
             ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
-                data["first_name"], data["last_name"], data["role"],
-                data["specialty"], data["phone"], data["hire_date"],
-                data["contract_type"], data["salary_base"], data["hourly_rate"],
-                data.get("photo_path", ""), data.get("email", ""),
-                data.get("address", ""), data.get("status", "Actif"),
+                data["first_name"],
+                data["last_name"],
+                data["role"],
+                data["specialty"],
+                data["phone"],
+                data["hire_date"],
+                data["contract_type"],
+                data["salary_base"],
+                data["hourly_rate"],
+                data.get("photo_path", ""),
+                data.get("email", ""),
+                data.get("address", ""),
+                data.get("status", "Actif"),
             ),
         )
 
@@ -96,11 +104,19 @@ class StaffRepository:
             WHERE id = %s
             """,
             (
-                data["first_name"], data["last_name"], data["role"],
-                data["specialty"], data["phone"], data["hire_date"],
-                data["contract_type"], data["salary_base"], data["hourly_rate"],
-                data.get("photo_path", ""), data.get("email", ""),
-                data.get("address", ""), data.get("status", "Actif"),
+                data["first_name"],
+                data["last_name"],
+                data["role"],
+                data["specialty"],
+                data["phone"],
+                data["hire_date"],
+                data["contract_type"],
+                data["salary_base"],
+                data["hourly_rate"],
+                data.get("photo_path", ""),
+                data.get("email", ""),
+                data.get("address", ""),
+                data.get("status", "Actif"),
                 staff_id,
             ),
         )
@@ -244,9 +260,7 @@ class StaffRepository:
             )
         return cursor.fetchall()
 
-    def get_staff_attendance_for_date(
-        self, staff_id: int, attendance_date: str
-    ) -> tuple | None:
+    def get_staff_attendance_for_date(self, staff_id: int, attendance_date: str) -> tuple | None:
         """Return (status, check_in_time, check_out_time, note) for one staff/date."""
         cursor = self.conn.cursor()
         cursor.execute(
@@ -283,9 +297,7 @@ class StaffRepository:
             (staff_id, attendance_date, check_in, check_out, status, note),
         )
 
-    def get_attendance_report(
-        self, start_date: str, end_date: str, staff_id: int | None = None
-    ) -> list[tuple]:
+    def get_attendance_report(self, start_date: str, end_date: str, staff_id: int | None = None) -> list[tuple]:
         """Return attendance rows for the report table."""
         cursor = self.conn.cursor()
         if staff_id:
@@ -379,13 +391,9 @@ class StaffRepository:
 
     def update_leave_status(self, leave_id: int, new_status: str) -> None:
         cursor = self.conn.cursor()
-        cursor.execute(
-            "UPDATE StaffLeaves SET status=%s WHERE id=%s", (new_status, leave_id)
-        )
+        cursor.execute("UPDATE StaffLeaves SET status=%s WHERE id=%s", (new_status, leave_id))
 
-    def get_leaves_summary_report(
-        self, date_from: str, date_to: str
-    ) -> list[tuple]:
+    def get_leaves_summary_report(self, date_from: str, date_to: str) -> list[tuple]:
         """Summary: one row per staff with approved/pending/rejected day counts."""
         cursor = self.conn.cursor()
         cursor.execute(
@@ -408,9 +416,7 @@ class StaffRepository:
         )
         return cursor.fetchall()
 
-    def get_leaves_detail_report(
-        self, date_from: str, date_to: str
-    ) -> list[tuple]:
+    def get_leaves_detail_report(self, date_from: str, date_to: str) -> list[tuple]:
         """Detail: one row per leave request within the date range."""
         cursor = self.conn.cursor()
         cursor.execute(

@@ -131,10 +131,7 @@ class TestCountConsecutiveAbsences:
 class TestGetAbsencePeriods:
 
     def test_no_absences_returns_empty(self, svc):
-        records = [
-            {"date": date(2026, 1, i), "status": "Present"}
-            for i in range(1, 6)
-        ]
+        records = [{"date": date(2026, 1, i), "status": "Present"} for i in range(1, 6)]
         assert svc.get_absence_periods(records) == []
 
     def test_single_period(self, svc):

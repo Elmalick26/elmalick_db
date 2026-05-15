@@ -63,6 +63,7 @@ def get_logs_dir():
         logs_dir.mkdir(parents=True, exist_ok=True)
         return str(logs_dir)
 
+
 def find_pg_tool(tool_name: str) -> str:
     """
     Returns the full path of a PostgreSQL tool (pg_dump, pg_restore, psql).

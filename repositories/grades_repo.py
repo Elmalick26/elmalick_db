@@ -108,9 +108,7 @@ class GradesRepository:
     # Grading sheet
     # ─────────────────────────────────────────────────────────────
 
-    def load_grading_sheet(
-        self, class_id: int, subject_id: int, assess_id: int, year_id: int
-    ) -> list[tuple]:
+    def load_grading_sheet(self, class_id: int, subject_id: int, assess_id: int, year_id: int) -> list[tuple]:
         """Return rows (student_id, full_name_fr, full_name_ar, score, observation)
         for every active student in the class, LEFT JOIN'ing existing grades.
         """

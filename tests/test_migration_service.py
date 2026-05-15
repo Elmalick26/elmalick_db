@@ -19,6 +19,7 @@ from services.migration_service import MigrationService
 # Helpers
 # ──────────────────────────────────────────────
 
+
 def _make_conn(fetchone_sequence=None):
     """Build a mock connection whose cursor().fetchone() returns items from
     *fetchone_sequence* in order (default: always returns (0,) then None)."""
@@ -49,6 +50,7 @@ def svc():
 # ──────────────────────────────────────────────
 # execute_migration
 # ──────────────────────────────────────────────
+
 
 class TestExecuteMigration:
     def test_admis_with_next_class_inserts_class_number(self, svc):

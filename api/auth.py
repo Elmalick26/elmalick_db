@@ -19,6 +19,7 @@ from jose import JWTError, jwt
 from pydantic import BaseModel
 
 import sys
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from database_setup import DatabaseManager
@@ -56,6 +57,7 @@ def _verify_user(username: str, password: str) -> Optional[dict]:
     """
     try:
         import bcrypt as _bcrypt
+
         db = DatabaseManager()
         with db.get_connection() as conn:
             row = LoginRepository(conn).get_user_for_login(username)
@@ -97,13 +99,14 @@ async def get_current_user(token: str = Depends(oauth2_scheme)) -> TokenData:
 
 def require_role(*allowed_roles: str):
     """Dependency factory — vérifie que le rôle de l'utilisateur est autorisé."""
+
     async def _checker(current: TokenData = Depends(get_current_user)) -> TokenData:
         if current.role not in allowed_roles:
             raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Rôle '{current.role}' non autorisé pour cette ressource"
+                status_code=status.HTTP_403_FORBIDDEN, detail=f"Rôle '{current.role}' non autorisé pour cette ressource"
             )
         return current
+
     return _checker
 
 
@@ -121,9 +124,4 @@ async def login(request: Request, form_data: OAuth2PasswordRequestForm = Depends
         )
     token = create_access_token({"sub": user["username"], "role": user["role"]})
     AppLogger.info("API.Auth", f"Connexion API réussie: {user['username']} ({user['role']})")
-    return Token(
-        access_token=token,
-        token_type="bearer",
-        role=user["role"],
-        username=user["username"]
-    )
+    return Token(access_token=token, token_type="bearer", role=user["role"], username=user["username"])

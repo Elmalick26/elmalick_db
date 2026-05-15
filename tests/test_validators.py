@@ -21,6 +21,7 @@ from validators import (
 # validate_student
 # ──────────────────────────────────────────────
 
+
 class TestValidateStudent:
     def _base(self):
         return {
@@ -37,48 +38,57 @@ class TestValidateStudent:
         assert validate_student(self._base()) == []
 
     def test_missing_first_name_fr(self):
-        d = self._base(); d["first_name_fr"] = ""
+        d = self._base()
+        d["first_name_fr"] = ""
         errors = validate_student(d)
         assert any("FR" in e or "Prénom" in e for e in errors)
 
     def test_missing_last_name_fr(self):
-        d = self._base(); d["last_name_fr"] = "  "
+        d = self._base()
+        d["last_name_fr"] = "  "
         errors = validate_student(d)
         assert any("Nom" in e for e in errors)
 
     def test_future_birth_date(self):
-        d = self._base(); d["birth_date"] = date.today() + timedelta(days=1)
+        d = self._base()
+        d["birth_date"] = date.today() + timedelta(days=1)
         errors = validate_student(d)
         assert any("مستقبل" in e or "avenir" in e.lower() or "futur" in e.lower() for e in errors)
 
     def test_very_old_birth_date(self):
-        d = self._base(); d["birth_date"] = date(1930, 1, 1)
+        d = self._base()
+        d["birth_date"] = date(1930, 1, 1)
         errors = validate_student(d)
         assert any("1940" in e for e in errors)
 
     def test_invalid_gender(self):
-        d = self._base(); d["gender"] = "X"
+        d = self._base()
+        d["gender"] = "X"
         errors = validate_student(d)
         assert any("جنس" in e or "gender" in e.lower() for e in errors)
 
     def test_invalid_email(self):
-        d = self._base(); d["parent_email"] = "notanemail"
+        d = self._base()
+        d["parent_email"] = "notanemail"
         errors = validate_student(d)
         assert any("@" in e or "email" in e.lower() or "بريد" in e for e in errors)
 
     def test_invalid_phone(self):
-        d = self._base(); d["parent_phone"] = "abc-def"
+        d = self._base()
+        d["parent_phone"] = "abc-def"
         errors = validate_student(d)
         assert any("هاتف" in e or "phone" in e.lower() for e in errors)
 
     def test_none_birth_date_no_error(self):
-        d = self._base(); d["birth_date"] = None
+        d = self._base()
+        d["birth_date"] = None
         assert validate_student(d) == []
 
 
 # ──────────────────────────────────────────────
 # validate_staff
 # ──────────────────────────────────────────────
+
 
 class TestValidateStaff:
     def _base(self):
@@ -95,26 +105,31 @@ class TestValidateStaff:
         assert validate_staff(self._base()) == []
 
     def test_missing_first_name(self):
-        d = self._base(); d["first_name"] = ""
+        d = self._base()
+        d["first_name"] = ""
         assert validate_staff(d) != []
 
     def test_missing_role(self):
-        d = self._base(); d["role"] = ""
+        d = self._base()
+        d["role"] = ""
         assert validate_staff(d) != []
 
     def test_negative_salary(self):
-        d = self._base(); d["salary_base"] = -500
+        d = self._base()
+        d["salary_base"] = -500
         errors = validate_staff(d)
         assert any("راتب" in e or "salaire" in e.lower() for e in errors)
 
     def test_invalid_email(self):
-        d = self._base(); d["email"] = "bademail"
+        d = self._base()
+        d["email"] = "bademail"
         assert validate_staff(d) != []
 
 
 # ──────────────────────────────────────────────
 # validate_payment
 # ──────────────────────────────────────────────
+
 
 class TestValidatePayment:
     def test_valid_payment(self):
@@ -158,6 +173,7 @@ class TestValidatePayment:
 # validate_grade
 # ──────────────────────────────────────────────
 
+
 class TestValidateGrade:
     def test_valid_grade(self):
         assert validate_grade({"score": 15.0}) == []
@@ -183,6 +199,7 @@ class TestValidateGrade:
 # validate_password_strength
 # ──────────────────────────────────────────────
 
+
 class TestValidatePasswordStrength:
     def test_strong_password(self):
         assert validate_password_strength("Str0ng!Pass") == []
@@ -206,6 +223,7 @@ class TestValidatePasswordStrength:
 # ──────────────────────────────────────────────
 # format_errors
 # ──────────────────────────────────────────────
+
 
 class TestFormatErrors:
     def test_formats_list(self):

@@ -8,7 +8,9 @@ from app_logger import AppLogger
 class MigrationService:
     """Handles year-end migration persistence independently from the UI layer."""
 
-    def execute_migration(self, conn, migration_rows: list[dict], target_year_id: int, change_active_year: bool = False) -> int:
+    def execute_migration(
+        self, conn, migration_rows: list[dict], target_year_id: int, change_active_year: bool = False
+    ) -> int:
         """Apply year-end migration decisions and return the number of processed students."""
         cursor = conn.cursor()
         processed_count = 0

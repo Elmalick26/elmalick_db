@@ -1,0 +1,56 @@
+# release.yml — بناء PyInstaller .exe ورفعه كـ GitHub Release عند tag
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"   # مثال: v1.0.0, v1.2.3-beta
+
+jobs:
+  build-windows:
+    name: Build Windows Executable
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run tests (must pass before building)
+        run: python -m pytest tests/ -q --tb=short
+
+      - name: Build with PyInstaller
+        run: |
+          python -m PyInstaller "El Malick Gest.spec" --noconfirm --clean --distpath dist_release
+
+      - name: Create release archive
+        run: |
+          Compress-Archive -Path "dist_release\El Malick Gest" -DestinationPath "ElMalickGest-${{ github.ref_name }}-windows.zip"
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "El Malick Gest ${{ github.ref_name }}"
+          body: |
+            ## التغييرات في هذا الإصدار
+            راجع [UPGRADE_ROADMAP.md](UPGRADE_ROADMAP.md) لتفاصيل خطة التطوير.
+
+            ## التثبيت
+            1. نزّل `ElMalickGest-${{ github.ref_name }}-windows.zip`
+            2. استخرج المجلد
+            3. شغّل `El Malick Gest.exe`
+          files: ElMalickGest-${{ github.ref_name }}-windows.zip
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-beta') || contains(github.ref_name, '-rc') }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

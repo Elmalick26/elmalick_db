@@ -60,12 +60,14 @@ class BackupService:
             for f in backup_dir.glob(pattern):
                 try:
                     stat = f.stat()
-                    results.append({
-                        "path": str(f),
-                        "name": f.name,
-                        "size_mb": round(stat.st_size / (1024 * 1024), 2),
-                        "created_at": datetime.fromtimestamp(stat.st_mtime),
-                    })
+                    results.append(
+                        {
+                            "path": str(f),
+                            "name": f.name,
+                            "size_mb": round(stat.st_size / (1024 * 1024), 2),
+                            "created_at": datetime.fromtimestamp(stat.st_mtime),
+                        }
+                    )
                 except Exception:
                     continue
         results.sort(key=lambda x: x["created_at"], reverse=True)
@@ -79,6 +81,7 @@ class BackupService:
         Returns the number of files deleted.
         """
         from datetime import timedelta
+
         backup_dir = self._system.backup_dir
         cutoff = datetime.now() - timedelta(days=keep_days)
         deleted = 0

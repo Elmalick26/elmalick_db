@@ -1,0 +1,54 @@
+repos:
+  # ── تنسيق الكود تلقائياً ──────────────────────────────────────────
+  - repo: https://github.com/psf/black
+    rev: 24.1.1
+    hooks:
+      - id: black
+        name: black (code formatter)
+
+  # ── ترتيب imports ────────────────────────────────────────────────
+  - repo: https://github.com/PyCQA/isort
+    rev: 5.13.2
+    hooks:
+      - id: isort
+        name: isort (import sorter)
+        args: ["--profile", "black"]
+
+  # ── فحص جودة الكود ──────────────────────────────────────────────
+  - repo: https://github.com/PyCQA/flake8
+    rev: 7.0.0
+    hooks:
+      - id: flake8
+        name: flake8 (linter)
+        additional_dependencies: []
+
+  # ── فحص الأنواع (services + repositories فقط) ───────────────────
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.8.0
+    hooks:
+      - id: mypy
+        name: mypy (type checker)
+        files: ^(services|repositories)/
+        args: ["--ignore-missing-imports", "--no-strict-optional"]
+        additional_dependencies:
+          - types-psycopg2
+
+  # ── فحوصات عامة ────────────────────────────────────────────────
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.5.0
+    hooks:
+      - id: trailing-whitespace
+        name: Remove trailing whitespace
+      - id: end-of-file-fixer
+        name: Ensure files end with newline
+      - id: check-yaml
+        name: Validate YAML files
+      - id: check-toml
+        name: Validate TOML files
+      - id: check-merge-conflict
+        name: Check for merge conflicts
+      - id: check-added-large-files
+        name: Prevent large file commits
+        args: ["--maxkb=1000"]
+      - id: debug-statements
+        name: Check for debug statements (pdb/breakpoint)

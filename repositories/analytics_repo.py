@@ -1,4 +1,5 @@
 """AnalyticsRepository — طبقة الوصول لبيانات التقارير التحليلية."""
+
 from __future__ import annotations
 from datetime import datetime
 
@@ -12,15 +13,11 @@ class AnalyticsRepository:
     def get_active_year_context(self) -> tuple:
         """Return (year_id, year_label) for the current active academic year."""
         cursor = self.conn.cursor()
-        cursor.execute(
-            "SELECT id, year_label FROM AcademicYears WHERE is_active=1 ORDER BY id DESC LIMIT 1"
-        )
+        cursor.execute("SELECT id, year_label FROM AcademicYears WHERE is_active=1 ORDER BY id DESC LIMIT 1")
         row = cursor.fetchone()
         if row:
             return row[0], row[1]
-        cursor.execute(
-            "SELECT id, year_label FROM AcademicYears ORDER BY id DESC LIMIT 1"
-        )
+        cursor.execute("SELECT id, year_label FROM AcademicYears ORDER BY id DESC LIMIT 1")
         row = cursor.fetchone()
         if row:
             return row[0], row[1]
@@ -31,9 +28,7 @@ class AnalyticsRepository:
     def get_student_columns(self) -> set:
         """Return the set of column names (lowercase) for the Students table."""
         cursor = self.conn.cursor()
-        cursor.execute(
-            "SELECT column_name FROM information_schema.columns WHERE table_name = 'students'"
-        )
+        cursor.execute("SELECT column_name FROM information_schema.columns WHERE table_name = 'students'")
         return {row[0].lower() for row in cursor.fetchall()}
 
     # ── Class helpers ─────────────────────────────────────────────────────────
@@ -171,18 +166,14 @@ class AnalyticsRepository:
         """Return aggregate income for the given period."""
         f, params = self._build_period_filter(period, "transaction_date")
         cursor = self.conn.cursor()
-        cursor.execute(
-            f"SELECT COALESCE(SUM(amount_paid), 0) FROM Payments WHERE {f}", params
-        )
+        cursor.execute(f"SELECT COALESCE(SUM(amount_paid), 0) FROM Payments WHERE {f}", params)
         return float(cursor.fetchone()[0] or 0)
 
     def get_total_expense_by_period(self, period: str) -> float:
         """Return aggregate expenses for the given period."""
         f, params = self._build_period_filter(period, "expense_date")
         cursor = self.conn.cursor()
-        cursor.execute(
-            f"SELECT COALESCE(SUM(amount), 0) FROM Expenses WHERE {f}", params
-        )
+        cursor.execute(f"SELECT COALESCE(SUM(amount), 0) FROM Expenses WHERE {f}", params)
         return float(cursor.fetchone()[0] or 0)
 
     # ── Comprehensive stats ───────────────────────────────────────────────────
@@ -209,20 +200,17 @@ class AnalyticsRepository:
         total_classes = int(cursor.fetchone()[0] or 0)
 
         cursor.execute(
-            "SELECT COUNT(*) FROM StudentAttendance WHERE status='Présent'"
-            " AND (year_id=%s OR %s IS NULL)",
+            "SELECT COUNT(*) FROM StudentAttendance WHERE status='Présent'" " AND (year_id=%s OR %s IS NULL)",
             (year_id, year_id),
         )
         presents = int(cursor.fetchone()[0] or 0)
         cursor.execute(
-            "SELECT COUNT(*) FROM StudentAttendance WHERE status='Absent'"
-            " AND (year_id=%s OR %s IS NULL)",
+            "SELECT COUNT(*) FROM StudentAttendance WHERE status='Absent'" " AND (year_id=%s OR %s IS NULL)",
             (year_id, year_id),
         )
         absents = int(cursor.fetchone()[0] or 0)
         cursor.execute(
-            "SELECT COUNT(*) FROM StudentAttendance WHERE status='Retard'"
-            " AND (year_id=%s OR %s IS NULL)",
+            "SELECT COUNT(*) FROM StudentAttendance WHERE status='Retard'" " AND (year_id=%s OR %s IS NULL)",
             (year_id, year_id),
         )
         lates = int(cursor.fetchone()[0] or 0)
@@ -336,7 +324,9 @@ class AnalyticsRepository:
         """
         params_paid = [year_id]
         if class_id:
-            sql_paid += " AND P.student_id IN (SELECT student_id FROM StudentClassNumbers WHERE year_id=%s AND class_id=%s)"
+            sql_paid += (
+                " AND P.student_id IN (SELECT student_id FROM StudentClassNumbers WHERE year_id=%s AND class_id=%s)"
+            )
             params_paid.extend([year_id, class_id])
         cursor.execute(sql_paid, params_paid)
         total_paid = float(cursor.fetchone()[0] or 0)

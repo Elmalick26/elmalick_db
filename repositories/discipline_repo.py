@@ -3,6 +3,7 @@
 Covers: StudentDiscipline CRUD, period resolution, class context,
         student lists, history with dynamic filters.
 """
+
 from __future__ import annotations
 
 
@@ -55,9 +56,7 @@ class DisciplineRepository:
 
     # ── Students ───────────────────────────────────────────
 
-    def list_active_students_fullname(
-        self, class_id: int, year_id: int
-    ) -> list:
+    def list_active_students_fullname(self, class_id: int, year_id: int) -> list:
         """Return (id, full_name_fr) for active students in class/year."""
         cursor = self.conn.cursor()
         cursor.execute(
@@ -92,9 +91,7 @@ class DisciplineRepository:
         )
         return cursor.fetchall()
 
-    def resolve_period_id_for_class_date(
-        self, class_id: int, date_str: str, year_id: int
-    ) -> int | None:
+    def resolve_period_id_for_class_date(self, class_id: int, date_str: str, year_id: int) -> int | None:
         """Return the period id whose date range contains date_str, or None."""
         cycle_id = self.get_cycle_id_for_class(class_id)
         if not cycle_id:
@@ -136,8 +133,7 @@ class DisciplineRepository:
                  points_deducted, observation, year_id, period_id)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
             """,
-            (student_id, date, incident_type, sanction, points, observation,
-             year_id, period_id),
+            (student_id, date, incident_type, sanction, points, observation, year_id, period_id),
         )
 
     def update_incident(
@@ -162,9 +158,7 @@ class DisciplineRepository:
 
     def delete_incident(self, incident_id: int) -> None:
         cursor = self.conn.cursor()
-        cursor.execute(
-            "DELETE FROM StudentDiscipline WHERE id=%s", (incident_id,)
-        )
+        cursor.execute("DELETE FROM StudentDiscipline WHERE id=%s", (incident_id,))
 
     def get_incident_details(self, incident_id: int) -> dict | None:
         """Return a detail dict for the incident, or None."""
@@ -278,9 +272,7 @@ class DisciplineRepository:
             query += " AND SCN.class_id = %s"
             params.append(class_id)
         if search:
-            query += (
-                " AND (S.first_name_fr ILIKE %s OR S.last_name_fr ILIKE %s)"
-            )
+            query += " AND (S.first_name_fr ILIKE %s OR S.last_name_fr ILIKE %s)"
             params.extend([f"%{search}%", f"%{search}%"])
         query += " ORDER BY D.incident_date DESC"
         cursor = self.conn.cursor()

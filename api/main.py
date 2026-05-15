@@ -12,7 +12,9 @@ api/main.py — نقطة دخول REST API لـ El Malick Gest
 
 from __future__ import annotations
 
-import os, sys
+import os
+import sys
+
 # ضمان أن الاستيرادات تجد وحدات المشروع
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
@@ -57,9 +59,9 @@ app.add_middleware(
 )
 
 # ──────────────────────────────────────────── Routers
-app.include_router(auth_router,     prefix="/api")
+app.include_router(auth_router, prefix="/api")
 app.include_router(students_router, prefix="/api")
-app.include_router(parent_router,   prefix="/api")
+app.include_router(parent_router, prefix="/api")
 
 # ──────────────────────────────────────────── Static files (Parent Portal)
 _static_dir = os.path.join(os.path.dirname(__file__), "static")
@@ -81,15 +83,13 @@ async def health():
     """Vérification rapide que l'API fonctionne."""
     try:
         from database_setup import DatabaseManager
+
         db = DatabaseManager()
         with db.get_connection() as conn:
             conn.cursor().execute("SELECT 1")
         return {"status": "ok", "database": "connected"}
     except Exception as e:
-        return JSONResponse(
-            status_code=503,
-            content={"status": "error", "database": str(e)}
-        )
+        return JSONResponse(status_code=503, content={"status": "error", "database": str(e)})
 
 
 @app.get("/api", tags=["System"], include_in_schema=False)

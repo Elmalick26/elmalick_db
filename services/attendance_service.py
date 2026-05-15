@@ -8,8 +8,8 @@ class AttendanceService:
     """Pure business rules for attendance analysis and statistics."""
 
     # ── Constants ─────────────────────────────────────────────────────
-    ALERT_THRESHOLD_PCT = 20.0      # % غياب يُطلق تنبيهاً
-    MAX_ABSENCES_FOR_WARNING = 3    # أيام غياب متتالية قبل التحذير
+    ALERT_THRESHOLD_PCT = 20.0  # % غياب يُطلق تنبيهاً
+    MAX_ABSENCES_FOR_WARNING = 3  # أيام غياب متتالية قبل التحذير
 
     # ── Core Stats ────────────────────────────────────────────────────
     def calculate_stats(self, records: list[dict]) -> dict:
@@ -20,8 +20,12 @@ class AttendanceService:
         total = len(records)
         if total == 0:
             return {
-                "total": 0, "present": 0, "absent": 0,
-                "late": 0, "justified": 0, "absence_rate_pct": 0.0,
+                "total": 0,
+                "present": 0,
+                "absent": 0,
+                "late": 0,
+                "justified": 0,
+                "absence_rate_pct": 0.0,
             }
 
         present = sum(1 for r in records if r.get("status") == "Present")
@@ -90,21 +94,25 @@ class AttendanceService:
                 current_count += 1
             else:
                 if current_start is not None:
-                    periods.append({
-                        "start": current_start,
-                        "end": rec_date,
-                        "days": current_count,
-                    })
+                    periods.append(
+                        {
+                            "start": current_start,
+                            "end": rec_date,
+                            "days": current_count,
+                        }
+                    )
                     current_start = None
                     current_count = 0
 
         # Close any open period
         if current_start is not None:
-            periods.append({
-                "start": current_start,
-                "end": current_start,
-                "days": current_count,
-            })
+            periods.append(
+                {
+                    "start": current_start,
+                    "end": current_start,
+                    "days": current_count,
+                }
+            )
 
         return periods
 

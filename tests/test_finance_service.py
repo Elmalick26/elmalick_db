@@ -19,6 +19,7 @@ def svc():
 # calculate_debt
 # ──────────────────────────────────────────────
 
+
 class TestCalculateDebt:
     def test_no_payment(self, svc):
         assert svc.calculate_debt(10_000, 0) == 10_000.0
@@ -40,12 +41,13 @@ class TestCalculateDebt:
 # calculate_total_debt
 # ──────────────────────────────────────────────
 
+
 class TestCalculateTotalDebt:
     def test_multiple_dues(self, svc):
         dues = [
             {"net_amount": 10_000, "total_paid": 5_000},
-            {"net_amount": 8_000,  "total_paid": 8_000},
-            {"net_amount": 6_000,  "total_paid": 0},
+            {"net_amount": 8_000, "total_paid": 8_000},
+            {"net_amount": 6_000, "total_paid": 0},
         ]
         assert svc.calculate_total_debt(dues) == 11_000.0
 
@@ -60,6 +62,7 @@ class TestCalculateTotalDebt:
 # ──────────────────────────────────────────────
 # get_payment_status
 # ──────────────────────────────────────────────
+
 
 class TestGetPaymentStatus:
     def test_fully_paid(self, svc):
@@ -91,6 +94,7 @@ class TestGetPaymentStatus:
 # is_overdue
 # ──────────────────────────────────────────────
 
+
 class TestIsOverdue:
     def test_overdue_unpaid(self, svc):
         assert svc.is_overdue(10_000, 0, date(2024, 1, 1), date(2026, 5, 15)) is True
@@ -105,6 +109,7 @@ class TestIsOverdue:
 # ──────────────────────────────────────────────
 # calculate_collection_rate
 # ──────────────────────────────────────────────
+
 
 class TestCalculateCollectionRate:
     def test_full_collection(self, svc):
@@ -127,6 +132,7 @@ class TestCalculateCollectionRate:
 # get_collection_status
 # ──────────────────────────────────────────────
 
+
 class TestGetCollectionStatus:
     def test_excellent(self, svc):
         assert svc.get_collection_status(95) == "Excellent"
@@ -148,14 +154,15 @@ class TestGetCollectionStatus:
 # summarize_dues
 # ──────────────────────────────────────────────
 
+
 class TestSummarizeDues:
     def test_mixed_dues(self, svc):
         today = date(2026, 5, 15)
         dues = [
             {"net_amount": 10_000, "total_paid": 10_000, "due_date": date(2026, 1, 1)},  # Payé
-            {"net_amount": 8_000,  "total_paid": 3_000,  "due_date": date(2026, 1, 1)},  # Partiel
-            {"net_amount": 6_000,  "total_paid": 0,      "due_date": date(2024, 1, 1)},  # En Retard
-            {"net_amount": 4_000,  "total_paid": 0,      "due_date": date(2030, 1, 1)},  # À Venir
+            {"net_amount": 8_000, "total_paid": 3_000, "due_date": date(2026, 1, 1)},  # Partiel
+            {"net_amount": 6_000, "total_paid": 0, "due_date": date(2024, 1, 1)},  # En Retard
+            {"net_amount": 4_000, "total_paid": 0, "due_date": date(2030, 1, 1)},  # À Venir
         ]
         summary = svc.summarize_dues(dues)
         assert summary["total_due"] == 28_000.0
@@ -182,6 +189,7 @@ class TestSummarizeDues:
 # format_amount
 # ──────────────────────────────────────────────
 
+
 class TestFormatAmount:
     def test_basic(self, svc):
         assert svc.format_amount(10_000) == "10,000 FCFA"
@@ -199,6 +207,7 @@ class TestFormatAmount:
 # ──────────────────────────────────────────────
 # validate_payment_amount
 # ──────────────────────────────────────────────
+
 
 class TestValidatePaymentAmount:
     def test_valid_amount(self, svc):

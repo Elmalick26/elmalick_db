@@ -34,7 +34,9 @@ class GradeService:
         threshold = self.get_promotion_threshold(cycle_name)
         return "Admis" if float(annual_average) >= threshold else "Redouble"
 
-    def get_next_class(self, class_map: dict, current_class_id: int, cycle_id: int, decision: str) -> tuple[int | None, str]:
+    def get_next_class(
+        self, class_map: dict, current_class_id: int, cycle_id: int, decision: str
+    ) -> tuple[int | None, str]:
         current_class = class_map.get(current_class_id, {})
         current_name = current_class.get("name", "?")
 

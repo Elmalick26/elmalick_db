@@ -8,6 +8,7 @@ tests/test_analytics_dashboard.py
   - GradesBarChart / AttendanceLineChart / FinancePieChart: update_data (empty + data)
   - AnalyticsDashboardWindow: _on_grades, _on_attendance, _on_finance
 """
+
 from __future__ import annotations
 
 import sys
@@ -20,6 +21,7 @@ import pytest
 # ── Stubs للمكتبات الثقيلة ──────────────────────────────────
 # نُنشئ stubs قبل أي import حقيقي
 
+
 def _make_qt_stubs():
     """إنشاء stubs لـ PyQt6 و Matplotlib لتجنب حاجة الشاشة."""
     # Matplotlib backend stub
@@ -27,8 +29,7 @@ def _make_qt_stubs():
     mpl_stub.use = lambda *a, **kw: None
     sys.modules.setdefault("matplotlib", mpl_stub)
 
-    for sub in ["matplotlib.pyplot", "matplotlib.figure",
-                "matplotlib.backends", "matplotlib.backends.backend_qt5agg"]:
+    for sub in ["matplotlib.pyplot", "matplotlib.figure", "matplotlib.backends", "matplotlib.backends.backend_qt5agg"]:
         m = types.ModuleType(sub)
         sys.modules.setdefault(sub, m)
 
@@ -44,52 +45,78 @@ def _make_qt_stubs():
 
     # PyQt6 stubs
     for mod_name in [
-        "PyQt6", "PyQt6.QtWidgets", "PyQt6.QtCore", "PyQt6.QtGui",
+        "PyQt6",
+        "PyQt6.QtWidgets",
+        "PyQt6.QtCore",
+        "PyQt6.QtGui",
     ]:
         if mod_name not in sys.modules:
             sys.modules[mod_name] = types.ModuleType(mod_name)
 
     def _make_class(name, *bases):
-        return type(name, (object,), {
-            "__init__": lambda self, *a, **kw: None,
-            "setStyleSheet": lambda self, *a: None,
-            "addWidget": lambda self, *a: None,
-            "addLayout": lambda self, *a: None,
-            "addStretch": lambda self, *a: None,
-            "setContentsMargins": lambda self, *a: None,
-            "setSpacing": lambda self, *a: None,
-            "blockSignals": lambda self, *a: None,
-            "clear": lambda self, *a: None,
-            "addItem": lambda self, *a: None,
-            "currentData": lambda self: None,
-            "currentIndex": lambda self: 0,
-            "setCurrentIndex": lambda self, *a: None,
-            "setMinimumWidth": lambda self, *a: None,
-            "setMinimumHeight": lambda self, *a: None,
-            "setSizePolicy": lambda self, *a: None,
-            "setFrameShape": lambda self, *a: None,
-            "setWordWrap": lambda self, *a: None,
-            "setFont": lambda self, *a: None,
-            "setText": lambda self, t: None,
-            "setToolTip": lambda self, *a: None,
-            "setCheckable": lambda self, *a: None,
-            "setCursor": lambda self, *a: None,
-            "setWidgetResizable": lambda self, *a: None,
-            "setWidget": lambda self, *a: None,
-            "clicked": MagicMock(),
-            "connect": lambda self, *a: None,
-            "currentIndexChanged": MagicMock(),
-        })
+        return type(
+            name,
+            (object,),
+            {
+                "__init__": lambda self, *a, **kw: None,
+                "setStyleSheet": lambda self, *a: None,
+                "addWidget": lambda self, *a: None,
+                "addLayout": lambda self, *a: None,
+                "addStretch": lambda self, *a: None,
+                "setContentsMargins": lambda self, *a: None,
+                "setSpacing": lambda self, *a: None,
+                "blockSignals": lambda self, *a: None,
+                "clear": lambda self, *a: None,
+                "addItem": lambda self, *a: None,
+                "currentData": lambda self: None,
+                "currentIndex": lambda self: 0,
+                "setCurrentIndex": lambda self, *a: None,
+                "setMinimumWidth": lambda self, *a: None,
+                "setMinimumHeight": lambda self, *a: None,
+                "setSizePolicy": lambda self, *a: None,
+                "setFrameShape": lambda self, *a: None,
+                "setWordWrap": lambda self, *a: None,
+                "setFont": lambda self, *a: None,
+                "setText": lambda self, t: None,
+                "setToolTip": lambda self, *a: None,
+                "setCheckable": lambda self, *a: None,
+                "setCursor": lambda self, *a: None,
+                "setWidgetResizable": lambda self, *a: None,
+                "setWidget": lambda self, *a: None,
+                "clicked": MagicMock(),
+                "connect": lambda self, *a: None,
+                "currentIndexChanged": MagicMock(),
+            },
+        )
 
     widgets = sys.modules["PyQt6.QtWidgets"]
     for cls_name in [
-        "QMainWindow", "QWidget", "QVBoxLayout", "QHBoxLayout",
-        "QLabel", "QComboBox", "QPushButton", "QTabWidget",
-        "QScrollArea", "QSizePolicy", "QFrame", "QGridLayout",
-        "QSplitter", "QTableWidget", "QTableWidgetItem",
-        "QHeaderView", "QDialog", "QFormLayout", "QTimeEdit",
-        "QLineEdit", "QDialogButtonBox", "QMessageBox",
-        "QToolButton", "QMenu", "QScrollArea", "QApplication",
+        "QMainWindow",
+        "QWidget",
+        "QVBoxLayout",
+        "QHBoxLayout",
+        "QLabel",
+        "QComboBox",
+        "QPushButton",
+        "QTabWidget",
+        "QScrollArea",
+        "QSizePolicy",
+        "QFrame",
+        "QGridLayout",
+        "QSplitter",
+        "QTableWidget",
+        "QTableWidgetItem",
+        "QHeaderView",
+        "QDialog",
+        "QFormLayout",
+        "QTimeEdit",
+        "QLineEdit",
+        "QDialogButtonBox",
+        "QMessageBox",
+        "QToolButton",
+        "QMenu",
+        "QScrollArea",
+        "QApplication",
     ]:
         setattr(widgets, cls_name, _make_class(cls_name))
 
@@ -102,12 +129,16 @@ def _make_qt_stubs():
 
     core = sys.modules["PyQt6.QtCore"]
     core.Qt = MagicMock()
-    core.QThread = type("QThread", (object,), {
-        "__init__": lambda self, *a, **kw: None,
-        "start": lambda self: None,
-        "quit": lambda self: None,
-        "isRunning": lambda self: False,
-    })
+    core.QThread = type(
+        "QThread",
+        (object,),
+        {
+            "__init__": lambda self, *a, **kw: None,
+            "start": lambda self: None,
+            "quit": lambda self: None,
+            "isRunning": lambda self: False,
+        },
+    )
     core.pyqtSignal = lambda *a: MagicMock()
     core.QSize = MagicMock()
     core.QTime = MagicMock()
@@ -137,6 +168,7 @@ sys.modules["ui_styles"] = ui_stub
 
 svc_stub = types.ModuleType("services.grade_service")
 
+
 class _FakeGradeService:
     def calculate_period_average(self, pairs):
         if not pairs:
@@ -156,6 +188,7 @@ class _FakeGradeService:
         if avg >= 10:
             return "Passable"
         return "Insuffisant"
+
 
 svc_stub.GradeService = _FakeGradeService
 # Note: we don't override sys.modules["services.grade_service"] here to avoid
@@ -212,8 +245,8 @@ class TestAnalyticsWorkerGrades:
         args = w.grades_ready.emit.call_args[0]
         names, averages, coefficients = args
         assert names == ["Maths", "Science"]
-        assert abs(averages[0] - 16.0) < 0.01   # 16/20*20
-        assert abs(averages[1] - 16.0) < 0.01   # 8/10*20
+        assert abs(averages[0] - 16.0) < 0.01  # 16/20*20
+        assert abs(averages[1] - 16.0) < 0.01  # 8/10*20
         assert coefficients == [3.0, 2.0]
 
     def test_grades_none_score_treated_as_zero(self):
@@ -373,6 +406,7 @@ class TestGradesBarChart:
         c.ax.barh.return_value = [bar_mock]
 
         import sys
+
         plt_mod = sys.modules["matplotlib.pyplot"]
         plt_mod.cm.RdYlGn.return_value = ["#aaa"]
 
@@ -416,9 +450,7 @@ class TestAttendanceLineChart:
     def test_threshold_line_drawn_at_80(self):
         c = self._chart()
         c.update_data({"2026-01": 75.0})
-        c.ax.axhline.assert_called_once_with(80, linestyle="--",
-                                              color="#ef5350", linewidth=1,
-                                              label="Seuil 80%")
+        c.ax.axhline.assert_called_once_with(80, linestyle="--", color="#ef5350", linewidth=1, label="Seuil 80%")
 
     def test_fill_between_called(self):
         c = self._chart()
@@ -447,19 +479,19 @@ class TestFinancePieChart:
         """Si paid > due, remaining = 0."""
         c = self._chart()
         mock_wedge = MagicMock()
-        mock_text  = MagicMock()
+        mock_text = MagicMock()
         mock_text.set_fontsize = lambda *a: None
-        mock_text.set_color    = lambda *a: None
+        mock_text.set_color = lambda *a: None
         c.ax.pie.return_value = ([mock_wedge], [mock_text], [mock_text])
         c.update_data(120000.0, 100000.0)
         sizes = c.ax.pie.call_args[0][0]
-        assert sizes[1] == 0   # remaining clampé à 0
+        assert sizes[1] == 0  # remaining clampé à 0
 
     def test_normal_finance(self):
         c = self._chart()
         mock_text = MagicMock()
         mock_text.set_fontsize = lambda *a: None
-        mock_text.set_color    = lambda *a: None
+        mock_text.set_color = lambda *a: None
         c.ax.pie.return_value = ([], [], [mock_text])
         c.update_data(75000.0, 100000.0)
         sizes = c.ax.pie.call_args[0][0]
@@ -475,20 +507,18 @@ class TestAnalyticsDashboardHandlers:
         w = AnalyticsDashboardWindow.__new__(AnalyticsDashboardWindow)
         w._svc = _FakeGradeService()
         w.grades_chart = MagicMock()
-        w.att_chart    = MagicMock()
-        w.fin_chart    = MagicMock()
-        w.kpi_avg      = MagicMock()
-        w.kpi_att      = MagicMock()
-        w.kpi_paid     = MagicMock()
-        w.kpi_risk     = MagicMock()
+        w.att_chart = MagicMock()
+        w.fin_chart = MagicMock()
+        w.kpi_avg = MagicMock()
+        w.kpi_att = MagicMock()
+        w.kpi_paid = MagicMock()
+        w.kpi_risk = MagicMock()
         return w
 
     def test_on_grades_updates_chart(self):
         w = self._window()
         w._on_grades(["Maths", "Sci"], [14.0, 8.0], [3.0, 2.0])
-        w.grades_chart.update_data.assert_called_once_with(
-            ["Maths", "Sci"], [14.0, 8.0], [3.0, 2.0]
-        )
+        w.grades_chart.update_data.assert_called_once_with(["Maths", "Sci"], [14.0, 8.0], [3.0, 2.0])
 
     def test_on_grades_risk_count(self):
         w = self._window()
@@ -545,17 +575,17 @@ class TestAnalyticsWorkerRun:
         w.class_id = None
         w.error_signal = MagicMock()
         w.error_signal.emit = MagicMock()
-        w._load_grades     = MagicMock()
+        w._load_grades = MagicMock()
         w._load_attendance = MagicMock()
-        w._load_finance    = MagicMock()
+        w._load_finance = MagicMock()
         return w
 
     def _mock_db_ctx(self):
-        cur  = MagicMock()
+        cur = MagicMock()
         conn = MagicMock()
         conn.cursor.return_value = cur
         conn.__enter__ = lambda self: self
-        conn.__exit__  = MagicMock(return_value=False)
+        conn.__exit__ = MagicMock(return_value=False)
         db = MagicMock()
         db.get_connection.return_value = conn
         return db, conn, cur
@@ -598,19 +628,19 @@ class TestAnalyticsWorkerRun:
 class TestAnalyticsDashboardFilters:
     def _window(self):
         w = AnalyticsDashboardWindow.__new__(AnalyticsDashboardWindow)
-        w._year_id  = None
+        w._year_id = None
         w._class_id = None
-        w._worker   = None
-        w._svc      = _FakeGradeService()
-        w.cmb_year  = MagicMock()
+        w._worker = None
+        w._svc = _FakeGradeService()
+        w.cmb_year = MagicMock()
         w.cmb_year.currentData.return_value = 1
         w.cmb_class = MagicMock()
         w.cmb_class.currentData.return_value = None
         w.grades_chart = MagicMock()
-        w.att_chart    = MagicMock()
-        w.fin_chart    = MagicMock()
-        w.kpi_avg  = MagicMock()
-        w.kpi_att  = MagicMock()
+        w.att_chart = MagicMock()
+        w.fin_chart = MagicMock()
+        w.kpi_avg = MagicMock()
+        w.kpi_att = MagicMock()
         w.kpi_paid = MagicMock()
         w.kpi_risk = MagicMock()
         return w
@@ -621,29 +651,27 @@ class TestAnalyticsDashboardFilters:
         conn = MagicMock()
         conn.cursor.return_value = cur
         conn.__enter__ = lambda self: self
-        conn.__exit__  = MagicMock(return_value=False)
+        conn.__exit__ = MagicMock(return_value=False)
         db = MagicMock()
         db.get_connection.return_value = conn
         return db, cur
 
     def test_load_filters_populates_year_combo(self):
         w = self._window()
-        years   = [(1, "2025-2026", True), (2, "2024-2025", False)]
+        years = [(1, "2025-2026", True), (2, "2024-2025", False)]
         classes = [(10, "6ème A")]
         db, cur = self._mock_db(years, classes)
-        with patch("analytics_dashboard.DatabaseManager", return_value=db), \
-             patch.object(w, "_load_classes"):
+        with patch("analytics_dashboard.DatabaseManager", return_value=db), patch.object(w, "_load_classes"):
             w._load_filters()
         # addItem appelé pour chaque année
         assert w.cmb_year.addItem.call_count == len(years)
 
     def test_load_filters_sets_active_year(self):
         w = self._window()
-        years   = [(1, "2025-2026", False), (2, "2024-2025", True)]
+        years = [(1, "2025-2026", False), (2, "2024-2025", True)]
         classes = []
         db, cur = self._mock_db(years, classes)
-        with patch("analytics_dashboard.DatabaseManager", return_value=db), \
-             patch.object(w, "_load_classes"):
+        with patch("analytics_dashboard.DatabaseManager", return_value=db), patch.object(w, "_load_classes"):
             w._load_filters()
         # L'année active est l'index 1 → setCurrentIndex(1)
         w.cmb_year.setCurrentIndex.assert_called_with(1)
@@ -652,7 +680,7 @@ class TestAnalyticsDashboardFilters:
         w = self._window()
         with patch("analytics_dashboard.DatabaseManager") as MockDB:
             MockDB.return_value.get_connection.side_effect = Exception("conn fail")
-            w._load_filters()   # ne doit pas lever d'exception
+            w._load_filters()  # ne doit pas lever d'exception
 
     def test_load_classes_populates_combo(self):
         w = self._window()
@@ -668,18 +696,18 @@ class TestAnalyticsDashboardFilters:
         w = self._window()
         conn = MagicMock()
         conn.cursor.side_effect = Exception("cursor fail")
-        w._load_classes(conn, 1)   # ne doit pas lever d'exception
+        w._load_classes(conn, 1)  # ne doit pas lever d'exception
 
     def test_refresh_no_year_skips_worker(self):
         w = self._window()
-        w.cmb_year.currentData.return_value  = None
+        w.cmb_year.currentData.return_value = None
         w.cmb_class.currentData.return_value = None
         w._refresh()
         assert w._worker is None
 
     def test_refresh_starts_worker(self):
         w = self._window()
-        w.cmb_year.currentData.return_value  = 1
+        w.cmb_year.currentData.return_value = 1
         w.cmb_class.currentData.return_value = None
         with patch("analytics_dashboard.AnalyticsWorker") as MockWorker:
             mock_instance = MagicMock()
@@ -692,7 +720,7 @@ class TestAnalyticsDashboardFilters:
         old_worker = MagicMock()
         old_worker.isRunning.return_value = True
         w._worker = old_worker
-        w.cmb_year.currentData.return_value  = 1
+        w.cmb_year.currentData.return_value = 1
         w.cmb_class.currentData.return_value = None
         with patch("analytics_dashboard.AnalyticsWorker") as MockWorker:
             MockWorker.return_value = MagicMock()
@@ -702,20 +730,21 @@ class TestAnalyticsDashboardFilters:
     def test_on_year_changed_calls_refresh(self):
         w = self._window()
         w.cmb_year.currentData.return_value = 1
-        with patch("analytics_dashboard.DatabaseManager") as MockDB, \
-             patch.object(w, "_load_classes"), \
-             patch.object(w, "_refresh") as mock_refresh:
+        with (
+            patch("analytics_dashboard.DatabaseManager") as MockDB,
+            patch.object(w, "_load_classes"),
+            patch.object(w, "_refresh") as mock_refresh,
+        ):
             conn = MagicMock()
             conn.__enter__ = lambda self: self
-            conn.__exit__  = MagicMock(return_value=False)
+            conn.__exit__ = MagicMock(return_value=False)
             MockDB.return_value.get_connection.return_value = conn
             w._on_year_changed()
         mock_refresh.assert_called_once()
 
     def test_refresh_data_calls_both(self):
         w = self._window()
-        with patch.object(w, "_load_filters") as mock_lf, \
-             patch.object(w, "_refresh") as mock_rf:
+        with patch.object(w, "_load_filters") as mock_lf, patch.object(w, "_refresh") as mock_rf:
             w.refresh_data()
         mock_lf.assert_called_once()
         mock_rf.assert_called_once()

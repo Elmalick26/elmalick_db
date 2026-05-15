@@ -16,9 +16,7 @@ class YearEndRepository:
 
     def list_classes_with_order(self) -> list:
         cursor = self.conn.cursor()
-        cursor.execute(
-            "SELECT id, class_name_fr, cycle_id, sort_order FROM Classes ORDER BY sort_order"
-        )
+        cursor.execute("SELECT id, class_name_fr, cycle_id, sort_order FROM Classes ORDER BY sort_order")
         return cursor.fetchall()
 
     def list_classes_basic(self) -> list:
@@ -70,13 +68,10 @@ class YearEndRepository:
 
     def list_subjects_with_coefficient(self, cycle_id: int) -> list:
         cursor = self.conn.cursor()
-        cursor.execute(
-            "SELECT id, coefficient FROM Subjects WHERE cycle_id=%s", (cycle_id,)
-        )
+        cursor.execute("SELECT id, coefficient FROM Subjects WHERE cycle_id=%s", (cycle_id,))
         return cursor.fetchall()
 
-    def get_grade_average(self, student_id: int, subject_id: int,
-                          period_id: int, year_id: int) -> float | None:
+    def get_grade_average(self, student_id: int, subject_id: int, period_id: int, year_id: int) -> float | None:
         cursor = self.conn.cursor()
         cursor.execute(
             """

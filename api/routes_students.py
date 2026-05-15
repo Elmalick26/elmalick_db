@@ -12,7 +12,9 @@ GET  /api/students/{id}/dues       → مستحقات الطالب
 
 from __future__ import annotations
 
-import os, sys
+import os
+import sys
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -28,14 +30,13 @@ router = APIRouter(prefix="/students", tags=["Students"])
 _ALLOWED = require_role("Admin", "Teacher", "Staff")
 
 
-
 # ──────────────────────────────────────────── routes
 @router.get("/", summary="Liste des élèves")
 async def list_students(
     q: Optional[str] = Query(None, description="Recherche par nom"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
-    current: TokenData = Depends(_ALLOWED)
+    current: TokenData = Depends(_ALLOWED),
 ):
     try:
         db = DatabaseManager()

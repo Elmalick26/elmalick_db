@@ -15,6 +15,7 @@ from unittest.mock import MagicMock, patch, PropertyMock
 # Helpers
 # ──────────────────────────────────────────────
 
+
 def _make_fake_file(name: str, size: int = 1024, mtime_offset_days: int = 0):
     """Return a MagicMock that behaves like a Path file stat."""
     f = MagicMock(spec=Path)
@@ -32,6 +33,7 @@ def svc():
     """BackupService with a fully mocked AutoBackupSystem."""
     with patch("services.backup_service.AutoBackupSystem"):
         from services.backup_service import BackupService
+
         service = BackupService.__new__(BackupService)
         mock_abs = MagicMock()
         mock_abs.backup_dir = MagicMock(spec=Path)
@@ -42,6 +44,7 @@ def svc():
 # ──────────────────────────────────────────────
 # create_backup
 # ──────────────────────────────────────────────
+
 
 class TestCreateBackup:
     def test_success_returns_path(self, svc):
@@ -67,6 +70,7 @@ class TestCreateBackup:
 # restore_backup
 # ──────────────────────────────────────────────
 
+
 class TestRestoreBackup:
     def test_success_returns_true(self, svc):
         service, mock_abs = svc
@@ -88,6 +92,7 @@ class TestRestoreBackup:
 # ──────────────────────────────────────────────
 # list_backups
 # ──────────────────────────────────────────────
+
 
 class TestListBackups:
     def test_returns_sorted_newest_first(self, svc):
@@ -124,6 +129,7 @@ class TestListBackups:
 # cleanup_old_backups
 # ──────────────────────────────────────────────
 
+
 class TestCleanupOldBackups:
     def test_deletes_old_files(self, svc):
         service, mock_abs = svc
@@ -152,6 +158,7 @@ class TestCleanupOldBackups:
 # get_latest_backup
 # ──────────────────────────────────────────────
 
+
 class TestGetLatestBackup:
     def test_returns_newest(self, svc):
         service, mock_abs = svc
@@ -170,6 +177,7 @@ class TestGetLatestBackup:
 # ──────────────────────────────────────────────
 # get_backup_summary
 # ──────────────────────────────────────────────
+
 
 class TestGetBackupSummary:
     def test_summary_with_files(self, svc):

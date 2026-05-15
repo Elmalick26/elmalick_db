@@ -30,8 +30,7 @@ class CommunicationRepository:
         cursor.execute("SELECT * FROM EmailSettings LIMIT 1")
         return cursor.fetchone()
 
-    def upsert_email_settings(self, smtp_server: str, smtp_port: str,
-                              email_address: str, email_password: str) -> None:
+    def upsert_email_settings(self, smtp_server: str, smtp_port: str, email_address: str, email_password: str) -> None:
         cursor = self.conn.cursor()
         cursor.execute("DELETE FROM EmailSettings")
         cursor.execute(
@@ -84,8 +83,9 @@ class CommunicationRepository:
 
     # --- Notification logs ---
 
-    def insert_notification_log(self, recipient_contact: str, subject: str,
-                                status: str, error_msg: str, sent_at: str) -> None:
+    def insert_notification_log(
+        self, recipient_contact: str, subject: str, status: str, error_msg: str, sent_at: str
+    ) -> None:
         cursor = self.conn.cursor()
         cursor.execute(
             "INSERT INTO NotificationLogs (recipient_contact, subject, status, error_msg, sent_at) VALUES (%s,%s,%s,%s,%s)",

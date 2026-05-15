@@ -40,8 +40,8 @@ def _make_db_with_row(row):
 def _run_login(student_code, pin):
     from starlette.requests import Request
     from starlette.datastructures import Headers
-    scope = {"type": "http", "method": "POST", "path": "/api/parent/login",
-             "headers": [], "query_string": b""}
+
+    scope = {"type": "http", "method": "POST", "path": "/api/parent/login", "headers": [], "query_string": b""}
     fake_request = Request(scope)
     req = routes_parent.ParentLoginRequest(student_code=student_code, pin=pin)
     return asyncio.run(routes_parent.parent_login(fake_request, req))
@@ -63,8 +63,10 @@ def test_parent_login_hash_success_without_update():
     row = (1, "Malick", "Diouf", "Parent", "7700", pin_hash, "", "EMG-0001")
     db, conn, cur = _make_db_with_row(row)
 
-    with patch("api.routes_parent.DatabaseManager", return_value=db), \
-         patch("api.routes_parent.create_access_token", return_value="tok_parent"):
+    with (
+        patch("api.routes_parent.DatabaseManager", return_value=db),
+        patch("api.routes_parent.create_access_token", return_value="tok_parent"),
+    ):
         data = _run_login("emg-0001", "1234")
 
     assert data["access_token"] == "tok_parent"
@@ -89,8 +91,10 @@ def test_parent_login_migrates_plain_pin_to_hash():
     row = (2, "Babou", "Diop", "Parent", "7701", "", "9999", "EMG-0002")
     db, conn, cur = _make_db_with_row(row)
 
-    with patch("api.routes_parent.DatabaseManager", return_value=db), \
-         patch("api.routes_parent.create_access_token", return_value="tok_parent"):
+    with (
+        patch("api.routes_parent.DatabaseManager", return_value=db),
+        patch("api.routes_parent.create_access_token", return_value="tok_parent"),
+    ):
         data = _run_login("EMG-0002", "9999")
 
     assert data["access_token"] == "tok_parent"
@@ -115,8 +119,10 @@ def test_parent_login_first_access_sets_hash_and_clears_plain():
     row = (3, "Loukhman", "Diouf", "Parent", "7702", "", "", "EMG-0003")
     db, conn, cur = _make_db_with_row(row)
 
-    with patch("api.routes_parent.DatabaseManager", return_value=db), \
-         patch("api.routes_parent.create_access_token", return_value="tok_parent"):
+    with (
+        patch("api.routes_parent.DatabaseManager", return_value=db),
+        patch("api.routes_parent.create_access_token", return_value="tok_parent"),
+    ):
         data = _run_login("EMG-0003", "4567")
 
     assert data["student_code"] == "EMG-0003"

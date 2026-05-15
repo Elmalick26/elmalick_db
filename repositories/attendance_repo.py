@@ -47,9 +47,7 @@ class AttendanceRepository:
         )
         return cursor.fetchall()
 
-    def resolve_period_id_for_class_date(
-        self, class_id: int, date_str: str, year_id: int
-    ) -> int | None:
+    def resolve_period_id_for_class_date(self, class_id: int, date_str: str, year_id: int) -> int | None:
         """Return the period_id whose date range covers date_str for the given class/year."""
         if not class_id or not date_str or year_id == -1:
             return None
@@ -225,9 +223,7 @@ class AttendanceRepository:
     # Alert query (used by main dashboard)
     # ─────────────────────────────────────────────────────────────
 
-    def get_high_absence_students(
-        self, year_id: int, threshold_pct: float = 20.0
-    ) -> list[tuple]:
+    def get_high_absence_students(self, year_id: int, threshold_pct: float = 20.0) -> list[tuple]:
         """Return (full_name, absence_rate) for students exceeding the absence threshold."""
         cursor = self.conn.cursor()
         cursor.execute(

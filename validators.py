@@ -19,6 +19,7 @@ from typing import Optional
 # 1. الطلاب / Students
 # ─────────────────────────────────────────────────────────────
 
+
 def validate_student(data: dict) -> list[str]:
     """
     التحقق من بيانات الطالب قبل الحفظ.
@@ -71,6 +72,7 @@ def validate_student(data: dict) -> list[str]:
 # 2. الموظفون / Staff
 # ─────────────────────────────────────────────────────────────
 
+
 def validate_staff(data: dict) -> list[str]:
     """
     التحقق من بيانات الموظف قبل الحفظ.
@@ -112,6 +114,7 @@ def validate_staff(data: dict) -> list[str]:
 # 3. المدفوعات / Payments
 # ─────────────────────────────────────────────────────────────
 
+
 def validate_payment(data: dict) -> list[str]:
     """
     التحقق من بيانات الدفعة قبل التسجيل.
@@ -140,9 +143,7 @@ def validate_payment(data: dict) -> list[str]:
         try:
             total_due = float(total_due_raw)
             if amount > total_due * 1.01:  # هامش 1% للتقريب العشري
-                errors.append(
-                    f"المبلغ المدفوع ({amount:,.0f}) يتجاوز المستحق ({total_due:,.0f})"
-                )
+                errors.append(f"المبلغ المدفوع ({amount:,.0f}) يتجاوز المستحق ({total_due:,.0f})")
         except (ValueError, TypeError):
             pass  # إذا لم يكن total_due رقماً نتجاهل هذا الفحص
 
@@ -158,6 +159,7 @@ def validate_payment(data: dict) -> list[str]:
 # ─────────────────────────────────────────────────────────────
 # 4. الدرجات / Grades
 # ─────────────────────────────────────────────────────────────
+
 
 def validate_grade(data: dict) -> list[str]:
     """
@@ -192,6 +194,7 @@ def validate_grade(data: dict) -> list[str]:
 # 5. كلمات المرور / Passwords
 # ─────────────────────────────────────────────────────────────
 
+
 def validate_password_strength(password: str, min_length: int = 8) -> list[str]:
     """
     التحقق من قوة كلمة المرور.
@@ -218,6 +221,7 @@ def validate_password_strength(password: str, min_length: int = 8) -> list[str]:
 # ─────────────────────────────────────────────────────────────
 # 6. المستخدمون / Users
 # ─────────────────────────────────────────────────────────────
+
 
 def validate_user(data: dict, is_new: bool = True) -> list[str]:
     """
@@ -255,6 +259,7 @@ def validate_user(data: dict, is_new: bool = True) -> list[str]:
 # 7. المصروفات / Expenses
 # ─────────────────────────────────────────────────────────────
 
+
 def validate_expense(data: dict) -> list[str]:
     """التحقق من بيانات المصروف"""
     errors: list[str] = []
@@ -282,6 +287,7 @@ def validate_expense(data: dict) -> list[str]:
 # ─────────────────────────────────────────────────────────────
 # 8. دوال مساعدة / Helpers
 # ─────────────────────────────────────────────────────────────
+
 
 def format_errors(errors: list[str], sep: str = "\n• ") -> str:
     """
@@ -328,8 +334,7 @@ if __name__ == "__main__":
     print(f"[طالب صحيح] أخطاء: {errors}")  # يجب أن يكون []
 
     # طالب بتاريخ مستقبلي
-    bad_student = {"first_name_fr": "", "last_name_fr": "Ba",
-                   "first_name_ar": "أحمد", "birth_date": date(2035, 1, 1)}
+    bad_student = {"first_name_fr": "", "last_name_fr": "Ba", "first_name_ar": "أحمد", "birth_date": date(2035, 1, 1)}
     errors = validate_student(bad_student)
     print(f"[طالب خاطئ] أخطاء: {errors}")
 
