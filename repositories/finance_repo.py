@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 
 class FinanceRepository:
     """Data access for finance-related queries (dues, payments, history)."""
 
-    def __init__(self, conn):
+    def __init__(self, conn: Any) -> None:
         self.conn = conn
 
     # ──────────────────────────────────────────────

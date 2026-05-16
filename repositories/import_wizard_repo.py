@@ -3,9 +3,13 @@ repositories/import_wizard_repo.py
 SQL centralisé pour import_wizard.py (importation groupée des étudiants).
 """
 
+from __future__ import annotations
+
+from typing import Any
+
 
 class ImportWizardRepository:
-    def __init__(self, conn):
+    def __init__(self, conn: Any) -> None:
         self.conn = conn
 
     def get_next_class_number(self, class_id, year_id) -> int:

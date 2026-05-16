@@ -1,11 +1,13 @@
 """AnalyticsRepository — طبقة الوصول لبيانات التقارير التحليلية."""
 
 from __future__ import annotations
+
 from datetime import datetime
+from typing import Any
 
 
 class AnalyticsRepository:
-    def __init__(self, conn):
+    def __init__(self, conn: Any) -> None:
         self.conn = conn
 
     # ── Year context ───────────────────────────────────────────────────────────

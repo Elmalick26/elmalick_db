@@ -1,8 +1,12 @@
 """Repository for CommunicationUI — email settings, recipients, notification logs."""
 
+from __future__ import annotations
+
+from typing import Any
+
 
 class CommunicationRepository:
-    def __init__(self, conn):
+    def __init__(self, conn: Any) -> None:
         self.conn = conn
 
     # --- Academic year ---

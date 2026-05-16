@@ -1,8 +1,12 @@
 """Repository for AdminDocuments — school documents, student data, photos."""
 
+from __future__ import annotations
+
+from typing import Any
+
 
 class AdminDocumentsRepository:
-    def __init__(self, conn):
+    def __init__(self, conn: Any) -> None:
         self.conn = conn
 
     # --- Academic year ---

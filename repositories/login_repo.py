@@ -3,9 +3,13 @@ repositories/login_repo.py
 SQL centralisé pour login_window.py (authentification utilisateur).
 """
 
+from __future__ import annotations
+
+from typing import Any
+
 
 class LoginRepository:
-    def __init__(self, conn):
+    def __init__(self, conn: Any) -> None:
         self.conn = conn
 
     def count_users(self) -> int:

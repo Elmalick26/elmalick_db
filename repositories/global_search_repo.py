@@ -3,9 +3,13 @@ repositories/global_search_repo.py
 SQL centralisé pour global_search_dialog.py (recherche globale).
 """
 
+from __future__ import annotations
+
+from typing import Any
+
 
 class GlobalSearchRepository:
-    def __init__(self, conn):
+    def __init__(self, conn: Any) -> None:
         self.conn = conn
 
     def search_all(self, pat: str, limit: int = 30) -> list[tuple]:
@@ -14,7 +18,7 @@ class GlobalSearchRepository:
         Retourne une liste de tuples:
             (category, name_fr, subtitle, module_key, record_id)
         """
-        results = []
+        results: list[tuple] = []
 
         with self.conn.cursor() as cur:
             # 1. Élèves

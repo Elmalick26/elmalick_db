@@ -6,9 +6,11 @@ Covers: StudentDiscipline CRUD, period resolution, class context,
 
 from __future__ import annotations
 
+from typing import Any
+
 
 class DisciplineRepository:
-    def __init__(self, conn):
+    def __init__(self, conn: Any) -> None:
         self.conn = conn
 
     # ── AcademicYears ──────────────────────────────────────

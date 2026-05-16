@@ -6,9 +6,11 @@ Covers: SchoolInfo, AcademicYears, Cycles, Classes, Subjects,
 
 from __future__ import annotations
 
+from typing import Any
+
 
 class AcademicRepository:
-    def __init__(self, conn):
+    def __init__(self, conn: Any) -> None:
         self.conn = conn
 
     # ── SchoolInfo ─────────────────────────────────────────

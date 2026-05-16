@@ -1,8 +1,12 @@
 """Repository for YearEndMigration — promotion calculation and year transition."""
 
+from __future__ import annotations
+
+from typing import Any
+
 
 class YearEndRepository:
-    def __init__(self, conn):
+    def __init__(self, conn: Any) -> None:
         self.conn = conn
 
     # --- Academic years ---

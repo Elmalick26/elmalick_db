@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 
 class StaffRepository:
     """Data access for Staff table operations."""
 
-    def __init__(self, conn):
+    def __init__(self, conn: Any) -> None:
         self.conn = conn
 
     def list_staff(self, search: str = "") -> list[tuple]:
@@ -218,6 +220,9 @@ class StaffRepository:
 
     def list_classes(self) -> list[tuple]:
         """Return (id, class_name_fr) for all classes."""
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT id, class_name_fr FROM Classes ORDER BY class_name_fr")
+        return cursor.fetchall()
 
     # ── StaffAttendance ────────────────────────────────────
 

@@ -9,9 +9,11 @@ Note: GradeCalculator uses cursor-passing internally for performance;
 
 from __future__ import annotations
 
+from typing import Any
+
 
 class BulletinRepository:
-    def __init__(self, conn):
+    def __init__(self, conn: Any) -> None:
         self.conn = conn
 
     # ── AcademicYears ──────────────────────────────────────

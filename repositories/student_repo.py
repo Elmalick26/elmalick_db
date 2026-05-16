@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 
 class StudentRepository:
     """Data access for student-related queries."""
 
-    def __init__(self, conn):
+    def __init__(self, conn: Any) -> None:
         self.conn = conn
 
     def get_student_for_edit(self, active_year_id: int, student_id: int):
@@ -36,7 +38,7 @@ class StudentRepository:
             LEFT JOIN Classes C ON SCN.class_id = C.id
             WHERE 1=1
         """
-        params = [year_id]
+        params: list[Any] = [year_id]
 
         if class_id:
             query += " AND SCN.class_id = %s"
@@ -73,7 +75,7 @@ class StudentRepository:
             LEFT JOIN Classes C ON SCN.class_id = C.id
             WHERE 1=1
         """
-        params = [year_id]
+        params: list[Any] = [year_id]
 
         if class_id:
             query += " AND SCN.class_id = %s"

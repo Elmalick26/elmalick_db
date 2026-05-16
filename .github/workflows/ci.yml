@@ -43,7 +43,7 @@ jobs:
 
       - name: Type check services & repositories (mypy)
         run: mypy services/ repositories/
-        continue-on-error: true   # type hints encore en cours d'ajout
+        continue-on-error: true # type hints encore en cours d'ajout
 
       - name: Run tests with coverage
         run: |

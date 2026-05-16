@@ -9,11 +9,12 @@ Methods cover:
 """
 
 from __future__ import annotations
-from typing import Optional
+
+from typing import Any, Optional
 
 
 class StudentsApiRepository:
-    def __init__(self, conn):
+    def __init__(self, conn: Any) -> None:
         self.conn = conn
 
     # ── Academic year ──────────────────────────────────────────

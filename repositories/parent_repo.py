@@ -11,9 +11,11 @@ Methods cover:
 
 from __future__ import annotations
 
+from typing import Any
+
 
 class ParentRepository:
-    def __init__(self, conn):
+    def __init__(self, conn: Any) -> None:
         self.conn = conn
 
     # ── Academic year ──────────────────────────────────────────
