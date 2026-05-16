@@ -20,6 +20,65 @@ import time
 # ضمان أن الاستيرادات تجد وحدات المشروع
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
+
+# ──────────────────────────────────────────── Sentry (Phase 6.3)
+def _init_sentry() -> None:
+    """Initialise Sentry si un DSN est configuré.
+
+    Priorité de configuration (ordre décroissant) :
+    1. Variable d'environnement ``SENTRY_DSN``
+    2. Section ``[SENTRY] dsn`` dans config.ini via ConfigManager
+
+    Si aucun DSN n'est trouvé, Sentry reste désactivé silencieusement.
+    """
+    dsn = os.environ.get("SENTRY_DSN", "").strip()
+
+    if not dsn:
+        try:
+            from config_manager import ConfigManager
+
+            cfg = ConfigManager()
+            dsn = (cfg.get("SENTRY", "dsn", fallback="") or "").strip()
+        except Exception:
+            pass  # ConfigManager indisponible — ignorer
+
+    if not dsn:
+        return  # Pas de DSN → Sentry désactivé
+
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.fastapi import FastApiIntegration
+        from sentry_sdk.integrations.starlette import StarletteIntegration
+
+        try:
+            from config_manager import ConfigManager
+
+            cfg = ConfigManager()
+            traces_rate = float(cfg.get("SENTRY", "traces_sample_rate", fallback="0.2") or "0.2")
+            profiles_rate = float(cfg.get("SENTRY", "profiles_sample_rate", fallback="0.1") or "0.1")
+            environment = (cfg.get("SENTRY", "environment", fallback="production") or "production").strip()
+        except Exception:
+            traces_rate, profiles_rate, environment = 0.2, 0.1, "production"
+
+        sentry_sdk.init(
+            dsn=dsn,
+            integrations=[
+                StarletteIntegration(transaction_style="endpoint"),
+                FastApiIntegration(transaction_style="endpoint"),
+            ],
+            traces_sample_rate=traces_rate,
+            profiles_sample_rate=profiles_rate,
+            environment=environment,
+            # Ne pas envoyer les données PII (noms, adresses IP…)
+            send_default_pii=False,
+        )
+        logging.getLogger(__name__).info("Sentry initialisé (env=%s, traces=%.2f)", environment, traces_rate)
+    except Exception as exc:  # sentry_sdk non installé ou DSN invalide
+        logging.getLogger(__name__).warning("Sentry non initialisé: %s", exc)
+
+
+_init_sentry()
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse

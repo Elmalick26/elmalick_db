@@ -202,11 +202,15 @@
 - [x] `extract_token_subject()` لاستخراج user_id من JWT
 - [x] 26 اختبار جديد في `tests/test_logging_phase6.py`
 
-### 6.3 Sentry Integration (اختياري)
+### 6.3 Sentry Integration ✅
 
-- [ ] تثبيت `sentry-sdk`
-- [ ] تتبع الأخطاء تلقائياً في الإنتاج
-- [ ] مجاني للمشاريع الصغيرة (< 5000 خطأ/شهر)
+- [x] تثبيت `sentry-sdk` (2.60.0 — مثبت مسبقاً)
+- [x] تتبع الأخطاء تلقائياً في الإنتاج
+- [x] `_init_sentry()` في `api/main.py`: DSN من `SENTRY_DSN` env أو `[SENTRY] dsn` في config.ini
+- [x] تكامل `FastApiIntegration` + `StarletteIntegration` (transaction_style=endpoint)
+- [x] `send_default_pii=False` لحماية البيانات الشخصية
+- [x] إعدادات قابلة للضبط في `config.ini`: `traces_sample_rate`, `profiles_sample_rate`, `environment`
+- [x] تعطيل صامت إذا لم يوجد DSN (لا يكسر التطبيق)
 
 ---
 
@@ -253,6 +257,7 @@
 | 2026-05-16 | 5.2 | نقل repositories إلى src/data/ + shim + توفير type hints كاملة | ✅ |
 | 2026-05-16 | 2.4 | Type hints لجميع repositories + database_setup + config_manager | ✅ commit `25a0f67` |
 | 2026-05-16 | 3.3 | Health check محسّن (latency, table_count, db_size, last_backup, /v1/health) | ✅ |
+| 2026-05-16 | 6.3 | Sentry integration — `_init_sentry()` مع FastApiIntegration, PII=off, config via env/ini | ✅ |
 
 ---
 
