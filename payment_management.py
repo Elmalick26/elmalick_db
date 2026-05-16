@@ -1,23 +1,39 @@
-import sys
-import psycopg2
 import os
+import sys
 from datetime import datetime
-from database_setup import DatabaseManager
-from app_logger import AppLogger
-from repositories.finance_repo import FinanceRepository
-from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
-                             QHBoxLayout, QTableWidget, QTableWidgetItem,
-                             QPushButton, QLabel, QLineEdit, QComboBox,
-                             QMessageBox, QHeaderView, QFrame, QGridLayout,
-                             QDoubleSpinBox, QDateEdit, QTabWidget,
-                             QGraphicsDropShadowEffect)
-from PyQt6.QtCore import Qt, QDate
-from PyQt6.QtGui import QFont, QColor
-from fpdf import FPDF
 
-from ui_styles import ThemeManager, get_card_style, apply_shadow_to_widget, get_table_style, Colors
-from print_export_service import output_pdf, get_report_output_mode
+import psycopg2
+from fpdf import FPDF
+from PyQt6.QtCore import QDate, Qt
+from PyQt6.QtGui import QColor, QFont
+from PyQt6.QtWidgets import (
+    QApplication,
+    QComboBox,
+    QDateEdit,
+    QDoubleSpinBox,
+    QFrame,
+    QGraphicsDropShadowEffect,
+    QGridLayout,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QLineEdit,
+    QMainWindow,
+    QMessageBox,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
+)
+
+from app_logger import AppLogger
+from database_setup import DatabaseManager
 from pdf_report_style import apply_grades_sheet_header
+from print_export_service import get_report_output_mode, output_pdf
+from repositories.finance_repo import FinanceRepository
+from ui_styles import Colors, ThemeManager, apply_shadow_to_widget, get_card_style, get_table_style
 
 THEME_AVAILABLE = True
 STUDENT_DUES_REPORT_OUTPUT_MODE = get_report_output_mode("student_dues_report_mode", "save")
@@ -43,10 +59,12 @@ class StudentDuesWindow(QMainWindow):
             ThemeManager.apply_theme(self)
         else:
             colors = Colors()
-            self.setStyleSheet(f"""
+            self.setStyleSheet(
+                f"""
                 QMainWindow {{ background-color: {colors.BG_MAIN}; }}
                 QLabel {{ font-family: 'Segoe UI', 'Cairo', sans-serif; color: {colors.TEXT_PRIMARY}; }}
-            """)
+            """
+            )
 
         self.init_ui()
         self.load_classes()
@@ -144,17 +162,21 @@ class StudentDuesWindow(QMainWindow):
 
         self.tabs = QTabWidget()
         if THEME_AVAILABLE:
-            self.tabs.setStyleSheet(f"""
+            self.tabs.setStyleSheet(
+                f"""
                 QTabWidget::pane {{ border: 1px solid {colors.BORDER}; background: {colors.BG_CARD}; border-radius: 8px; margin-top: 10px; }}
                 QTabBar::tab {{ background: {colors.BG_MAIN}; color: {colors.TEXT_SECONDARY}; padding: 10px 15px; border-radius: 6px; margin-right: 2px; font-weight: bold; }}
                 QTabBar::tab:selected {{ background: {colors.PRIMARY}; color: white; }}
-            """)
+            """
+            )
         else:
-            self.tabs.setStyleSheet(f"""
+            self.tabs.setStyleSheet(
+                f"""
                 QTabWidget::pane {{ border: 1px solid {colors.BORDER}; background: {colors.BG_CARD}; border-radius: 8px; margin-top: 10px; }}
                 QTabBar::tab {{ background: {colors.BG_MAIN}; color: {colors.TEXT_SECONDARY}; padding: 10px 15px; border-radius: 6px; margin-right: 2px; font-weight: bold; }}
                 QTabBar::tab:selected {{ background: {colors.PRIMARY}; color: white; }}
-            """)
+            """
+            )
 
         # التبويب 1: إضافة فاتورة مخصصة
         tab_add = QWidget()
@@ -235,10 +257,9 @@ class StudentDuesWindow(QMainWindow):
         self.table_dues = QTableWidget()
         self.style_table(self.table_dues)
         self.table_dues.setColumnCount(8)
-        self.table_dues.setHorizontalHeaderLabels([
-            "ID", "Description", "Date", "Montant",
-            "Remise", "Net", "Statut", "Actions"
-        ])
+        self.table_dues.setHorizontalHeaderLabels(
+            ["ID", "Description", "Date", "Montant", "Remise", "Net", "Statut", "Actions"]
+        )
         self.table_dues.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.table_dues.itemSelectionChanged.connect(self.on_due_selected)
 
@@ -258,18 +279,24 @@ class StudentDuesWindow(QMainWindow):
             apply_shadow_to_widget(frame)
         else:
             colors = Colors()
-            frame.setStyleSheet(f"QFrame {{ background-color: {colors.BG_CARD}; border-radius: 12px; border: 1px solid {colors.BORDER}; }}")
+            frame.setStyleSheet(
+                f"QFrame {{ background-color: {colors.BG_CARD}; border-radius: 12px; border: 1px solid {colors.BORDER}; }}"
+            )
             shadow = QGraphicsDropShadowEffect()
-            shadow.setBlurRadius(20); shadow.setColor(QColor(15, 23, 42, 15)); shadow.setOffset(0, 4)
+            shadow.setBlurRadius(20)
+            shadow.setColor(QColor(15, 23, 42, 15))
+            shadow.setOffset(0, 4)
             frame.setGraphicsEffect(shadow)
         return frame
 
     def styled_combo(self):
         combo = QComboBox()
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-        combo.setStyleSheet(f"""
+        combo.setStyleSheet(
+            f"""
             QComboBox {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; font-weight: bold; }}
-        """)
+        """
+        )
         combo.setMinimumHeight(40)
         return combo
 
@@ -278,7 +305,9 @@ class StudentDuesWindow(QMainWindow):
         le.setPlaceholderText(placeholder)
         le.setMinimumHeight(40)
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-        le.setStyleSheet(f"QLineEdit {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }}")
+        le.setStyleSheet(
+            f"QLineEdit {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }}"
+        )
         return le
 
     def styled_spinbox(self, prefix):
@@ -288,7 +317,9 @@ class StudentDuesWindow(QMainWindow):
         sb.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)
         sb.setMinimumHeight(40)
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-        sb.setStyleSheet(f"QDoubleSpinBox {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; font-weight: bold; }}")
+        sb.setStyleSheet(
+            f"QDoubleSpinBox {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; font-weight: bold; }}"
+        )
         return sb
 
     def styled_date(self):
@@ -297,16 +328,20 @@ class StudentDuesWindow(QMainWindow):
         de.setDisplayFormat("yyyy-MM-dd")
         de.setMinimumHeight(40)
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-        de.setStyleSheet(f"QDateEdit {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }}")
+        de.setStyleSheet(
+            f"QDateEdit {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }}"
+        )
         return de
 
     def style_action_button(self, btn, bg_color):
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
         btn.setMinimumHeight(45)
-        btn.setStyleSheet(f"""
+        btn.setStyleSheet(
+            f"""
             QPushButton {{ background-color: {bg_color}; color: white; font-weight: bold; border-radius: 6px; border: none; font-size: 13px; }}
             QPushButton:hover {{ opacity: 0.8; }}
-        """)
+        """
+        )
 
     def style_table(self, table):
         table.setShowGrid(False)
@@ -318,12 +353,14 @@ class StudentDuesWindow(QMainWindow):
             table.setStyleSheet(get_table_style())
         else:
             colors = Colors()
-            table.setStyleSheet(f"""
+            table.setStyleSheet(
+                f"""
                 QTableWidget {{ background-color: {colors.BG_CARD}; border: 1px solid {colors.BORDER}; border-radius: 8px; gridline-color: {colors.BORDER}; font-size: 13px; color: {colors.TEXT_PRIMARY}; }}
                 QTableWidget::item {{ padding: 8px; border-bottom: 1px solid {colors.BG_MAIN}; }}
                 QTableWidget::item:selected {{ background-color: {colors.PRIMARY}; color: white; }}
                 QHeaderView::section {{ background-color: {colors.BG_HEADER}; color: {colors.HEADER_TEXT}; padding: 10px; border: none; font-weight: bold; }}
-            """)
+            """
+            )
 
     # ================== Logic Methods ==================
     def load_classes(self):
@@ -341,10 +378,12 @@ class StudentDuesWindow(QMainWindow):
         cid = self.combo_classes.currentData()
         self.combo_students.clear()
         self.combo_students.addItem("- Tous les élèves (الكل) -", None)
-        if not cid: return
+        if not cid:
+            return
 
         active_year = self.get_active_year_id()
-        if active_year == -1: return
+        if active_year == -1:
+            return
 
         try:
             db = DatabaseManager()
@@ -360,10 +399,12 @@ class StudentDuesWindow(QMainWindow):
         self.spin_discount_val.setValue(0)
 
         sid = self.combo_students.currentData()
-        if not sid: return
+        if not sid:
+            return
 
         active_year = self.get_active_year_id()
-        if active_year == -1: return
+        if active_year == -1:
+            return
 
         try:
             db = DatabaseManager()
@@ -419,7 +460,8 @@ class StudentDuesWindow(QMainWindow):
 
     def on_due_selected(self):
         rows = self.table_dues.selectedItems()
-        if not rows: return
+        if not rows:
+            return
         r = rows[0].row()
 
         due_id = self.table_dues.item(r, 0).text()
@@ -448,7 +490,8 @@ class StudentDuesWindow(QMainWindow):
             return
 
         active_year = self.get_active_year_id()
-        if active_year == -1: return
+        if active_year == -1:
+            return
 
         try:
             db = DatabaseManager()
@@ -498,8 +541,12 @@ class StudentDuesWindow(QMainWindow):
             QMessageBox.critical(self, "Erreur", str(e))
 
     def delete_due(self, due_id):
-        reply = QMessageBox.question(self, "Confirmation", "Voulez-vous supprimer cette facture ?",
-                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        reply = QMessageBox.question(
+            self,
+            "Confirmation",
+            "Voulez-vous supprimer cette facture ?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
         if reply == QMessageBox.StandardButton.Yes:
             try:
                 db = DatabaseManager()
@@ -517,13 +564,18 @@ class StudentDuesWindow(QMainWindow):
             return
 
         active_year = self.get_active_year_id()
-        if active_year == -1: return
+        if active_year == -1:
+            return
 
-        reply = QMessageBox.question(self, "Confirmation",
-                                     "Cette action va générer les factures (Inscription et Mensualités) pour TOUS les élèves de cette classe qui n'en ont pas encore. Continuer ?",
-                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        reply = QMessageBox.question(
+            self,
+            "Confirmation",
+            "Cette action va générer les factures (Inscription et Mensualités) pour TOUS les élèves de cette classe qui n'en ont pas encore. Continuer ?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
 
-        if reply != QMessageBox.StandardButton.Yes: return
+        if reply != QMessageBox.StandardButton.Yes:
+            return
 
         try:
             db = DatabaseManager()
@@ -538,10 +590,11 @@ class StudentDuesWindow(QMainWindow):
                 today_str = QDate.currentDate().toString("yyyy-MM-dd")
 
                 for (sid,) in students:
-                    if reg_amt > 0:
-                        if repo.count_dues_by_type(sid, active_year, 'Registration') == 0:
-                            repo.add_due(sid, active_year, 'Registration', "Frais d'inscription", reg_amt, reg_amt, today_str)
-                            generated_count += 1
+                    if reg_amt > 0 and repo.count_dues_by_type(sid, active_year, 'Registration') == 0:
+                        repo.add_due(
+                            sid, active_year, 'Registration', "Frais d'inscription", reg_amt, reg_amt, today_str
+                        )
+                        generated_count += 1
 
                     for m_idx, m_name, m_amt in monthly_fees:
                         if repo.count_dues_by_type(sid, active_year, f'Month_{m_idx}') == 0:
@@ -549,7 +602,9 @@ class StudentDuesWindow(QMainWindow):
                             if m_idx < 9:
                                 due_y += 1
                             due_d = f"{due_y}-{m_idx:02d}-05"
-                            repo.add_due(sid, active_year, f'Month_{m_idx}', f'Mensualité {m_name}', m_amt, m_amt, due_d)
+                            repo.add_due(
+                                sid, active_year, f'Month_{m_idx}', f'Mensualité {m_name}', m_amt, m_amt, due_d
+                            )
                             generated_count += 1
 
                 conn.commit()
@@ -651,7 +706,14 @@ class StudentDuesWindow(QMainWindow):
             pdf.ln(3)
             pdf.set_font("Helvetica", "B", 10)
             pdf.cell(0, 6, f"Total Montant: {total_original:,.0f} | Total Remise: {total_discount:,.0f}", 0, 1, 'R')
-            pdf.cell(0, 6, f"Total Net: {total_net:,.0f} | Regle: {total_paid:,.0f} | En attente: {total_pending:,.0f}", 0, 1, 'R')
+            pdf.cell(
+                0,
+                6,
+                f"Total Net: {total_net:,.0f} | Regle: {total_paid:,.0f} | En attente: {total_pending:,.0f}",
+                0,
+                1,
+                'R',
+            )
 
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             student_slug = self._slugify(student_name)

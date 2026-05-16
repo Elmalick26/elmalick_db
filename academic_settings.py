@@ -1,25 +1,45 @@
-import sys
-import psycopg2
 import os
+import sys
+
+import psycopg2
+
 from database_setup import DatabaseManager
 from repositories.academic_repo import AcademicRepository
 
 # محاولة استيراد ConfigManager، وتجاوز الخطأ إن لم يكن متوفراً بالكامل بعد
 try:
     from config_manager import ConfigManager
+
     HAS_CONFIG_MANAGER = True
 except ImportError:
     HAS_CONFIG_MANAGER = False
 
-from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
-                             QHBoxLayout, QTableWidget, QTableWidgetItem,
-                             QPushButton, QLabel, QLineEdit, QComboBox,
-                             QMessageBox, QHeaderView, QFrame, QSpinBox,
-                             QTabWidget, QGridLayout, QDoubleSpinBox, QFileDialog, QGraphicsDropShadowEffect)
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont, QColor
+from PyQt6.QtGui import QColor, QFont
+from PyQt6.QtWidgets import (
+    QApplication,
+    QComboBox,
+    QDoubleSpinBox,
+    QFileDialog,
+    QFrame,
+    QGraphicsDropShadowEffect,
+    QGridLayout,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QLineEdit,
+    QMainWindow,
+    QMessageBox,
+    QPushButton,
+    QSpinBox,
+    QTableWidget,
+    QTableWidgetItem,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
+)
 
-from ui_styles import ThemeManager, get_card_style, apply_shadow_to_widget, Colors, get_table_style, get_tabs_style
+from ui_styles import Colors, ThemeManager, apply_shadow_to_widget, get_card_style, get_table_style, get_tabs_style
 
 THEME_AVAILABLE = True
 
@@ -43,10 +63,12 @@ class AcademicSettingsWindow(QMainWindow):
             ThemeManager.apply_theme(self)
         else:
             colors = Colors()
-            self.setStyleSheet(f"""
+            self.setStyleSheet(
+                f"""
                 QMainWindow {{ background-color: {colors.BG_MAIN}; }}
                 QLabel {{ font-family: 'Segoe UI', 'Cairo', sans-serif; color: {colors.TEXT_PRIMARY}; }}
-            """)
+            """
+            )
 
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
@@ -66,7 +88,9 @@ class AcademicSettingsWindow(QMainWindow):
         header_frame.setMaximumHeight(80)
 
         shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(15); shadow.setColor(QColor(15, 23, 42, 40)); shadow.setOffset(0, 4)
+        shadow.setBlurRadius(15)
+        shadow.setColor(QColor(15, 23, 42, 40))
+        shadow.setOffset(0, 4)
         header_frame.setGraphicsEffect(shadow)
 
         header_layout = QHBoxLayout(header_frame)
@@ -95,12 +119,14 @@ class AcademicSettingsWindow(QMainWindow):
         self.main_layout.addWidget(header_frame)
 
         self.tabs = QTabWidget()
-        self.tabs.setStyleSheet(f"""
+        self.tabs.setStyleSheet(
+            f"""
             QTabWidget::pane {{ border: 1px solid {colors.BORDER}; background: {colors.BG_CARD}; border-radius: 12px; margin-top: 15px; }}
             QTabBar::tab {{ background: {colors.BG_MAIN}; color: {colors.TEXT_SECONDARY}; padding: 12px 30px; margin-right: 6px; border-top-left-radius: 8px; border-top-right-radius: 8px; font-weight: bold; font-family: 'Segoe UI', 'Cairo'; }}
             QTabBar::tab:selected {{ background: {colors.BG_CARD}; color: {colors.PRIMARY}; border-bottom: 2px solid {colors.PRIMARY}; }}
             QTabBar::tab:hover {{ background: {colors.BORDER}; }}
-        """)
+        """
+        )
 
         self.setup_school_info_tab()
         self.setup_structure_tab()
@@ -117,9 +143,13 @@ class AcademicSettingsWindow(QMainWindow):
             apply_shadow_to_widget(frame)
         else:
             colors = Colors()
-            frame.setStyleSheet(f"background-color: {colors.BG_CARD}; border-radius: 12px; border: 1px solid {colors.BORDER};")
+            frame.setStyleSheet(
+                f"background-color: {colors.BG_CARD}; border-radius: 12px; border: 1px solid {colors.BORDER};"
+            )
             shadow = QGraphicsDropShadowEffect()
-            shadow.setBlurRadius(20); shadow.setColor(QColor(15, 23, 42, 15)); shadow.setOffset(0, 4)
+            shadow.setBlurRadius(20)
+            shadow.setColor(QColor(15, 23, 42, 15))
+            shadow.setOffset(0, 4)
             frame.setGraphicsEffect(shadow)
 
         layout = QVBoxLayout(frame)
@@ -136,14 +166,18 @@ class AcademicSettingsWindow(QMainWindow):
         le = QLineEdit()
         le.setPlaceholderText(placeholder)
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-        le.setStyleSheet(f"QLineEdit {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }} QLineEdit:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}")
+        le.setStyleSheet(
+            f"QLineEdit {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }} QLineEdit:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}"
+        )
         le.setMinimumHeight(38)
         return le
 
     def styled_combo(self):
         combo = QComboBox()
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-        combo.setStyleSheet(f"QComboBox {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }} QComboBox:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}")
+        combo.setStyleSheet(
+            f"QComboBox {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }} QComboBox:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}"
+        )
         combo.setMinimumHeight(38)
         return combo
 
@@ -169,7 +203,9 @@ class AcademicSettingsWindow(QMainWindow):
             btn_edit = QPushButton("✎")
             btn_edit.setFixedSize(28, 28)
             btn_edit.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn_edit.setStyleSheet(f"background-color: {colors.WARNING}; color: white; border-radius: 4px; border: none;")
+            btn_edit.setStyleSheet(
+                f"background-color: {colors.WARNING}; color: white; border-radius: 4px; border: none;"
+            )
             btn_edit.clicked.connect(lambda _, val=id_val: edit_func(val))
             layout.addWidget(btn_edit)
 
@@ -202,16 +238,21 @@ class AcademicSettingsWindow(QMainWindow):
             'auth': self.styled_input("N° Autorisation"),
             'director': self.styled_input("Nom du Directeur / اسم المدير"),
             'loc': self.styled_input("Adresse"),
-            'tel': self.styled_input("Téléphone")
+            'tel': self.styled_input("Téléphone"),
         }
 
         self.logo_path_display = self.styled_input("Logo Path")
         self.logo_path_display.setReadOnly(True)
 
         labels = {
-            'rep': "En-tête:", 'ia': "IA:", 'ief': "IEF:",
-            'name': "Nom:", 'auth': "Autorisation:",
-            'director': "Directeur:", 'loc': "Adresse:", 'tel': "Tel:"
+            'rep': "En-tête:",
+            'ia': "IA:",
+            'ief': "IEF:",
+            'name': "Nom:",
+            'auth': "Autorisation:",
+            'director': "Directeur:",
+            'loc': "Adresse:",
+            'tel': "Tel:",
         }
 
         r = 0
@@ -226,7 +267,9 @@ class AcademicSettingsWindow(QMainWindow):
         btn_logo = QPushButton("📁")
         btn_logo.setFixedSize(40, 38)
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-        btn_logo.setStyleSheet(f"background-color: {colors.PRIMARY}; color: white; border-radius: 6px; font-weight: bold;")
+        btn_logo.setStyleSheet(
+            f"background-color: {colors.PRIMARY}; color: white; border-radius: 6px; font-weight: bold;"
+        )
         btn_logo.clicked.connect(self.browse_logo)
         logo_h.addWidget(btn_logo)
         grid.addLayout(logo_h, r, 1)
@@ -234,7 +277,9 @@ class AcademicSettingsWindow(QMainWindow):
         btn_save = QPushButton("💾 Enregistrer / حفظ")
         btn_save.setMinimumHeight(45)
         btn_save.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_save.setStyleSheet(f"background-color: {colors.SUCCESS}; color: white; border-radius: 8px; font-weight: bold; font-size: 14px;")
+        btn_save.setStyleSheet(
+            f"background-color: {colors.SUCCESS}; color: white; border-radius: 8px; font-weight: bold; font-size: 14px;"
+        )
         btn_save.clicked.connect(self.save_school_info)
 
         grid_lay.addLayout(grid)
@@ -256,7 +301,9 @@ class AcademicSettingsWindow(QMainWindow):
         y_card, y_lay = self.create_card("📅 Années / السنوات")
         self.txt_year = self.styled_input("Ex: 2025-2026")
         self.btn_y = QPushButton("Ajouter")
-        self.btn_y.setStyleSheet(f"background-color: {colors.PRIMARY}; color: white; padding: 8px; border-radius: 6px; font-weight: bold;")
+        self.btn_y.setStyleSheet(
+            f"background-color: {colors.PRIMARY}; color: white; padding: 8px; border-radius: 6px; font-weight: bold;"
+        )
         self.btn_y.clicked.connect(self.save_year)
         self.table_years = QTableWidget(0, 4)
         self.style_table(self.table_years)
@@ -272,7 +319,9 @@ class AcademicSettingsWindow(QMainWindow):
         self.txt_c_fr = self.styled_input("Nom (FR)")
         self.txt_c_ar = self.styled_input("الاسم (عربي)")
         self.btn_c = QPushButton("Ajouter")
-        self.btn_c.setStyleSheet(f"background-color: {colors.PRIMARY}; color: white; padding: 8px; border-radius: 6px; font-weight: bold;")
+        self.btn_c.setStyleSheet(
+            f"background-color: {colors.PRIMARY}; color: white; padding: 8px; border-radius: 6px; font-weight: bold;"
+        )
         self.btn_c.clicked.connect(self.save_cycle)
         self.table_cycles = QTableWidget(0, 4)
         self.style_table(self.table_cycles)
@@ -291,10 +340,14 @@ class AcademicSettingsWindow(QMainWindow):
         self.sp_order = QSpinBox()
         self.sp_order.setRange(1, 20)
         self.sp_order.setMinimumHeight(38)
-        self.sp_order.setStyleSheet(f"border: 1px solid {colors.BORDER}; border-radius: 6px; padding: 5px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY};")
+        self.sp_order.setStyleSheet(
+            f"border: 1px solid {colors.BORDER}; border-radius: 6px; padding: 5px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY};"
+        )
 
         self.btn_cls = QPushButton("Ajouter")
-        self.btn_cls.setStyleSheet(f"background-color: {colors.PRIMARY}; color: white; padding: 8px; border-radius: 6px; font-weight: bold;")
+        self.btn_cls.setStyleSheet(
+            f"background-color: {colors.PRIMARY}; color: white; padding: 8px; border-radius: 6px; font-weight: bold;"
+        )
         self.btn_cls.clicked.connect(self.save_class)
 
         self.table_classes = QTableWidget(0, 5)
@@ -336,7 +389,9 @@ class AcademicSettingsWindow(QMainWindow):
         self.sp_coeff.setRange(0.1, 10.0)
         self.sp_coeff.setSingleStep(0.1)
         self.sp_coeff.setMinimumHeight(38)
-        self.sp_coeff.setStyleSheet(f"border: 1px solid {colors.BORDER}; border-radius: 6px; padding: 5px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY};")
+        self.sp_coeff.setStyleSheet(
+            f"border: 1px solid {colors.BORDER}; border-radius: 6px; padding: 5px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY};"
+        )
 
         self.combo_sub_lang = self.styled_combo()
         self.combo_sub_lang.addItems(["Français", "Arabe"])
@@ -355,7 +410,9 @@ class AcademicSettingsWindow(QMainWindow):
         self.btn_sub = QPushButton("Ajouter Matière")
         self.btn_sub.setMinimumHeight(40)
         self.btn_sub.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_sub.setStyleSheet(f"background-color: {colors.PRIMARY}; color: white; border-radius: 6px; font-weight: bold;")
+        self.btn_sub.setStyleSheet(
+            f"background-color: {colors.PRIMARY}; color: white; border-radius: 6px; font-weight: bold;"
+        )
         self.btn_sub.clicked.connect(self.save_subject)
 
         vlay.addLayout(form)
@@ -363,7 +420,9 @@ class AcademicSettingsWindow(QMainWindow):
 
         self.table_subjects = QTableWidget(0, 7)
         self.style_table(self.table_subjects)
-        self.table_subjects.setHorizontalHeaderLabels(["ID", "Cycle", "Matière (FR)", "المادة (AR)", "Lang", "Coef", "Act"])
+        self.table_subjects.setHorizontalHeaderLabels(
+            ["ID", "Cycle", "Matière (FR)", "المادة (AR)", "Lang", "Coef", "Act"]
+        )
         self.table_subjects.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.table_subjects.setColumnWidth(0, 40)
         self.table_subjects.setColumnWidth(6, 80)
@@ -389,7 +448,9 @@ class AcademicSettingsWindow(QMainWindow):
         self.combo_cycle_gen = self.styled_combo()
         btn_gen = QPushButton("⚡ Générer Configuration")
         btn_gen.setMinimumHeight(40)
-        btn_gen.setStyleSheet(f"background-color: {colors.WARNING}; color: white; font-weight: bold; border-radius: 6px;")
+        btn_gen.setStyleSheet(
+            f"background-color: {colors.WARNING}; color: white; font-weight: bold; border-radius: 6px;"
+        )
         btn_gen.clicked.connect(self.generate_academic_logic)
 
         hbox.addWidget(QLabel("Année:"))
@@ -403,7 +464,9 @@ class AcademicSettingsWindow(QMainWindow):
 
         self.table_evals = QTableWidget(0, 7)
         self.style_table(self.table_evals)
-        self.table_evals.setHorizontalHeaderLabels(["ID", "Cycle", "Période", "Type (FR)", "النوع (AR)", "Poids", "Act"])
+        self.table_evals.setHorizontalHeaderLabels(
+            ["ID", "Cycle", "Période", "Type (FR)", "النوع (AR)", "Poids", "Act"]
+        )
         self.table_evals.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.table_evals.setColumnWidth(0, 40)
         layout.addWidget(self.table_evals)
@@ -415,7 +478,8 @@ class AcademicSettingsWindow(QMainWindow):
     # 1. Years
     def save_year(self):
         label = self.txt_year.text().strip()
-        if not label: return
+        if not label:
+            return
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
@@ -447,24 +511,40 @@ class AcademicSettingsWindow(QMainWindow):
                 AcademicRepository(conn).activate_year(id)
                 conn.commit()
             self.refresh_all_data()
-            QMessageBox.information(self, "Succès", "Année scolaire activée avec succès! / تم تنشيط هذه السنة الدراسية!")
+            QMessageBox.information(
+                self, "Succès", "Année scolaire activée avec succès! / تم تنشيط هذه السنة الدراسية!"
+            )
         except Exception as e:
             QMessageBox.critical(self, "Erreur", str(e))
 
     def delete_year(self, id):
-        if QMessageBox.question(self, "Supprimer", "Voulez-vous vraiment supprimer cette année ? / هل تريد الحذف؟", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes:
+        if (
+            QMessageBox.question(
+                self,
+                "Supprimer",
+                "Voulez-vous vraiment supprimer cette année ? / هل تريد الحذف؟",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            == QMessageBox.StandardButton.Yes
+        ):
             try:
                 db = DatabaseManager()
                 with db.get_connection() as conn:
                     repo = AcademicRepository(conn)
                     if repo.get_year_is_active(id):
-                        QMessageBox.warning(self, "Attention", "Impossible de supprimer l'année active. / لا يمكن حذف السنة النشطة.")
+                        QMessageBox.warning(
+                            self, "Attention", "Impossible de supprimer l'année active. / لا يمكن حذف السنة النشطة."
+                        )
                         return
                     repo.delete_year(id)
                     conn.commit()
                 self.refresh_all_data()
             except psycopg2.IntegrityError:
-                QMessageBox.warning(self, "Erreur", "Impossible de supprimer, données liées existantes. / توجد بيانات مرتبطة بهذه السنة.")
+                QMessageBox.warning(
+                    self,
+                    "Erreur",
+                    "Impossible de supprimer, données liées existantes. / توجد بيانات مرتبطة بهذه السنة.",
+                )
             except Exception as e:
                 QMessageBox.critical(self, "Erreur", str(e))
 
@@ -472,13 +552,15 @@ class AcademicSettingsWindow(QMainWindow):
     def save_cycle(self):
         fr = self.txt_c_fr.text().strip()
         ar = self.txt_c_ar.text().strip()
-        if not fr: return
+        if not fr:
+            return
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
                 AcademicRepository(conn).upsert_cycle(self.current_cycle_id, fr, ar)
                 conn.commit()
-            self.txt_c_fr.clear(); self.txt_c_ar.clear()
+            self.txt_c_fr.clear()
+            self.txt_c_ar.clear()
             self.current_cycle_id = None
             self.btn_c.setText("Ajouter")
             self.refresh_all_data()
@@ -496,7 +578,15 @@ class AcademicSettingsWindow(QMainWindow):
             self.btn_c.setText("Modifier")
 
     def delete_cycle(self, id):
-        if QMessageBox.question(self, "Supprimer", "Supprimer ce cycle ?", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes:
+        if (
+            QMessageBox.question(
+                self,
+                "Supprimer",
+                "Supprimer ce cycle ?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            == QMessageBox.StandardButton.Yes
+        ):
             try:
                 db = DatabaseManager()
                 with db.get_connection() as conn:
@@ -512,7 +602,8 @@ class AcademicSettingsWindow(QMainWindow):
         fr = self.txt_cls_fr.text().strip()
         ar = self.txt_cls_ar.text().strip()
         order = self.sp_order.value()
-        if not cid or not fr: return
+        if not cid or not fr:
+            return
 
         try:
             db = DatabaseManager()
@@ -520,7 +611,9 @@ class AcademicSettingsWindow(QMainWindow):
                 AcademicRepository(conn).upsert_class(self.current_class_id, cid, fr, ar, order)
                 conn.commit()
 
-            self.txt_cls_fr.clear(); self.txt_cls_ar.clear(); self.sp_order.setValue(1)
+            self.txt_cls_fr.clear()
+            self.txt_cls_ar.clear()
+            self.sp_order.setValue(1)
             self.current_class_id = None
             self.btn_cls.setText("Ajouter")
             self.refresh_all_data()
@@ -542,7 +635,15 @@ class AcademicSettingsWindow(QMainWindow):
             self.btn_cls.setText("Modifier")
 
     def delete_class(self, id):
-        if QMessageBox.question(self, "Supprimer", "Supprimer cette classe ?", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes:
+        if (
+            QMessageBox.question(
+                self,
+                "Supprimer",
+                "Supprimer cette classe ?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            == QMessageBox.StandardButton.Yes
+        ):
             try:
                 db = DatabaseManager()
                 with db.get_connection() as conn:
@@ -559,7 +660,8 @@ class AcademicSettingsWindow(QMainWindow):
         ar = self.txt_sub_ar.text().strip()
         coef = self.sp_coeff.value()
         lang = self.combo_sub_lang.currentText()
-        if not cid or not fr: return
+        if not cid or not fr:
+            return
 
         try:
             db = DatabaseManager()
@@ -567,7 +669,9 @@ class AcademicSettingsWindow(QMainWindow):
                 AcademicRepository(conn).upsert_subject(self.current_subject_id, cid, fr, ar, coef, lang)
                 conn.commit()
 
-            self.txt_sub_fr.clear(); self.txt_sub_ar.clear(); self.sp_coeff.setValue(1)
+            self.txt_sub_fr.clear()
+            self.txt_sub_ar.clear()
+            self.sp_coeff.setValue(1)
             self.current_subject_id = None
             self.btn_sub.setText("Ajouter Matière")
             self.refresh_all_data()
@@ -585,12 +689,20 @@ class AcademicSettingsWindow(QMainWindow):
             self.txt_sub_fr.setText(res[1])
             self.txt_sub_ar.setText(res[2])
             self.sp_coeff.setValue(float(res[3]))
-            self.combo_sub_lang.setCurrentText(res[4] if res[4] else "Français")
+            self.combo_sub_lang.setCurrentText(res[4] or "Français")
             self.current_subject_id = id
             self.btn_sub.setText("Modifier")
 
     def delete_subject(self, id):
-        if QMessageBox.question(self, "Supprimer", "Supprimer cette matière ?", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes:
+        if (
+            QMessageBox.question(
+                self,
+                "Supprimer",
+                "Supprimer cette matière ?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            == QMessageBox.StandardButton.Yes
+        ):
             try:
                 db = DatabaseManager()
                 with db.get_connection() as conn:
@@ -602,7 +714,15 @@ class AcademicSettingsWindow(QMainWindow):
 
     # 5. Evaluations
     def delete_evaluation(self, id):
-        if QMessageBox.question(self, "Supprimer", "Supprimer cette évaluation ?", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes:
+        if (
+            QMessageBox.question(
+                self,
+                "Supprimer",
+                "Supprimer cette évaluation ?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            == QMessageBox.StandardButton.Yes
+        ):
             try:
                 db = DatabaseManager()
                 with db.get_connection() as conn:
@@ -634,8 +754,7 @@ class AcademicSettingsWindow(QMainWindow):
             db = DatabaseManager()
             with db.get_connection() as conn:
                 AcademicRepository(conn).save_school_info(
-                    republic, ia, ief, school_name, auth, address, phone,
-                    self.logo_path_value, director
+                    republic, ia, ief, school_name, auth, address, phone, self.logo_path_value, director
                 )
                 conn.commit()
             QMessageBox.information(self, "Succès", "Informations enregistrées et mises à jour.")
@@ -643,7 +762,9 @@ class AcademicSettingsWindow(QMainWindow):
             QMessageBox.critical(self, "Erreur", str(e))
 
     def browse_logo(self):
-        file_path, _ = QFileDialog.getOpenFileName(self, "Sélectionner le logo", "", "Image Files (*.png *.jpg *.jpeg *.bmp *.gif)")
+        file_path, _ = QFileDialog.getOpenFileName(
+            self, "Sélectionner le logo", "", "Image Files (*.png *.jpg *.jpeg *.bmp *.gif)"
+        )
         if file_path:
             self.logo_path_value = file_path
             self.logo_path_display.setText(os.path.basename(file_path))
@@ -661,12 +782,11 @@ class AcademicSettingsWindow(QMainWindow):
             db = DatabaseManager()
             with db.get_connection() as conn:
                 is_elementary = (
-                    "elem" in cycle_name or "prim" in cycle_name or
-                    "\u0625\u0628\u062a\u062f\u0627\u0626\u064a" in cycle_name
+                    "elem" in cycle_name
+                    or "prim" in cycle_name
+                    or "\u0625\u0628\u062a\u062f\u0627\u0626\u064a" in cycle_name
                 )
-                AcademicRepository(conn).generate_periods_and_assessments(
-                    year_id, cycle_id, is_elementary
-                )
+                AcademicRepository(conn).generate_periods_and_assessments(year_id, cycle_id, is_elementary)
                 conn.commit()
 
             self.refresh_all_data()
@@ -683,17 +803,25 @@ class AcademicSettingsWindow(QMainWindow):
                 # School Info
                 info = repo.get_school_info()
                 if info:
-                    if len(info) > 1: self.info_inputs['rep'].setText(str(info[1] or ""))
-                    if len(info) > 2: self.info_inputs['ia'].setText(str(info[2] or ""))
-                    if len(info) > 3: self.info_inputs['ief'].setText(str(info[3] or ""))
-                    if len(info) > 4: self.info_inputs['name'].setText(str(info[4] or ""))
-                    if len(info) > 5: self.info_inputs['auth'].setText(str(info[5] or ""))
-                    if len(info) > 6: self.info_inputs['loc'].setText(str(info[6] or ""))
-                    if len(info) > 7: self.info_inputs['tel'].setText(str(info[7] or ""))
+                    if len(info) > 1:
+                        self.info_inputs['rep'].setText(str(info[1] or ""))
+                    if len(info) > 2:
+                        self.info_inputs['ia'].setText(str(info[2] or ""))
+                    if len(info) > 3:
+                        self.info_inputs['ief'].setText(str(info[3] or ""))
+                    if len(info) > 4:
+                        self.info_inputs['name'].setText(str(info[4] or ""))
+                    if len(info) > 5:
+                        self.info_inputs['auth'].setText(str(info[5] or ""))
+                    if len(info) > 6:
+                        self.info_inputs['loc'].setText(str(info[6] or ""))
+                    if len(info) > 7:
+                        self.info_inputs['tel'].setText(str(info[7] or ""))
                     if len(info) > 8:
                         self.logo_path_value = info[8]
                         self.logo_path_display.setText(os.path.basename(info[8]) if info[8] else "")
-                    if len(info) > 9: self.info_inputs['director'].setText(str(info[9] or ""))
+                    if len(info) > 9:
+                        self.info_inputs['director'].setText(str(info[9] or ""))
                 else:
                     if self.config:
                         self.info_inputs['name'].setText(self.config.school_name)
@@ -726,7 +854,8 @@ class AcademicSettingsWindow(QMainWindow):
                     btn_activate.setCursor(Qt.CursorShape.PointingHandCursor)
                     btn_activate.setStyleSheet(
                         f"background-color: {colors.SUCCESS}; color: white; border-radius: 4px; border: none; font-weight: bold;"
-                        if r[2] else f"background-color: {colors.BORDER}; color: {colors.TEXT_SECONDARY}; border-radius: 4px; border: none;"
+                        if r[2]
+                        else f"background-color: {colors.BORDER}; color: {colors.TEXT_SECONDARY}; border-radius: 4px; border: none;"
                     )
                     btn_activate.clicked.connect(lambda checked, id=r[0]: self.activate_year(id))
                     layout.addWidget(btn_activate)
@@ -734,14 +863,18 @@ class AcademicSettingsWindow(QMainWindow):
                     btn_edit = QPushButton("✎")
                     btn_edit.setFixedSize(28, 28)
                     btn_edit.setCursor(Qt.CursorShape.PointingHandCursor)
-                    btn_edit.setStyleSheet(f"background-color: {colors.WARNING}; color: white; border-radius: 4px; border: none;")
+                    btn_edit.setStyleSheet(
+                        f"background-color: {colors.WARNING}; color: white; border-radius: 4px; border: none;"
+                    )
                     btn_edit.clicked.connect(lambda checked, id=r[0]: self.edit_year(id))
                     layout.addWidget(btn_edit)
 
                     btn_del = QPushButton("✕")
                     btn_del.setFixedSize(28, 28)
                     btn_del.setCursor(Qt.CursorShape.PointingHandCursor)
-                    btn_del.setStyleSheet(f"background-color: {colors.DANGER}; color: white; border-radius: 4px; border: none;")
+                    btn_del.setStyleSheet(
+                        f"background-color: {colors.DANGER}; color: white; border-radius: 4px; border: none;"
+                    )
                     btn_del.clicked.connect(lambda checked, id=r[0]: self.delete_year(id))
                     layout.addWidget(btn_del)
 
@@ -783,7 +916,8 @@ class AcademicSettingsWindow(QMainWindow):
                 for r in repo.list_subjects_with_cycle():
                     idx = self.table_subjects.rowCount()
                     self.table_subjects.insertRow(idx)
-                    for c, v in enumerate(r): self.table_subjects.setItem(idx, c, QTableWidgetItem(self.safe_text(v)))
+                    for c, v in enumerate(r):
+                        self.table_subjects.setItem(idx, c, QTableWidgetItem(self.safe_text(v)))
                     self.add_action_buttons(self.table_subjects, idx, r[0], self.edit_subject, self.delete_subject)
 
                 # Evals

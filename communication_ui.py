@@ -1,27 +1,53 @@
-import sys
-import psycopg2
-import smtplib
 import os
+import smtplib
+import sys
 from datetime import datetime
-from fpdf import FPDF
-from email.mime.text import MIMEText
-from email.mime.multipart import MIMEMultipart
 from email.mime.application import MIMEApplication
-from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
-                             QHBoxLayout, QPushButton, QLabel, QLineEdit,
-                             QTextEdit, QComboBox, QMessageBox, QHeaderView,
-                             QGroupBox, QTableWidget, QTableWidgetItem, QFileDialog,
-                             QTabWidget, QProgressBar, QFrame, QGridLayout,
-                             QGraphicsDropShadowEffect, QCheckBox, QDateEdit)
-from PyQt6.QtCore import Qt, QThread, pyqtSignal, QDate
-from PyQt6.QtGui import QFont, QColor
-from database_setup import DatabaseManager
-from print_export_service import output_pdf, get_report_output_mode
-from pdf_report_style import apply_grades_sheet_header, apply_table_header_style, apply_table_body_style, set_zebra_row_fill, get_school_info_row
+from email.mime.multipart import MIMEMultipart
+from email.mime.text import MIMEText
 
-from ui_styles import ThemeManager, get_card_style, apply_shadow_to_widget, Colors, get_table_style, get_tabs_style
+import psycopg2
+from fpdf import FPDF
+from PyQt6.QtCore import QDate, Qt, QThread, pyqtSignal
+from PyQt6.QtGui import QColor, QFont
+from PyQt6.QtWidgets import (
+    QApplication,
+    QCheckBox,
+    QComboBox,
+    QDateEdit,
+    QFileDialog,
+    QFrame,
+    QGraphicsDropShadowEffect,
+    QGridLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QLineEdit,
+    QMainWindow,
+    QMessageBox,
+    QProgressBar,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QTabWidget,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+)
+
 from app_logger import AppLogger
+from database_setup import DatabaseManager
+from pdf_report_style import (
+    apply_grades_sheet_header,
+    apply_table_body_style,
+    apply_table_header_style,
+    get_school_info_row,
+    set_zebra_row_fill,
+)
+from print_export_service import get_report_output_mode, output_pdf
 from repositories.communication_repo import CommunicationRepository
+from ui_styles import Colors, ThemeManager, apply_shadow_to_widget, get_card_style, get_table_style, get_tabs_style
 
 THEME_AVAILABLE = True
 COMMUNICATION_REPORT_OUTPUT_MODE = get_report_output_mode("communication_report_mode", "save")
@@ -98,14 +124,16 @@ class CommunicationWindow(QMainWindow):
             ThemeManager.apply_theme(self)
         else:
             colors = Colors()
-            self.setStyleSheet(f"""
+            self.setStyleSheet(
+                f"""
                 QMainWindow {{ background-color: {colors.BG_MAIN}; }}
                 QLabel {{ font-family: 'Segoe UI', 'Cairo', sans-serif; color: {colors.TEXT_PRIMARY}; }}
                 QGroupBox {{
                     border: 1px solid {colors.BORDER}; border-radius: 8px; margin-top: 10px;
                     background-color: {colors.BG_CARD}; font-weight: bold; color: {colors.TEXT_SECONDARY};
                 }}
-            """)
+            """
+            )
 
         self.attachment_path = None
         self.init_ui()
@@ -168,12 +196,14 @@ class CommunicationWindow(QMainWindow):
         if THEME_AVAILABLE:
             self.tabs.setStyleSheet(get_tabs_style())
         else:
-            self.tabs.setStyleSheet(f"""
+            self.tabs.setStyleSheet(
+                f"""
                 QTabWidget::pane {{ border: 1px solid {colors.BORDER}; background: {colors.BG_CARD}; border-radius: 12px; margin-top: 15px; }}
                 QTabBar::tab {{ background: {colors.BG_MAIN}; color: {colors.TEXT_SECONDARY}; padding: 12px 30px; margin-right: 6px; border-top-left-radius: 8px; border-top-right-radius: 8px; font-weight: bold; font-family: 'Segoe UI', 'Cairo'; }}
                 QTabBar::tab:selected {{ background: {colors.BG_HEADER}; color: {colors.HEADER_TEXT}; }}
                 QTabBar::tab:hover {{ background: {colors.BORDER}; }}
-            """)
+            """
+            )
 
         self.setup_compose_tab()
         self.setup_settings_tab()
@@ -189,9 +219,13 @@ class CommunicationWindow(QMainWindow):
             apply_shadow_to_widget(frame)
         else:
             colors = Colors()
-            frame.setStyleSheet(f"QFrame {{ background-color: {colors.BG_CARD}; border-radius: 12px; border: 1px solid {colors.BORDER}; }}")
+            frame.setStyleSheet(
+                f"QFrame {{ background-color: {colors.BG_CARD}; border-radius: 12px; border: 1px solid {colors.BORDER}; }}"
+            )
             shadow = QGraphicsDropShadowEffect()
-            shadow.setBlurRadius(20); shadow.setColor(QColor(15, 23, 42, 15)); shadow.setOffset(0, 4)
+            shadow.setBlurRadius(20)
+            shadow.setColor(QColor(15, 23, 42, 15))
+            shadow.setOffset(0, 4)
             frame.setGraphicsEffect(shadow)
         return frame
 
@@ -199,14 +233,18 @@ class CommunicationWindow(QMainWindow):
         le = QLineEdit()
         le.setPlaceholderText(placeholder)
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-        le.setStyleSheet(f"QLineEdit {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }} QLineEdit:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}")
+        le.setStyleSheet(
+            f"QLineEdit {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }} QLineEdit:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}"
+        )
         le.setMinimumHeight(38)
         return le
 
     def styled_combo(self):
         combo = QComboBox()
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-        combo.setStyleSheet(f"QComboBox {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }} QComboBox:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}")
+        combo.setStyleSheet(
+            f"QComboBox {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }} QComboBox:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}"
+        )
         combo.setMinimumHeight(38)
         return combo
 
@@ -215,7 +253,9 @@ class CommunicationWindow(QMainWindow):
         date_edit.setCalendarPopup(True)
         date_edit.setMinimumHeight(38)
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-        date_edit.setStyleSheet(f"QDateEdit {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }} QDateEdit:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}")
+        date_edit.setStyleSheet(
+            f"QDateEdit {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }} QDateEdit:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}"
+        )
         return date_edit
 
     def styled_text_edit(self, placeholder=""):
@@ -223,7 +263,9 @@ class CommunicationWindow(QMainWindow):
         if placeholder:
             text_edit.setPlaceholderText(placeholder)
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-        text_edit.setStyleSheet(f"QTextEdit {{ padding: 10px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }} QTextEdit:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}")
+        text_edit.setStyleSheet(
+            f"QTextEdit {{ padding: 10px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }} QTextEdit:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}"
+        )
         return text_edit
 
     def style_table(self, table):
@@ -234,12 +276,14 @@ class CommunicationWindow(QMainWindow):
             table.setStyleSheet(get_table_style())
         else:
             colors = Colors()
-            table.setStyleSheet(f"""
+            table.setStyleSheet(
+                f"""
                 QTableWidget {{ background-color: {colors.BG_CARD}; border: 1px solid {colors.BORDER}; border-radius: 8px; gridline-color: {colors.BORDER}; font-size: 13px; color: {colors.TEXT_PRIMARY}; }}
                 QTableWidget::item {{ padding: 6px; border-bottom: 1px solid {colors.BG_MAIN}; }}
                 QTableWidget::item:selected {{ background-color: {colors.PRIMARY}; color: white; }}
                 QHeaderView::section {{ background-color: {colors.BG_HEADER}; color: {colors.HEADER_TEXT}; padding: 8px; border: none; font-weight: bold; }}
-            """)
+            """
+            )
 
     def setup_compose_tab(self):
         tab = QWidget()
@@ -252,7 +296,9 @@ class CommunicationWindow(QMainWindow):
         tlay.setContentsMargins(15, 15, 15, 15)
 
         self.combo_target_type = self.styled_combo()
-        self.combo_target_type.addItems(["Parents d'une Classe / أولياء فصل", "Tout le Personnel / كل الموظفين", "Profs Seulement / الأساتذة"])
+        self.combo_target_type.addItems(
+            ["Parents d'une Classe / أولياء فصل", "Tout le Personnel / كل الموظفين", "Profs Seulement / الأساتذة"]
+        )
         self.combo_target_type.currentIndexChanged.connect(self.toggle_class_combo)
 
         self.combo_class = self.styled_combo()
@@ -279,7 +325,9 @@ class CommunicationWindow(QMainWindow):
 
         btn_att = QPushButton("📎 Joindre un fichier")
         btn_att.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_att.setStyleSheet(f"background-color: {colors.PRIMARY}; color: white; border-radius: 6px; padding: 8px; font-weight: bold;")
+        btn_att.setStyleSheet(
+            f"background-color: {colors.PRIMARY}; color: white; border-radius: 6px; padding: 8px; font-weight: bold;"
+        )
         btn_att.clicked.connect(self.attach_file)
 
         att_layout.addWidget(btn_att)
@@ -297,12 +345,16 @@ class CommunicationWindow(QMainWindow):
         btn_send = QPushButton("🚀 ENVOYER / إرسال")
         btn_send.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_send.setMinimumHeight(45)
-        btn_send.setStyleSheet(f"QPushButton {{ background-color: {colors.SUCCESS}; color: white; font-weight: bold; border-radius: 8px; font-size: 14px; border: none; }} QPushButton:hover {{ background-color: {colors.SUCCESS_HOVER}; }}")
+        btn_send.setStyleSheet(
+            f"QPushButton {{ background-color: {colors.SUCCESS}; color: white; font-weight: bold; border-radius: 8px; font-size: 14px; border: none; }} QPushButton:hover {{ background-color: {colors.SUCCESS_HOVER}; }}"
+        )
         btn_send.clicked.connect(self.send_email)
 
         self.progress = QProgressBar()
         self.progress.setVisible(False)
-        self.progress.setStyleSheet(f"QProgressBar {{ border: 1px solid {colors.BORDER}; border-radius: 6px; text-align: center; color: {colors.TEXT_PRIMARY}; background: {colors.BG_MAIN}; }} QProgressBar::chunk {{ background-color: {colors.SUCCESS}; }}")
+        self.progress.setStyleSheet(
+            f"QProgressBar {{ border: 1px solid {colors.BORDER}; border-radius: 6px; text-align: center; color: {colors.TEXT_PRIMARY}; background: {colors.BG_MAIN}; }} QProgressBar::chunk {{ background-color: {colors.SUCCESS}; }}"
+        )
 
         layout.addWidget(self.progress)
         layout.addWidget(btn_send)
@@ -331,7 +383,9 @@ class CommunicationWindow(QMainWindow):
         btn_save.setMinimumHeight(40)
         btn_save.setCursor(Qt.CursorShape.PointingHandCursor)
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-        btn_save.setStyleSheet(f"background-color: {colors.WARNING}; color: white; font-weight: bold; border-radius: 6px; border: none;")
+        btn_save.setStyleSheet(
+            f"background-color: {colors.WARNING}; color: white; font-weight: bold; border-radius: 6px; border: none;"
+        )
         btn_save.clicked.connect(self.save_settings)
 
         form.addWidget(QLabel("Serveur SMTP:"))
@@ -363,7 +417,9 @@ class CommunicationWindow(QMainWindow):
         btn_refresh = QPushButton("Actualiser")
         btn_refresh.setCursor(Qt.CursorShape.PointingHandCursor)
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-        btn_refresh.setStyleSheet(f"QPushButton {{ background-color: {colors.PRIMARY}; color: white; font-weight: bold; border-radius: 6px; padding: 8px; border: none; }} QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}")
+        btn_refresh.setStyleSheet(
+            f"QPushButton {{ background-color: {colors.PRIMARY}; color: white; font-weight: bold; border-radius: 6px; padding: 8px; border: none; }} QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}"
+        )
         btn_refresh.clicked.connect(self.load_logs)
 
         layout.addWidget(btn_refresh)
@@ -400,8 +456,12 @@ class CommunicationWindow(QMainWindow):
         btn_export.setMinimumHeight(38)
 
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-        btn_generate.setStyleSheet(f"background-color: {colors.PRIMARY}; color: white; font-weight: bold; border-radius: 6px; border: none;")
-        btn_export.setStyleSheet(f"background-color: {colors.SUCCESS}; color: white; font-weight: bold; border-radius: 6px; border: none;")
+        btn_generate.setStyleSheet(
+            f"background-color: {colors.PRIMARY}; color: white; font-weight: bold; border-radius: 6px; border: none;"
+        )
+        btn_export.setStyleSheet(
+            f"background-color: {colors.SUCCESS}; color: white; font-weight: bold; border-radius: 6px; border: none;"
+        )
 
         btn_generate.clicked.connect(self.run_communication_report)
         btn_export.clicked.connect(self.export_communication_report_pdf)
@@ -447,21 +507,25 @@ class CommunicationWindow(QMainWindow):
                 else:
                     title = "Rapport Détail des Envois Emails"
                     headers = ["Date", "Destinataire", "Sujet", "Statut", "Erreur"]
-                    for sent_at, recipient, subject, status, error_msg in repo.get_notification_log_detail(date_from, date_to_full):
-                        rows.append([
-                            sent_at or "-",
-                            recipient or "-",
-                            subject or "-",
-                            status or "-",
-                            error_msg or "",
-                        ])
+                    for sent_at, recipient, subject, status, error_msg in repo.get_notification_log_detail(
+                        date_from, date_to_full
+                    ):
+                        rows.append(
+                            [
+                                sent_at or "-",
+                                recipient or "-",
+                                subject or "-",
+                                status or "-",
+                                error_msg or "",
+                            ]
+                        )
 
             self.current_comm_report_title = title
             self.current_comm_report_headers = headers
             self.current_comm_report_rows = rows
 
             self.table_comm_report.setColumnCount(len(headers) if headers else 1)
-            self.table_comm_report.setHorizontalHeaderLabels(headers if headers else ["Données"])
+            self.table_comm_report.setHorizontalHeaderLabels(headers or ["Données"])
             self.table_comm_report.setRowCount(0)
 
             for row_vals in rows:
@@ -534,7 +598,7 @@ class CommunicationWindow(QMainWindow):
             AppLogger.error("CommunicationUI", f"Error loading classes: {e}")
 
     def toggle_class_combo(self):
-        is_class = (self.combo_target_type.currentIndex() == 0)
+        is_class = self.combo_target_type.currentIndex() == 0
         self.combo_class.setEnabled(is_class)
 
     def attach_file(self):
@@ -551,8 +615,7 @@ class CommunicationWindow(QMainWindow):
             db = DatabaseManager()
             with db.get_connection() as conn:
                 CommunicationRepository(conn).upsert_email_settings(
-                    self.txt_smtp_host.text(), self.txt_smtp_port.text(),
-                    self.txt_email.text(), password_value
+                    self.txt_smtp_host.text(), self.txt_smtp_port.text(), self.txt_email.text(), password_value
                 )
                 conn.commit()
             QMessageBox.information(self, "Succès", "Paramètres sauvegardés.")
@@ -571,7 +634,7 @@ class CommunicationWindow(QMainWindow):
                 self.txt_email.setText(str(res[3] or ""))
                 self.chk_save_password.setChecked(bool(res[4]))
                 self.txt_password.clear()
-        except Exception as e:
+        except Exception:
             pass
 
     def get_recipients(self):
@@ -585,7 +648,8 @@ class CommunicationWindow(QMainWindow):
 
                 if target_idx == 0:  # Parents of Class
                     cid = self.combo_class.currentData()
-                    if not cid: return []
+                    if not cid:
+                        return []
 
                     active_year = self.get_active_year_id()
 
@@ -594,12 +658,12 @@ class CommunicationWindow(QMainWindow):
 
                 elif target_idx == 1:  # All Staff
                     for r in repo.get_recipients_all_staff():
-                        display_name = (str(r[1] or "").strip() or "[Staff]")
+                        display_name = str(r[1] or "").strip() or "[Staff]"
                         recipients.append((r[0], display_name, str(r[2] or "")))
 
                 elif target_idx == 2:  # Teachers Only
                     for r in repo.get_recipients_teachers():
-                        display_name = (str(r[1] or "").strip() or "[Prof]")
+                        display_name = str(r[1] or "").strip() or "[Prof]"
                         recipients.append((r[0], display_name, str(r[2] or "")))
         except Exception as e:
             AppLogger.error("CommunicationUI", f"Error fetching recipients: {e}")
@@ -616,7 +680,7 @@ class CommunicationWindow(QMainWindow):
             'host': self.txt_smtp_host.text(),
             'port': self.txt_smtp_port.text(),
             'email': self.txt_email.text(),
-            'password': self.txt_password.text()
+            'password': self.txt_password.text(),
         }
 
         if not smtp_conf['password']:
@@ -628,14 +692,18 @@ class CommunicationWindow(QMainWindow):
             return
 
         if not smtp_conf['password']:
-            QMessageBox.warning(self, "Erreur", "Mot de passe SMTP manquant (saisissez-le ou définissez SMTP_PASSWORD).")
+            QMessageBox.warning(
+                self, "Erreur", "Mot de passe SMTP manquant (saisissez-le ou définissez SMTP_PASSWORD)."
+            )
             self.tabs.setCurrentIndex(1)
             return
 
         self.progress.setVisible(True)
         self.progress.setValue(0)
 
-        self.worker = EmailWorker(smtp_conf, recipients, self.txt_subject.text(), self.txt_body.toPlainText(), self.attachment_path)
+        self.worker = EmailWorker(
+            smtp_conf, recipients, self.txt_subject.text(), self.txt_body.toPlainText(), self.attachment_path
+        )
         self.worker.progress.connect(self.progress.setValue)
         self.worker.log_signal.connect(self.log_result)
         self.worker.finished.connect(self.on_send_finished)
@@ -646,9 +714,7 @@ class CommunicationWindow(QMainWindow):
             db = DatabaseManager()
             dt = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             with db.get_connection() as conn:
-                CommunicationRepository(conn).insert_notification_log(
-                    email, self.txt_subject.text(), status, error, dt
-                )
+                CommunicationRepository(conn).insert_notification_log(email, self.txt_subject.text(), status, error, dt)
                 conn.commit()
         except Exception as e:
             AppLogger.error("CommunicationUI", f"Error logging email: {e}")

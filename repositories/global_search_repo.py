@@ -33,7 +33,7 @@ class GlobalSearchRepository:
                 (pat, pat, pat, pat, limit),
             )
             for sid, name_fr, name_ar in cur.fetchall():
-                subtitle = name_ar.strip() if name_ar.strip() else ""
+                subtitle = name_ar.strip() or ""
                 results.append(("Élève", name_fr.strip(), subtitle, "student_management", sid))
 
             # 2. Personnel

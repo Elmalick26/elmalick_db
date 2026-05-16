@@ -100,8 +100,7 @@ class AnalyticsWorker(QThread):
 # Chart Widgets
 # ──────────────────────────────────────────────────────────────
 def _make_figure(figsize=(6, 4)):
-    fig = Figure(figsize=figsize, tight_layout=True, facecolor="#1e2433")
-    return fig
+    return Figure(figsize=figsize, tight_layout=True, facecolor="#1e2433")
 
 
 class GradesBarChart(QWidget):

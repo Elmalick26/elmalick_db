@@ -13,7 +13,8 @@
     "alembic",
     "**/node_modules",
     "**/__pycache__",
-    "**/.git"
+    "**/.git",
+    "**/*.pyc"
   ],
   "reportMissingTypeArgument": "none",
   "reportUnknownParameterType": "none",

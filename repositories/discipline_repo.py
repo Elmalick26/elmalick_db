@@ -186,7 +186,7 @@ class DisciplineRepository:
         return {
             "id": row[0],
             "student_name": row[1],
-            "class_name": row[2] if row[2] else "-",
+            "class_name": row[2] or "-",
             "class_id": row[3],
             "date": row[4],
             "incident": row[5],

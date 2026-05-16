@@ -1,23 +1,48 @@
-import sys
-import psycopg2
 import os
+import sys
 from datetime import datetime
-from fpdf import FPDF
-from database_setup import DatabaseManager
-from app_logger import AppLogger
-from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
-                             QHBoxLayout, QTableWidget, QTableWidgetItem,
-                             QPushButton, QLabel, QLineEdit, QComboBox,
-                             QMessageBox, QHeaderView, QGroupBox, QSpinBox,
-                             QDoubleSpinBox, QTabWidget, QFrame, QDateEdit,
-                             QGridLayout, QGraphicsDropShadowEffect, QScrollArea)
-from PyQt6.QtCore import Qt, QDate
-from PyQt6.QtGui import QFont, QColor, QIcon
-from print_export_service import output_pdf, get_report_output_mode
-from pdf_report_style import apply_grades_sheet_header, apply_table_header_style, apply_table_body_style, set_zebra_row_fill, get_school_info_row
 
-from ui_styles import ThemeManager, get_card_style, apply_shadow_to_widget, get_table_style, get_tabs_style, Colors
+import psycopg2
+from fpdf import FPDF
+from PyQt6.QtCore import QDate, Qt
+from PyQt6.QtGui import QColor, QFont, QIcon
+from PyQt6.QtWidgets import (
+    QApplication,
+    QComboBox,
+    QDateEdit,
+    QDoubleSpinBox,
+    QFrame,
+    QGraphicsDropShadowEffect,
+    QGridLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QLineEdit,
+    QMainWindow,
+    QMessageBox,
+    QPushButton,
+    QScrollArea,
+    QSpinBox,
+    QTableWidget,
+    QTableWidgetItem,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
+)
+
+from app_logger import AppLogger
+from database_setup import DatabaseManager
+from pdf_report_style import (
+    apply_grades_sheet_header,
+    apply_table_body_style,
+    apply_table_header_style,
+    get_school_info_row,
+    set_zebra_row_fill,
+)
+from print_export_service import get_report_output_mode, output_pdf
 from repositories.inventory_repo import InventoryRepository
+from ui_styles import Colors, ThemeManager, apply_shadow_to_widget, get_card_style, get_table_style, get_tabs_style
 
 THEME_AVAILABLE = True
 
@@ -36,10 +61,12 @@ class InventoryWindow(QMainWindow):
             ThemeManager.apply_theme(self)
         else:
             colors = Colors()
-            self.setStyleSheet(f"""
+            self.setStyleSheet(
+                f"""
                 QMainWindow {{ background-color: {colors.BG_MAIN}; }}
                 QLabel {{ font-family: 'Segoe UI', 'Cairo', sans-serif; color: {colors.TEXT_PRIMARY}; }}
-            """)
+            """
+            )
 
         self.init_ui()
         self.load_inventory()
@@ -56,9 +83,11 @@ class InventoryWindow(QMainWindow):
         header_frame = QFrame()
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
 
-        header_frame.setStyleSheet(f"""
+        header_frame.setStyleSheet(
+            f"""
             QFrame {{ background-color: {colors.BG_HEADER}; border-radius: 10px; }}
-        """)
+        """
+        )
         header_frame.setMaximumHeight(80)
 
         shadow = QGraphicsDropShadowEffect()
@@ -97,12 +126,14 @@ class InventoryWindow(QMainWindow):
         if THEME_AVAILABLE:
             self.tabs.setStyleSheet(get_tabs_style())
         else:
-            self.tabs.setStyleSheet(f"""
+            self.tabs.setStyleSheet(
+                f"""
                 QTabWidget::pane {{ border: 1px solid {colors.BORDER}; background: {colors.BG_CARD}; border-radius: 12px; margin-top: 15px; }}
                 QTabBar::tab {{ background: {colors.BG_MAIN}; color: {colors.TEXT_SECONDARY}; padding: 12px 30px; margin-right: 6px; border-top-left-radius: 8px; border-top-right-radius: 8px; font-weight: bold; font-family: 'Segoe UI', 'Cairo'; }}
                 QTabBar::tab:selected {{ background: {colors.BG_HEADER}; color: {colors.HEADER_TEXT}; }}
                 QTabBar::tab:hover {{ background: {colors.BORDER}; }}
-            """)
+            """
+            )
 
         self.setup_stock_tab()
         self.setup_movement_tab()
@@ -119,9 +150,13 @@ class InventoryWindow(QMainWindow):
             apply_shadow_to_widget(frame)
         else:
             colors = Colors()
-            frame.setStyleSheet(f"QFrame {{ background-color: {colors.BG_CARD}; border-radius: 12px; border: 1px solid {colors.BORDER}; }}")
+            frame.setStyleSheet(
+                f"QFrame {{ background-color: {colors.BG_CARD}; border-radius: 12px; border: 1px solid {colors.BORDER}; }}"
+            )
             shadow = QGraphicsDropShadowEffect()
-            shadow.setBlurRadius(20); shadow.setColor(QColor(15, 23, 42, 15)); shadow.setOffset(0, 4)
+            shadow.setBlurRadius(20)
+            shadow.setColor(QColor(15, 23, 42, 15))
+            shadow.setOffset(0, 4)
             frame.setGraphicsEffect(shadow)
         return frame
 
@@ -129,20 +164,24 @@ class InventoryWindow(QMainWindow):
         le = QLineEdit()
         le.setPlaceholderText(placeholder)
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-        le.setStyleSheet(f"""
+        le.setStyleSheet(
+            f"""
             QLineEdit {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }}
             QLineEdit:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}
-        """)
+        """
+        )
         le.setMinimumHeight(38)
         return le
 
     def styled_combo(self):
         combo = QComboBox()
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-        combo.setStyleSheet(f"""
+        combo.setStyleSheet(
+            f"""
             QComboBox {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }}
             QComboBox:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}
-        """)
+        """
+        )
         combo.setMinimumHeight(38)
         return combo
 
@@ -151,10 +190,12 @@ class InventoryWindow(QMainWindow):
         sb.setRange(0, 100000)
         sb.setSuffix(suffix)
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-        sb.setStyleSheet(f"""
+        sb.setStyleSheet(
+            f"""
             QSpinBox {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }}
             QSpinBox:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}
-        """)
+        """
+        )
         sb.setMinimumHeight(38)
         return sb
 
@@ -164,7 +205,9 @@ class InventoryWindow(QMainWindow):
         spin.setPrefix(prefix)
         spin.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-        spin.setStyleSheet(f"QDoubleSpinBox {{ padding: 8px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }}")
+        spin.setStyleSheet(
+            f"QDoubleSpinBox {{ padding: 8px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }}"
+        )
         spin.setMinimumHeight(38)
         return spin
 
@@ -172,7 +215,9 @@ class InventoryWindow(QMainWindow):
         date_edit = QDateEdit()
         date_edit.setCalendarPopup(True)
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-        date_edit.setStyleSheet(f"QDateEdit {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }}")
+        date_edit.setStyleSheet(
+            f"QDateEdit {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }}"
+        )
         date_edit.setMinimumHeight(38)
         return date_edit
 
@@ -184,12 +229,14 @@ class InventoryWindow(QMainWindow):
             table.setStyleSheet(get_table_style())
         else:
             colors = Colors()
-            table.setStyleSheet(f"""
+            table.setStyleSheet(
+                f"""
                 QTableWidget {{ background-color: {colors.BG_CARD}; border: 1px solid {colors.BORDER}; border-radius: 8px; gridline-color: {colors.BORDER}; font-size: 13px; color: {colors.TEXT_PRIMARY}; }}
                 QTableWidget::item {{ padding: 6px; border-bottom: 1px solid {colors.BG_MAIN}; }}
                 QTableWidget::item:selected {{ background-color: {colors.PRIMARY}; color: white; }}
                 QHeaderView::section {{ background-color: {colors.BG_HEADER}; color: {colors.HEADER_TEXT}; padding: 10px; border: none; font-weight: bold; }}
-            """)
+            """
+            )
 
     # ---------------------------------------------------------
     # TAB 1: Stock Overview
@@ -216,7 +263,9 @@ class InventoryWindow(QMainWindow):
         self.txt_name_ar = self.styled_input("الاسم (عربي)")
 
         self.combo_cat = self.styled_combo()
-        self.combo_cat.addItems(["Fournitures (قرطاسية)", "Mobilier (أثاث)", "Électronique (إلكترونيات)", "Hygiène (نظافة)", "Autre"])
+        self.combo_cat.addItems(
+            ["Fournitures (قرطاسية)", "Mobilier (أثاث)", "Électronique (إلكترونيات)", "Hygiène (نظافة)", "Autre"]
+        )
 
         self.spin_qty = self.styled_spinbox()
         self.spin_min = self.styled_spinbox()
@@ -228,10 +277,12 @@ class InventoryWindow(QMainWindow):
         btn_add = QPushButton("Ajouter Article")
         btn_add.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_add.setMinimumHeight(45)
-        btn_add.setStyleSheet(f"""
+        btn_add.setStyleSheet(
+            f"""
             QPushButton {{ background-color: {colors.SUCCESS}; color: white; font-weight: bold; border-radius: 8px; border: none; }}
             QPushButton:hover {{ background-color: {colors.SUCCESS_HOVER}; }}
-        """)
+        """
+        )
         btn_add.clicked.connect(self.add_item)
 
         flay.addWidget(QLabel("Nom FR:"))
@@ -268,13 +319,17 @@ class InventoryWindow(QMainWindow):
         table_layout = QVBoxLayout()
 
         self.lbl_stats = QLabel("Valeur: 0.00 FCFA | Rupture: 0")
-        self.lbl_stats.setStyleSheet(f"background-color: {colors.BG_MAIN}; padding: 12px; border-radius: 8px; color: {colors.TEXT_PRIMARY}; font-weight: bold; border: 1px solid {colors.BORDER};")
+        self.lbl_stats.setStyleSheet(
+            f"background-color: {colors.BG_MAIN}; padding: 12px; border-radius: 8px; color: {colors.TEXT_PRIMARY}; font-weight: bold; border: 1px solid {colors.BORDER};"
+        )
         self.lbl_stats.setAlignment(Qt.AlignmentFlag.AlignCenter)
         table_layout.addWidget(self.lbl_stats)
 
         self.table_stock = QTableWidget(0, 8)
         self.style_table(self.table_stock)
-        self.table_stock.setHorizontalHeaderLabels(["ID", "Article (FR)", "Article (AR)", "Catégorie", "Qté", "Min", "Prix", "Total"])
+        self.table_stock.setHorizontalHeaderLabels(
+            ["ID", "Article (FR)", "Article (AR)", "Catégorie", "Qté", "Min", "Prix", "Total"]
+        )
         self.table_stock.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.table_stock.setColumnWidth(0, 50)
         table_layout.addWidget(self.table_stock)
@@ -325,10 +380,12 @@ class InventoryWindow(QMainWindow):
         btn_exec = QPushButton("Valider Mouvement")
         btn_exec.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_exec.setMinimumHeight(40)
-        btn_exec.setStyleSheet(f"""
+        btn_exec.setStyleSheet(
+            f"""
             QPushButton {{ background-color: {colors.WARNING}; color: white; font-weight: bold; border-radius: 6px; border: none; }}
             QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}
-        """)
+        """
+        )
         btn_exec.clicked.connect(self.execute_movement)
 
         row2.addWidget(QLabel("Date:"))
@@ -343,7 +400,9 @@ class InventoryWindow(QMainWindow):
         layout.addStretch()
 
         info_frame = QFrame()
-        info_frame.setStyleSheet(f"background-color: {colors.BG_MAIN}; border-radius: 8px; border: 1px dashed {colors.WARNING}; padding: 10px;")
+        info_frame.setStyleSheet(
+            f"background-color: {colors.BG_MAIN}; border-radius: 8px; border: 1px dashed {colors.WARNING}; padding: 10px;"
+        )
         ilay = QHBoxLayout(info_frame)
         ilay.addWidget(QLabel("💡 Astuce: Les 'Sorties' diminuent le stock, les 'Entrées' l'augmentent."))
         layout.addWidget(info_frame)
@@ -363,10 +422,12 @@ class InventoryWindow(QMainWindow):
         btn_refresh = QPushButton("Actualiser")
         btn_refresh.setCursor(Qt.CursorShape.PointingHandCursor)
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-        btn_refresh.setStyleSheet(f"""
+        btn_refresh.setStyleSheet(
+            f"""
             QPushButton {{ background-color: {colors.PRIMARY}; color: white; font-weight: bold; border-radius: 6px; padding: 8px 15px; border: none; }}
             QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}
-        """)
+        """
+        )
         btn_refresh.clicked.connect(self.load_history)
 
         toolbar.addWidget(QLabel("Historique des Demandes / سجل الطلبات"))
@@ -399,11 +460,9 @@ class InventoryWindow(QMainWindow):
         controls_layout.setSpacing(12)
 
         self.combo_report_type = self.styled_combo()
-        self.combo_report_type.addItems([
-            "Valeur du stock par catégorie",
-            "Articles en alerte de stock",
-            "Mouvements par période"
-        ])
+        self.combo_report_type.addItems(
+            ["Valeur du stock par catégorie", "Articles en alerte de stock", "Mouvements par période"]
+        )
 
         self.report_date_from = self.styled_date()
         self.report_date_to = self.styled_date()
@@ -413,19 +472,23 @@ class InventoryWindow(QMainWindow):
         btn_run = QPushButton("Générer")
         btn_run.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_run.setMinimumHeight(40)
-        btn_run.setStyleSheet(f"""
+        btn_run.setStyleSheet(
+            f"""
             QPushButton {{ background-color: {colors.PRIMARY}; color: white; font-weight: bold; border-radius: 6px; border: none; padding: 8px 16px; }}
             QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}
-        """)
+        """
+        )
         btn_run.clicked.connect(self.run_inventory_report)
 
         btn_export = QPushButton("Exporter PDF")
         btn_export.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_export.setMinimumHeight(40)
-        btn_export.setStyleSheet(f"""
+        btn_export.setStyleSheet(
+            f"""
             QPushButton {{ background-color: {colors.SUCCESS}; color: white; font-weight: bold; border-radius: 6px; border: none; padding: 8px 16px; }}
             QPushButton:hover {{ background-color: {colors.SUCCESS_HOVER}; }}
-        """)
+        """
+        )
         btn_export.clicked.connect(self.export_inventory_report_pdf)
 
         controls_layout.addWidget(QLabel("Rapport:"))
@@ -467,13 +530,28 @@ class InventoryWindow(QMainWindow):
                     title = "Rapport de valeur du stock par catégorie"
                     headers = ["Catégorie", "Articles", "Quantité totale", "Valeur totale (FCFA)"]
                     for category, items_count, total_qty, total_value in repo.get_stock_value_by_category():
-                        rows.append([category or "-", int(items_count or 0), int(total_qty or 0), f"{float(total_value or 0):,.2f}"])
+                        rows.append(
+                            [
+                                category or "-",
+                                int(items_count or 0),
+                                int(total_qty or 0),
+                                f"{float(total_value or 0):,.2f}",
+                            ]
+                        )
 
                 elif report_type == "Articles en alerte de stock":
                     title = "Rapport des articles en alerte de stock"
                     headers = ["Article", "Catégorie", "Stock actuel", "Seuil min", "Emplacement"]
                     for name_fr, category, quantity, min_quantity, location in repo.get_low_stock_items():
-                        rows.append([name_fr or "-", category or "-", int(quantity or 0), int(min_quantity or 0), location or "-"])
+                        rows.append(
+                            [
+                                name_fr or "-",
+                                category or "-",
+                                int(quantity or 0),
+                                int(min_quantity or 0),
+                                location or "-",
+                            ]
+                        )
 
                 else:
                     title = "Rapport des mouvements par période"
@@ -486,7 +564,7 @@ class InventoryWindow(QMainWindow):
             self.current_inventory_report_title = title
 
             self.table_reports.setColumnCount(len(headers) if headers else 1)
-            self.table_reports.setHorizontalHeaderLabels(headers if headers else ["Données"])
+            self.table_reports.setHorizontalHeaderLabels(headers or ["Données"])
             self.table_reports.setRowCount(0)
 
             for row in rows:
@@ -558,7 +636,8 @@ class InventoryWindow(QMainWindow):
         price = self.spin_price.value()
         loc = self.txt_loc.text()
 
-        if not fr: return
+        if not fr:
+            return
 
         try:
             with DatabaseManager() as db:
@@ -571,7 +650,8 @@ class InventoryWindow(QMainWindow):
             if qty > 0:
                 self.log_movement_db(item_id, "IN", qty, "Stock Initial")
 
-            self.txt_name_fr.clear(); self.txt_name_ar.clear()
+            self.txt_name_fr.clear()
+            self.txt_name_ar.clear()
             self.load_inventory()
             QMessageBox.information(self, "Succès", "Article ajouté.")
         except Exception as e:

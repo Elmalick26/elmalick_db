@@ -1,22 +1,40 @@
-import sys
-import psycopg2
 import os
 import shutil
+import sys
+from contextlib import suppress
 from datetime import datetime
-from database_setup import DatabaseManager
-from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
-                             QHBoxLayout, QPushButton, QLabel, QComboBox,
-                             QMessageBox, QHeaderView, QGroupBox, QFileDialog,
-                             QTabWidget, QGridLayout, QDateEdit, QTextEdit,
-                             QFrame, QGraphicsDropShadowEffect, QLineEdit)
-from PyQt6.QtCore import Qt, QDate
-from PyQt6.QtGui import QFont, QColor, QPixmap
-from fpdf import FPDF
 
-from ui_styles import ThemeManager, get_card_style, apply_shadow_to_widget, Colors, get_tabs_style
-from print_export_service import output_pdf, get_report_output_mode
+import psycopg2
+from fpdf import FPDF
+from PyQt6.QtCore import QDate, Qt
+from PyQt6.QtGui import QColor, QFont, QPixmap
+from PyQt6.QtWidgets import (
+    QApplication,
+    QComboBox,
+    QDateEdit,
+    QFileDialog,
+    QFrame,
+    QGraphicsDropShadowEffect,
+    QGridLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QLineEdit,
+    QMainWindow,
+    QMessageBox,
+    QPushButton,
+    QTabWidget,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+)
+
 from app_logger import AppLogger
+from database_setup import DatabaseManager
+from print_export_service import get_report_output_mode, output_pdf
 from repositories.admin_documents_repo import AdminDocumentsRepository
+from ui_styles import Colors, ThemeManager, apply_shadow_to_widget, get_card_style, get_tabs_style
 
 THEME_AVAILABLE = True
 ADMIN_DOCS_OUTPUT_MODE = get_report_output_mode("admin_documents_mode", "print")
@@ -24,6 +42,7 @@ ADMIN_DOCS_OUTPUT_MODE = get_report_output_mode("admin_documents_mode", "print")
 try:
     import arabic_reshaper
     from bidi.algorithm import get_display
+
     ARABIC_SUPPORT = True
 except ModuleNotFoundError:
     ARABIC_SUPPORT = False
@@ -39,10 +58,7 @@ def _get_arabic_font_path():
         os.path.join(base_dir, "Fonts", "Noto_Naskh_Arabic", "NotoNaskhArabic-Regular.ttf"),
         os.path.join(base_dir, "Fonts", "Cairo", "Cairo-Regular.ttf"),
     ]
-    for path in candidates:
-        if os.path.exists(path):
-            return path
-    return None
+    return next((path for path in candidates if os.path.exists(path)), None)
 
 
 def _contains_arabic(text):
@@ -50,10 +66,7 @@ def _contains_arabic(text):
         return False
     if not isinstance(text, str):
         text = str(text)
-    return any(
-        "\u0600" <= ch <= "\u06FF" or "\u0750" <= ch <= "\u077F" or "\u08A0" <= ch <= "\u08FF"
-        for ch in text
-    )
+    return any("\u0600" <= ch <= "\u06FF" or "\u0750" <= ch <= "\u077F" or "\u08A0" <= ch <= "\u08FF" for ch in text)
 
 
 def _prepare_pdf_text(text):
@@ -90,6 +103,7 @@ def _register_arabic_font(pdf):
         return True
     except Exception:
         return False
+
 
 # --- فئة جديدة مخصصة لبطاقة الطالب المزدوجة (Recto/Verso) ---
 
@@ -134,11 +148,9 @@ class IDCardPDF(FPDF):
         # 1. الشعار في الأعلى (وسط)
         logo_path = self.school_info[8] if self.school_info and len(self.school_info) > 8 else None
         if logo_path and os.path.exists(logo_path):
-            try:
+            with suppress(Exception):
                 # محاولة توسيط الشعار (عرض الشعار 20، إذن X = 85/2 - 10 = 32.5)
                 self.image(logo_path, x=32.5, y=3, w=20, h=22)
-            except Exception:
-                pass
 
         # 2. مستطيل كحلي (Dark Blue) للمعلومات الرسمية للمدرسة
         self.set_fill_color(15, 23, 42)  # لون مقارب لـ Deep Slate
@@ -214,7 +226,7 @@ class IDCardPDF(FPDF):
             ("Classe :", self.sanitize(student['class'])),
             ("Code Accès :", str(student.get('student_code') or student.get('class_number') or student['id'])),
             ("Année scolaire :", self.year_label),
-            ("Date d'inscription :", student['reg_date'])
+            ("Date d'inscription :", student['reg_date']),
         ]
 
         for lbl, val in lines:
@@ -246,7 +258,18 @@ class IDCardPDF(FPDF):
 
         # صفوف الجدول
         self.set_text_color(0, 0, 0)
-        months = ["Inscription", "Octobre", "Novembre", "Décembre", "Janvier", "Février", "Mars", "Avril", "Mai", "Juin"]
+        months = [
+            "Inscription",
+            "Octobre",
+            "Novembre",
+            "Décembre",
+            "Janvier",
+            "Février",
+            "Mars",
+            "Avril",
+            "Mai",
+            "Juin",
+        ]
         dues_map = student.get('dues_map', {}) if isinstance(student, dict) else {}
 
         for m in months:
@@ -302,14 +325,11 @@ class DocumentPDF(FPDF):
             phone_text = self.sanitize(self.school_info[7])
             self.cell(80, 3, f"Tel: {phone_text}", 0, 1, 'L')
 
-        right_x = 175
         logo_path = self.school_info[8] if self.school_info and len(self.school_info) > 8 else None
 
         if logo_path and os.path.exists(logo_path):
-            try:
-                self.image(logo_path, x=right_x, y=left_y, w=20, h=22)
-            except Exception:
-                pass
+            with suppress(Exception):
+                self.image(logo_path, x=175, y=left_y, w=20, h=22)
 
         line_y = max(self.get_y(), left_y + 26)
         self.set_y(line_y)
@@ -326,15 +346,17 @@ class DocumentPDF(FPDF):
         self.ln(10)
 
         self.set_font(self.font_name, '', 14)
-        txt = (f"Je soussigné, Directeur de l'établissement, certifie que l'élève :\n\n"
-               f"Prénom et Nom : {self.sanitize(student['name']).upper()}\n"
-               f"Date de Naissance  : {student['dob']}"
-               f"  à  {self.sanitize(student['birth_place'])}\n"
-               f"Matricule : {student['id']}\n\n"
-               f"Est régulièrement inscrit(e) dans notre établissement en classe de :"
-               f"{self.sanitize(student['class']).upper()}\n\n"
-               f"Pour l'année scolaire {self.year_label}.\n\n"
-               f"Ce certificat est délivré pour servir et valoir ce que de droit.")
+        txt = (
+            f"Je soussigné, Directeur de l'établissement, certifie que l'élève :\n\n"
+            f"Prénom et Nom : {self.sanitize(student['name']).upper()}\n"
+            f"Date de Naissance  : {student['dob']}"
+            f"  à  {self.sanitize(student['birth_place'])}\n"
+            f"Matricule : {student['id']}\n\n"
+            f"Est régulièrement inscrit(e) dans notre établissement en classe de :"
+            f"{self.sanitize(student['class']).upper()}\n\n"
+            f"Pour l'année scolaire {self.year_label}.\n\n"
+            f"Ce certificat est délivré pour servir et valoir ce que de droit."
+        )
 
         self.multi_cell(0, 10, txt)
 
@@ -437,13 +459,15 @@ class DocumentPDF(FPDF):
         self.set_font(self.font_name, '', 12)
         parent = self.sanitize(student['parent']) if student['parent'] else "Le Tuteur"
 
-        txt = (f"M./Mme {parent},\n\n"
-               f"Vous êtes prié(e) de bien vouloir vous présenter à la direction de l'école "
-               f"le {date_conv} pour une affaire concernant votre enfant :\n\n"
-               f"Nom : {self.sanitize(student['name']).upper()}\n"
-               f"Classe : {self.sanitize(student['class'])}\n\n"
-               f"Motif : {self.sanitize(motif)}\n\n"
-               "Nous comptons sur votre présence.")
+        txt = (
+            f"M./Mme {parent},\n\n"
+            f"Vous êtes prié(e) de bien vouloir vous présenter à la direction de l'école "
+            f"le {date_conv} pour une affaire concernant votre enfant :\n\n"
+            f"Nom : {self.sanitize(student['name']).upper()}\n"
+            f"Classe : {self.sanitize(student['class'])}\n\n"
+            f"Motif : {self.sanitize(motif)}\n\n"
+            "Nous comptons sur votre présence."
+        )
 
         self.multi_cell(0, 10, txt)
 
@@ -463,10 +487,12 @@ class AdminDocsWindow(QMainWindow):
             ThemeManager.apply_theme(self)
         else:
             colors = Colors()
-            self.setStyleSheet(f"""
+            self.setStyleSheet(
+                f"""
                 QMainWindow {{ background-color: {colors.BG_MAIN}; }}
                 QLabel {{ font-family: 'Segoe UI', 'Cairo', sans-serif; color: {colors.TEXT_PRIMARY}; }}
-            """)
+            """
+            )
 
         self.init_ui()
         self.load_classes()
@@ -491,9 +517,11 @@ class AdminDocsWindow(QMainWindow):
         header_frame = QFrame()
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
 
-        header_frame.setStyleSheet(f"""
+        header_frame.setStyleSheet(
+            f"""
             QFrame {{ background-color: {colors.BG_HEADER}; border-radius: 10px; }}
-        """)
+        """
+        )
         header_frame.setMaximumHeight(80)
 
         shadow = QGraphicsDropShadowEffect()
@@ -532,12 +560,14 @@ class AdminDocsWindow(QMainWindow):
         if THEME_AVAILABLE:
             self.tabs.setStyleSheet(get_tabs_style())
         else:
-            self.tabs.setStyleSheet(f"""
+            self.tabs.setStyleSheet(
+                f"""
                 QTabWidget::pane {{ border: 1px solid {colors.BORDER}; background: {colors.BG_CARD}; border-radius: 12px; margin-top: 15px; }}
                 QTabBar::tab {{ background: {colors.BG_MAIN}; color: {colors.TEXT_SECONDARY}; padding: 12px 30px; margin-right: 6px; border-top-left-radius: 8px; border-top-right-radius: 8px; font-weight: bold; font-family: 'Segoe UI', 'Cairo'; }}
                 QTabBar::tab:selected {{ background: {colors.BG_HEADER}; color: {colors.HEADER_TEXT}; }}
                 QTabBar::tab:hover {{ background: {colors.BORDER}; }}
-            """)
+            """
+            )
 
         self.setup_cert_tab()
         self.setup_card_tab()
@@ -551,9 +581,11 @@ class AdminDocsWindow(QMainWindow):
             apply_shadow_to_widget(frame)
         else:
             colors = Colors()
-            frame.setStyleSheet(f"""
+            frame.setStyleSheet(
+                f"""
                 QFrame {{ background-color: {colors.BG_CARD}; border-radius: 12px; border: 1px solid {colors.BORDER}; }}
-            """)
+            """
+            )
             shadow = QGraphicsDropShadowEffect()
             shadow.setBlurRadius(20)
             shadow.setColor(QColor(15, 23, 42, 15))
@@ -564,10 +596,12 @@ class AdminDocsWindow(QMainWindow):
     def styled_combo(self):
         combo = QComboBox()
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-        combo.setStyleSheet(f"""
+        combo.setStyleSheet(
+            f"""
             QComboBox {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }}
             QComboBox:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}
-        """)
+        """
+        )
         combo.setMinimumHeight(40)
         return combo
 
@@ -575,10 +609,12 @@ class AdminDocsWindow(QMainWindow):
         date_edit = QDateEdit()
         date_edit.setCalendarPopup(True)
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-        date_edit.setStyleSheet(f"""
+        date_edit.setStyleSheet(
+            f"""
             QDateEdit {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }}
             QDateEdit:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}
-        """)
+        """
+        )
         date_edit.setMinimumHeight(40)
         return date_edit
 
@@ -587,10 +623,12 @@ class AdminDocsWindow(QMainWindow):
         if placeholder:
             text_edit.setPlaceholderText(placeholder)
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-        text_edit.setStyleSheet(f"""
+        text_edit.setStyleSheet(
+            f"""
             QTextEdit {{ padding: 10px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }}
             QTextEdit:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}
-        """)
+        """
+        )
         return text_edit
 
     def setup_cert_tab(self):
@@ -610,17 +648,21 @@ class AdminDocsWindow(QMainWindow):
         glay.addWidget(card_title, 0, 0, 1, 2)
 
         self.combo_class_cert = self.styled_combo()
-        self.combo_class_cert.currentIndexChanged.connect(lambda: self.load_students(self.combo_class_cert, self.combo_student_cert))
+        self.combo_class_cert.currentIndexChanged.connect(
+            lambda: self.load_students(self.combo_class_cert, self.combo_student_cert)
+        )
 
         self.combo_student_cert = self.styled_combo()
 
         btn_print = QPushButton("🖨️ Imprimer Certificat (PDF)")
         btn_print.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_print.setMinimumHeight(45)
-        btn_print.setStyleSheet(f"""
+        btn_print.setStyleSheet(
+            f"""
             QPushButton {{ background-color: {colors.PRIMARY}; color: white; font-weight: bold; padding: 10px; border-radius: 8px; border: none; }}
             QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}
-        """)
+        """
+        )
         btn_print.clicked.connect(self.print_certificate)
 
         glay.addWidget(QLabel("1. Classe:"), 1, 0)
@@ -650,7 +692,9 @@ class AdminDocsWindow(QMainWindow):
         glay.addWidget(card_title, 0, 0, 1, 2)
 
         self.combo_class_card = self.styled_combo()
-        self.combo_class_card.currentIndexChanged.connect(lambda: self.load_students(self.combo_class_card, self.combo_student_card))
+        self.combo_class_card.currentIndexChanged.connect(
+            lambda: self.load_students(self.combo_class_card, self.combo_student_card)
+        )
 
         self.combo_student_card = self.styled_combo()
         self.combo_student_card.currentIndexChanged.connect(self.check_photo_status)
@@ -659,10 +703,12 @@ class AdminDocsWindow(QMainWindow):
         photo_layout = QHBoxLayout()
         self.btn_upload_photo = QPushButton("📷 Ajouter Photo")
         self.btn_upload_photo.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_upload_photo.setStyleSheet(f"""
+        self.btn_upload_photo.setStyleSheet(
+            f"""
             QPushButton {{ background-color: {colors.BG_CARD}; color: {colors.TEXT_SECONDARY}; border-radius: 6px; padding: 8px; border: 1px solid {colors.BORDER}; font-weight: bold; }}
             QPushButton:hover {{ background-color: {colors.BG_MAIN}; }}
-        """)
+        """
+        )
         self.btn_upload_photo.clicked.connect(self.upload_student_photo)
 
         self.lbl_photo_status = QLabel("...")
@@ -675,19 +721,23 @@ class AdminDocsWindow(QMainWindow):
         btn_print_one = QPushButton("Imprimer Carte (Seul)")
         btn_print_one.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_print_one.setMinimumHeight(45)
-        btn_print_one.setStyleSheet(f"""
+        btn_print_one.setStyleSheet(
+            f"""
             QPushButton {{ background-color: {colors.PRIMARY}; color: white; font-weight: bold; border-radius: 8px; border: none; }}
             QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}
-        """)
+        """
+        )
         btn_print_one.clicked.connect(lambda: self.print_card(mode='single'))
 
         btn_print_all = QPushButton("Imprimer Toute la Classe")
         btn_print_all.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_print_all.setMinimumHeight(45)
-        btn_print_all.setStyleSheet(f"""
+        btn_print_all.setStyleSheet(
+            f"""
             QPushButton {{ background-color: {colors.SUCCESS}; color: white; font-weight: bold; border-radius: 8px; border: none; }}
             QPushButton:hover {{ background-color: {colors.SUCCESS_HOVER}; }}
-        """)
+        """
+        )
         btn_print_all.clicked.connect(lambda: self.print_card(mode='batch'))
 
         glay.addWidget(QLabel("1. Classe:"), 1, 0)
@@ -719,7 +769,9 @@ class AdminDocsWindow(QMainWindow):
         glay.addWidget(card_title, 0, 0, 1, 2)
 
         self.combo_class_conv = self.styled_combo()
-        self.combo_class_conv.currentIndexChanged.connect(lambda: self.load_students(self.combo_class_conv, self.combo_student_conv))
+        self.combo_class_conv.currentIndexChanged.connect(
+            lambda: self.load_students(self.combo_class_conv, self.combo_student_conv)
+        )
 
         self.combo_student_conv = self.styled_combo()
 
@@ -732,10 +784,12 @@ class AdminDocsWindow(QMainWindow):
         btn_print = QPushButton("Générer Convocation")
         btn_print.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_print.setMinimumHeight(45)
-        btn_print.setStyleSheet(f"""
+        btn_print.setStyleSheet(
+            f"""
             QPushButton {{ background-color: {colors.DANGER}; color: white; font-weight: bold; border-radius: 8px; border: none; }}
             QPushButton:hover {{ background-color: {colors.DANGER_HOVER}; }}
-        """)
+        """
+        )
         btn_print.clicked.connect(self.print_convocation)
 
         glay.addWidget(QLabel("1. Classe:"), 1, 0)
@@ -772,10 +826,12 @@ class AdminDocsWindow(QMainWindow):
     def load_students(self, class_combo, student_combo):
         class_id = class_combo.currentData()
         student_combo.clear()
-        if not class_id: return
+        if not class_id:
+            return
 
         active_year = self.get_active_year_id()
-        if active_year == -1: return
+        if active_year == -1:
+            return
 
         try:
             db = DatabaseManager()
@@ -816,7 +872,8 @@ class AdminDocsWindow(QMainWindow):
         file_path, _ = QFileDialog.getOpenFileName(self, "Photo", "", "Images (*.png *.jpg *.jpeg)")
         if file_path:
             save_dir = "school_data/photos"
-            if not os.path.exists(save_dir): os.makedirs(save_dir)
+            if not os.path.exists(save_dir):
+                os.makedirs(save_dir)
             ext = os.path.splitext(file_path)[1]
             new_path = os.path.join(save_dir, f"std_{sid}{ext}")
 
@@ -839,7 +896,7 @@ class AdminDocsWindow(QMainWindow):
                 repo = AdminDocumentsRepository(conn)
                 info = repo.get_school_info()
                 yr_label = repo.get_active_year_label()
-            year = yr_label if yr_label else "202X"
+            year = yr_label or "202X"
             return info, year
         except Exception:
             return None, "202X"
@@ -856,9 +913,15 @@ class AdminDocsWindow(QMainWindow):
 
                 dues_map = {}
                 month_names = {
-                    10: "Octobre", 11: "Novembre", 12: "D\u00e9cembre",
-                    1: "Janvier", 2: "F\u00e9vrier", 3: "Mars",
-                    4: "Avril", 5: "Mai", 6: "Juin"
+                    10: "Octobre",
+                    11: "Novembre",
+                    12: "D\u00e9cembre",
+                    1: "Janvier",
+                    2: "F\u00e9vrier",
+                    3: "Mars",
+                    4: "Avril",
+                    5: "Mai",
+                    6: "Juin",
                 }
 
                 for fee_type, fee_description, net_amount, due_date, is_paid in due_rows:
@@ -902,14 +965,19 @@ class AdminDocsWindow(QMainWindow):
 
             if res:
                 return {
-                    'id': res[0], 'name': res[1], 'dob': res[2].strftime("%d/%m/%Y") if res[2] else "",
-                    'birth_place': res[3] if res[3] else "", 'class': res[4] if res[4] else "-",
-                    'parent': res[5], 'photo': res[6],
-                    'address': res[7] if res[7] else "", 'phone': res[8] if res[8] else "",
-                    'reg_date': res[9] if res[9] else "",
+                    'id': res[0],
+                    'name': res[1],
+                    'dob': res[2].strftime("%d/%m/%Y") if res[2] else "",
+                    'birth_place': res[3] or "",
+                    'class': res[4] or "-",
+                    'parent': res[5],
+                    'photo': res[6],
+                    'address': res[7] or "",
+                    'phone': res[8] or "",
+                    'reg_date': res[9] or "",
                     'class_number': res[10] if len(res) > 10 else None,
                     'student_code': res[11] if len(res) > 11 else None,
-                    'dues_map': dues_map
+                    'dues_map': dues_map,
                 }
             return None
         except Exception as e:
@@ -918,7 +986,8 @@ class AdminDocsWindow(QMainWindow):
 
     def print_certificate(self):
         sid = self.combo_student_cert.currentData()
-        if not sid: return
+        if not sid:
+            return
 
         info, year = self.get_common_data()
         std = self.get_student_data(sid)
@@ -940,7 +1009,8 @@ class AdminDocsWindow(QMainWindow):
         sid = self.combo_student_conv.currentData()
         motif = self.txt_motif.toPlainText()
         date = self.date_conv.date().toString("dd/MM/yyyy")
-        if not sid or not motif: return
+        if not sid or not motif:
+            return
 
         info, year = self.get_common_data()
         std = self.get_student_data(sid)
@@ -955,7 +1025,8 @@ class AdminDocsWindow(QMainWindow):
             dialog_title="Save PDF",
             file_filter="PDF (*.pdf)",
             success_save_message="Convocation générée.",
-            success_print_message="Convocation envoyée à l'imprimante.",)
+            success_print_message="Convocation envoyée à l'imprimante.",
+        )
 
     # ===== تعديل لطباعة البطاقات بالتصميم السنغالي الجديد =====
     def print_card(self, mode='single'):
@@ -966,15 +1037,17 @@ class AdminDocsWindow(QMainWindow):
 
         if mode == 'single':
             sid = self.combo_student_card.currentData()
-            if not sid: return
-            std = self.get_student_data(sid)
-            if std:
+            if not sid:
+                return
+            if std := self.get_student_data(sid):
                 pdf.generate_senegal_id_card(std)
         else:
             cid = self.combo_class_card.currentData()
-            if not cid: return
+            if not cid:
+                return
             active_year = self.get_active_year_id()
-            if active_year == -1: return
+            if active_year == -1:
+                return
 
             try:
                 db = DatabaseManager()

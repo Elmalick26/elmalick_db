@@ -1,21 +1,43 @@
 import sys
-import psycopg2
 from datetime import datetime
-from fpdf import FPDF
-from database_setup import DatabaseManager
-from repositories.finance_repo import FinanceRepository
-from app_logger import AppLogger
-from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
-                             QHBoxLayout, QTableWidget, QTableWidgetItem,
-                             QPushButton, QLabel, QComboBox, QMessageBox,
-                             QHeaderView, QGroupBox, QDoubleSpinBox, QTabWidget,
-                             QFrame, QGridLayout, QGraphicsDropShadowEffect)
-from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont, QColor
-from print_export_service import output_pdf, get_report_output_mode
-from pdf_report_style import apply_grades_sheet_header, apply_table_header_style, apply_table_body_style, set_zebra_row_fill, get_school_info_row
 
-from ui_styles import ThemeManager, Colors, get_table_style, get_tabs_style, get_card_style, apply_shadow_to_widget
+import psycopg2
+from fpdf import FPDF
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QColor, QFont
+from PyQt6.QtWidgets import (
+    QApplication,
+    QComboBox,
+    QDoubleSpinBox,
+    QFrame,
+    QGraphicsDropShadowEffect,
+    QGridLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QMainWindow,
+    QMessageBox,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
+)
+
+from app_logger import AppLogger
+from database_setup import DatabaseManager
+from pdf_report_style import (
+    apply_grades_sheet_header,
+    apply_table_body_style,
+    apply_table_header_style,
+    get_school_info_row,
+    set_zebra_row_fill,
+)
+from print_export_service import get_report_output_mode, output_pdf
+from repositories.finance_repo import FinanceRepository
+from ui_styles import Colors, ThemeManager, apply_shadow_to_widget, get_card_style, get_table_style, get_tabs_style
 
 THEME_AVAILABLE = True
 FEES_REPORT_OUTPUT_MODE = get_report_output_mode("fees_report_mode", "save")
@@ -36,7 +58,8 @@ class FeesSetupWindow(QMainWindow):
         else:
             colors = Colors()
             # تطبيق نمط Deep Slate
-            self.setStyleSheet(f"""
+            self.setStyleSheet(
+                f"""
                 QMainWindow {{ background-color: {colors.BG_MAIN}; }}
                 QLabel {{ font-family: 'Segoe UI', 'Cairo', sans-serif; color: {colors.TEXT_PRIMARY}; }}
                 QGroupBox {{
@@ -44,7 +67,8 @@ class FeesSetupWindow(QMainWindow):
                     background-color: {colors.BG_CARD}; font-weight: bold; color: {colors.TEXT_SECONDARY};
                 }}
                 QGroupBox::title {{ subcontrol-origin: margin; subcontrol-position: top left; padding: 0 5px; left: 10px; }}
-            """)
+            """
+            )
 
         self.init_ui()
         self.load_classes()
@@ -70,9 +94,11 @@ class FeesSetupWindow(QMainWindow):
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
         bg_header = colors.BG_HEADER
 
-        header_frame.setStyleSheet(f"""
+        header_frame.setStyleSheet(
+            f"""
             QFrame {{ background-color: {bg_header}; border-radius: 10px; }}
-        """)
+        """
+        )
         header_frame.setMaximumHeight(80)
 
         shadow = QGraphicsDropShadowEffect()
@@ -124,21 +150,27 @@ class FeesSetupWindow(QMainWindow):
             apply_shadow_to_widget(frame)
         else:
             colors = Colors()
-            frame.setStyleSheet(f"""
+            frame.setStyleSheet(
+                f"""
                 QFrame {{ background-color: {colors.BG_CARD}; border-radius: 12px; border: 1px solid {colors.BORDER}; }}
-            """)
+            """
+            )
             shadow = QGraphicsDropShadowEffect()
-            shadow.setBlurRadius(20); shadow.setColor(QColor(15, 23, 42, 15)); shadow.setOffset(0, 4)
+            shadow.setBlurRadius(20)
+            shadow.setColor(QColor(15, 23, 42, 15))
+            shadow.setOffset(0, 4)
             frame.setGraphicsEffect(shadow)
         return frame
 
     def styled_combo(self):
         combo = QComboBox()
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-        combo.setStyleSheet(f"""
+        combo.setStyleSheet(
+            f"""
             QComboBox {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }}
             QComboBox:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}
-        """)
+        """
+        )
         combo.setMinimumHeight(40)
         return combo
 
@@ -148,10 +180,12 @@ class FeesSetupWindow(QMainWindow):
         sb.setPrefix("FCFA ")
         sb.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-        sb.setStyleSheet(f"""
+        sb.setStyleSheet(
+            f"""
             QDoubleSpinBox {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; font-weight: bold; }}
             QDoubleSpinBox:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}
-        """)
+        """
+        )
         sb.setMinimumHeight(40)
         return sb
 
@@ -182,10 +216,12 @@ class FeesSetupWindow(QMainWindow):
         btn_save_reg = QPushButton("Enregistrer")
         btn_save_reg.setCursor(Qt.CursorShape.PointingHandCursor)
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-        btn_save_reg.setStyleSheet(f"""
+        btn_save_reg.setStyleSheet(
+            f"""
             QPushButton {{ background-color: {colors.PRIMARY}; color: white; font-weight: bold; border-radius: 6px; padding: 10px 20px; border: none; }}
             QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}
-        """)
+        """
+        )
         btn_save_reg.clicked.connect(self.save_registration_fee)
 
         hlay.addWidget(QLabel("Classe:"))
@@ -226,10 +262,12 @@ class FeesSetupWindow(QMainWindow):
 
         tool_frame = QFrame()
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-        tool_frame.setStyleSheet(f"""
+        tool_frame.setStyleSheet(
+            f"""
             QFrame {{ background-color: {colors.BG_CARD}; border: 1px dashed {colors.SUCCESS}; border-radius: 8px; }}
             QLabel {{ color: {colors.TEXT_PRIMARY}; font-weight: bold; }}
-        """)
+        """
+        )
         tool_layout = QVBoxLayout(tool_frame)
 
         tool_header = QLabel("⚡ Outil de Calcul Rapide / أداة الحساب السريع")
@@ -238,25 +276,31 @@ class FeesSetupWindow(QMainWindow):
         tlay = QHBoxLayout()
         self.spin_base_price = self.styled_spinbox()
         self.spin_base_price.setValue(5000)
-        self.spin_base_price.setStyleSheet(f"""
+        self.spin_base_price.setStyleSheet(
+            f"""
             QDoubleSpinBox {{ background: {colors.INPUT_BG}; border: 1px solid {colors.SUCCESS}; border-radius: 4px; padding: 5px; color: {colors.TEXT_PRIMARY}; }}
             QDoubleSpinBox:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}
-        """)
+        """
+        )
 
         btn_apply_smart = QPushButton("Répartition 4+4 (Smart)")
         btn_apply_smart.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_apply_smart.setStyleSheet(f"""
+        btn_apply_smart.setStyleSheet(
+            f"""
             QPushButton {{ background-color: {colors.SUCCESS}; color: white; font-weight: bold; border-radius: 4px; padding: 8px; border: none; }}
             QPushButton:hover {{ background-color: {colors.SUCCESS_HOVER}; }}
-        """)
+        """
+        )
         btn_apply_smart.clicked.connect(self.apply_smart_distribution)
 
         btn_apply_flat = QPushButton("Prix Unique (Flat)")
         btn_apply_flat.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_apply_flat.setStyleSheet(f"""
+        btn_apply_flat.setStyleSheet(
+            f"""
             QPushButton {{ background-color: {colors.PRIMARY_DARK}; color: white; font-weight: bold; border-radius: 4px; padding: 8px; border: none; }}
             QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}
-        """)
+        """
+        )
         btn_apply_flat.clicked.connect(self.apply_flat_distribution)
 
         tlay.addWidget(QLabel("Prix de base:"))
@@ -274,9 +318,15 @@ class FeesSetupWindow(QMainWindow):
         self.table_months.verticalHeader().setDefaultSectionSize(40)
 
         self.academic_months = [
-            (10, "Octobre / أكتوبر"), (11, "Novembre / نوفمبر"), (12, "Décembre / ديسمبر"),
-            (1, "Janvier / يناير"), (2, "Février / فبراير"), (3, "Mars / مارس"),
-            (4, "Avril / أبريل"), (5, "Mai / مايو"), (6, "Juin / يونيو")
+            (10, "Octobre / أكتوبر"),
+            (11, "Novembre / نوفمبر"),
+            (12, "Décembre / ديسمبر"),
+            (1, "Janvier / يناير"),
+            (2, "Février / فبراير"),
+            (3, "Mars / مارس"),
+            (4, "Avril / أبريل"),
+            (5, "Mai / مايو"),
+            (6, "Juin / يونيو"),
         ]
 
         for i, (idx, name) in enumerate(self.academic_months):
@@ -292,10 +342,12 @@ class FeesSetupWindow(QMainWindow):
         btn_save_schedule = QPushButton("💾 ENREGISTRER L'ÉCHÉANCIER")
         btn_save_schedule.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_save_schedule.setMinimumHeight(50)
-        btn_save_schedule.setStyleSheet(f"""
+        btn_save_schedule.setStyleSheet(
+            f"""
             QPushButton {{ background-color: {colors.BG_HEADER}; color: {colors.HEADER_TEXT}; padding: 10px; font-weight: bold; font-size: 14px; border-radius: 8px; border: none; }}
             QPushButton:hover {{ background-color: {colors.BORDER}; color: {colors.TEXT_PRIMARY}; }}
-        """)
+        """
+        )
         btn_save_schedule.clicked.connect(self.save_monthly_schedule)
         layout.addWidget(btn_save_schedule)
 
@@ -324,18 +376,22 @@ class FeesSetupWindow(QMainWindow):
         btn_generate = QPushButton("Générer Rapport")
         btn_generate.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_generate.setMinimumHeight(40)
-        btn_generate.setStyleSheet(f"""
+        btn_generate.setStyleSheet(
+            f"""
             QPushButton {{ background-color: {colors.PRIMARY}; color: white; font-weight: bold; border-radius: 6px; border: none; padding: 8px 16px; }}
             QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}
-        """)
+        """
+        )
 
         btn_export = QPushButton("Exporter PDF")
         btn_export.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_export.setMinimumHeight(40)
-        btn_export.setStyleSheet(f"""
+        btn_export.setStyleSheet(
+            f"""
             QPushButton {{ background-color: {colors.SUCCESS}; color: white; font-weight: bold; border-radius: 6px; border: none; padding: 8px 16px; }}
             QPushButton:hover {{ background-color: {colors.SUCCESS_HOVER}; }}
-        """)
+        """
+        )
 
         btn_generate.clicked.connect(self.run_fees_report)
         btn_export.clicked.connect(self.export_fees_report_pdf)
@@ -366,7 +422,7 @@ class FeesSetupWindow(QMainWindow):
                 self.combo_class_month.addItem("- Choisir -", None)
 
                 for c in classes:
-                    class_name = c[1] if c[1] else "-"
+                    class_name = c[1] or "-"
                     self.combo_class_reg.addItem(class_name, c[0])
                     self.combo_class_month.addItem(class_name, c[0])
 
@@ -400,7 +456,7 @@ class FeesSetupWindow(QMainWindow):
                 idx = self.table_reg.rowCount()
                 self.table_reg.insertRow(idx)
                 amount = float(r[1] or 0)
-                self.table_reg.setItem(idx, 0, QTableWidgetItem(r[0] if r[0] else "-"))
+                self.table_reg.setItem(idx, 0, QTableWidgetItem(r[0] or "-"))
                 self.table_reg.setItem(idx, 1, QTableWidgetItem(f"{amount:,.0f} FCFA"))
         except Exception as e:
             AppLogger.error("FinanceFeesSetup", f"Error loading registration table: {e}")
@@ -410,9 +466,12 @@ class FeesSetupWindow(QMainWindow):
         extra = base / 4
         for i in range(9):
             sp = self.table_months.cellWidget(i, 1)
-            if i < 4: sp.setValue(base)
-            elif i < 8: sp.setValue(base + extra)
-            else: sp.setValue(0)
+            if i < 4:
+                sp.setValue(base)
+            elif i < 8:
+                sp.setValue(base + extra)
+            else:
+                sp.setValue(0)
 
     def apply_flat_distribution(self):
         base = self.spin_base_price.value()
@@ -440,9 +499,11 @@ class FeesSetupWindow(QMainWindow):
 
     def load_monthly_schedule(self):
         class_id = self.combo_class_month.currentData()
-        for i in range(9): self.table_months.cellWidget(i, 1).setValue(0)
+        for i in range(9):
+            self.table_months.cellWidget(i, 1).setValue(0)
 
-        if not class_id: return
+        if not class_id:
+            return
 
         try:
             db = DatabaseManager()
@@ -473,36 +534,46 @@ class FeesSetupWindow(QMainWindow):
                 if report_key == "comparison":
                     title = "Rapport Comparatif des Frais par Classe"
                     headers = ["Classe", "Inscription", "Total Mensualités", "Frais Annuels (1 élève)"]
-                    for class_name, registration_fee, monthly_total in FinanceRepository(conn).get_fees_comparison_report():
+                    for class_name, registration_fee, monthly_total in FinanceRepository(
+                        conn
+                    ).get_fees_comparison_report():
                         annual_total = float(registration_fee or 0) + float(monthly_total or 0)
-                        rows.append([
-                            class_name or "-",
-                            f"{float(registration_fee or 0):,.0f} FCFA",
-                            f"{float(monthly_total or 0):,.0f} FCFA",
-                            f"{annual_total:,.0f} FCFA",
-                        ])
+                        rows.append(
+                            [
+                                class_name or "-",
+                                f"{float(registration_fee or 0):,.0f} FCFA",
+                                f"{float(monthly_total or 0):,.0f} FCFA",
+                                f"{annual_total:,.0f} FCFA",
+                            ]
+                        )
                 else:
                     if active_year == -1:
-                        QMessageBox.warning(self, "Attention", "Aucune année scolaire active n'a été trouvée pour la projection.")
+                        QMessageBox.warning(
+                            self, "Attention", "Aucune année scolaire active n'a été trouvée pour la projection."
+                        )
                         return
                     title = "Rapport Projection du Revenu Annuel"
                     headers = ["Classe", "Élèves Actifs", "Frais Annuels (1 élève)", "Projection Totale"]
-                    for class_name, active_students, registration_fee, monthly_total in FinanceRepository(conn).get_fees_projection_report(active_year):
+                    for class_name, active_students, registration_fee, monthly_total in FinanceRepository(
+                        conn
+                    ).get_fees_projection_report(active_year):
                         annual_per_student = float(registration_fee or 0) + float(monthly_total or 0)
                         projection = annual_per_student * int(active_students or 0)
-                        rows.append([
-                            class_name or "-",
-                            int(active_students or 0),
-                            f"{annual_per_student:,.0f} FCFA",
-                            f"{projection:,.0f} FCFA",
-                        ])
+                        rows.append(
+                            [
+                                class_name or "-",
+                                int(active_students or 0),
+                                f"{annual_per_student:,.0f} FCFA",
+                                f"{projection:,.0f} FCFA",
+                            ]
+                        )
 
             self.current_fees_report_title = title
             self.current_fees_report_headers = headers
             self.current_fees_report_rows = rows
 
             self.table_fees_report.setColumnCount(len(headers) if headers else 1)
-            self.table_fees_report.setHorizontalHeaderLabels(headers if headers else ["Données"])
+            self.table_fees_report.setHorizontalHeaderLabels(headers or ["Données"])
             self.table_fees_report.setRowCount(0)
 
             for row_values in rows:

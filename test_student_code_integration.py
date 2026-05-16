@@ -9,15 +9,15 @@ Verifies that:
 4. Reports include student_code in output
 """
 
-import sys
 import os
+import sys
 
 # Add project root to path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-from database_setup import DatabaseManager
-from repositories.student_repo import StudentRepository
-from app_logger import AppLogger
+from app_logger import AppLogger  # noqa: E402
+from database_setup import DatabaseManager  # noqa: E402
+from repositories.student_repo import StudentRepository  # noqa: E402
 
 
 def test_student_code_in_database():
@@ -29,10 +29,12 @@ def test_student_code_in_database():
         cursor = conn.cursor()
 
         # Check column exists
-        cursor.execute("""
+        cursor.execute(
+            """
             SELECT column_name FROM information_schema.columns
             WHERE table_name='students' AND column_name='student_code'
-        """)
+        """
+        )
         if not cursor.fetchone():
             AppLogger.error("Test", "❌ student_code column NOT found in Students table")
             return False
@@ -71,7 +73,9 @@ def test_student_repository():
             first_row = rows[0]
             expected_cols = 12  # 11 original + 1 student_code
             if len(first_row) >= expected_cols:
-                AppLogger.info("Test", f"✅ list_students returns {len(first_row)} columns (expected >= {expected_cols})")
+                AppLogger.info(
+                    "Test", f"✅ list_students returns {len(first_row)} columns (expected >= {expected_cols})"
+                )
                 # Column 11 should be student_code
                 student_code = first_row[11]
                 AppLogger.info("Test", f"   - First student code: {student_code}")
@@ -91,11 +95,11 @@ def test_get_student_data():
     # Load admin_documents module
     try:
         import importlib.util
+
         spec = importlib.util.spec_from_file_location(
-            "admin_documents",
-            os.path.join(os.path.dirname(__file__), "admin_documents.py")
+            "admin_documents", os.path.join(os.path.dirname(__file__), "admin_documents.py")
         )
-        admin_docs = importlib.util.module_from_spec(spec)
+        _ = importlib.util.module_from_spec(spec)
 
         # We can't easily instantiate AdminDocsWindow without Qt, but we can check the code
         with open("admin_documents.py", "r", encoding="utf-8") as f:
@@ -184,7 +188,7 @@ def main():
         status = "✅ PASS" if result else "❌ FAIL"
         print(f"{name:<30} {status}")
 
-    passed = sum(1 for _, r in results if r)
+    passed = sum(r for _, r in results)
     total = len(results)
     print(f"\n{passed}/{total} tests passed")
 
