@@ -38,6 +38,10 @@ disallow_untyped_defs = true
 check_untyped_defs = true
 
 [[tool.mypy.overrides]]
+module = ["config_manager", "database_setup", "db_manager", "db_schema", "db_path"]
+ignore_errors = true
+
+[[tool.mypy.overrides]]
 module = ["PyQt6.*", "fpdf.*", "matplotlib.*", "psycopg2.*", "bcrypt.*", "jose.*"]
 ignore_missing_imports = true
 

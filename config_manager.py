@@ -3,6 +3,8 @@
 Configuration Manager System
 """
 
+from __future__ import annotations
+
 import configparser
 import os
 from pathlib import Path
@@ -84,35 +86,35 @@ class ConfigManager:
 
         self._save_config()
 
-    def get(self, section, key, fallback=None):
+    def get(self, section: str, key: str, fallback: str | None = None) -> str | None:
         """الحصول على قيمة إعداد (نصية)"""
         try:
             return self._config.get(section, key)
         except (configparser.NoSectionError, configparser.NoOptionError):
             return fallback
 
-    def get_int(self, section, key, fallback=0):
+    def get_int(self, section: str, key: str, fallback: int = 0) -> int:
         """الحصول على قيمة رقمية (صحيحة)"""
         try:
             return self._config.getint(section, key)
         except (configparser.NoSectionError, configparser.NoOptionError, ValueError):
             return fallback
 
-    def get_bool(self, section, key, fallback=False):
+    def get_bool(self, section: str, key: str, fallback: bool = False) -> bool:
         """الحصول على قيمة منطقية"""
         try:
             return self._config.getboolean(section, key)
         except (configparser.NoSectionError, configparser.NoOptionError, ValueError):
             return fallback
 
-    def get_float(self, section, key, fallback=0.0):
+    def get_float(self, section: str, key: str, fallback: float = 0.0) -> float:
         """الحصول على قيمة عشرية"""
         try:
             return self._config.getfloat(section, key)
         except (configparser.NoSectionError, configparser.NoOptionError, ValueError):
             return fallback
 
-    def set(self, section, key, value):
+    def set(self, section: str, key: str, value: object) -> None:
         """تعيين قيمة إعداد"""
         if not self._config.has_section(section):
             self._config.add_section(section)
@@ -120,7 +122,7 @@ class ConfigManager:
         self._config.set(section, key, str(value))
         self._save_config()
 
-    def _save_config(self):
+    def _save_config(self) -> None:
         """حفظ الإعدادات إلى الملف"""
         try:
             with open(self.CONFIG_FILE, 'w', encoding='utf-8') as f:
@@ -131,20 +133,20 @@ class ConfigManager:
     # ================== اختصارات سريعة لإعدادات قاعدة البيانات ==================
 
     @property
-    def db_host(self):
-        return self.get('DATABASE', 'host', 'localhost')
+    def db_host(self) -> str:
+        return self.get('DATABASE', 'host', 'localhost') or 'localhost'
 
     @property
-    def db_port(self):
+    def db_port(self) -> int:
         return self.get_int('DATABASE', 'port', 5432)
 
     @property
-    def db_name(self):
-        return self.get('DATABASE', 'dbname', 'elmalick_db')
+    def db_name(self) -> str:
+        return self.get('DATABASE', 'dbname', 'elmalick_db') or 'elmalick_db'
 
     @property
-    def db_user(self):
-        return self.get('DATABASE', 'user', 'postgres')
+    def db_user(self) -> str:
+        return self.get('DATABASE', 'user', 'postgres') or 'postgres'
 
     @property
     def db_ssl_mode(self) -> str:
@@ -229,89 +231,89 @@ class ConfigManager:
         return False
 
     @property
-    def backup_dir(self):
-        return self.get('DATABASE', 'backup_dir', db_path.get_backup_dir())
+    def backup_dir(self) -> str:
+        return self.get('DATABASE', 'backup_dir', db_path.get_backup_dir()) or db_path.get_backup_dir()
 
     @property
-    def auto_backup_enabled(self):
+    def auto_backup_enabled(self) -> bool:
         return self.get_bool('DATABASE', 'auto_backup', True)
 
     @property
-    def backup_interval_hours(self):
+    def backup_interval_hours(self) -> int:
         return self.get_int('DATABASE', 'backup_interval_hours', 24)
 
     @property
-    def backup_retention_days(self):
+    def backup_retention_days(self) -> int:
         return self.get_int('DATABASE', 'retention_days', 30)
 
     # ================== اختصارات سريعة لباقي الإعدادات ==================
 
     @property
-    def app_name(self):
-        return self.get('APPLICATION', 'app_name', 'El Malick Gest')
+    def app_name(self) -> str:
+        return self.get('APPLICATION', 'app_name', 'El Malick Gest') or 'El Malick Gest'
 
     @property
-    def school_name(self):
-        return self.get('APPLICATION', 'school_name', 'نظام إدارة المدرسة')
+    def school_name(self) -> str:
+        return self.get('APPLICATION', 'school_name', 'نظام إدارة المدرسة') or 'نظام إدارة المدرسة'
 
     @property
-    def school_location(self):
-        return self.get('APPLICATION', 'school_location', '')
+    def school_location(self) -> str:
+        return self.get('APPLICATION', 'school_location', '') or ''
 
     @property
-    def debug_mode(self):
+    def debug_mode(self) -> bool:
         return self.get_bool('APPLICATION', 'debug_mode', False)
 
     @property
-    def language(self):
-        return self.get('APPLICATION', 'language', 'ar')
+    def language(self) -> str:
+        return self.get('APPLICATION', 'language', 'ar') or 'ar'
 
     @property
-    def theme(self):
-        return self.get('APPLICATION', 'theme', 'light')
+    def theme(self) -> str:
+        return self.get('APPLICATION', 'theme', 'light') or 'light'
 
     @property
-    def dark_mode_enabled(self):
+    def dark_mode_enabled(self) -> bool:
         return self.get_bool('UI', 'enable_dark_mode', False)
 
     @property
-    def enable_dark_mode(self):
+    def enable_dark_mode(self) -> bool:
         return self.dark_mode_enabled  # Alias
 
     @property
-    def auto_switch_dark_mode(self):
+    def auto_switch_dark_mode(self) -> bool:
         return self.get_bool('UI', 'auto_switch_dark_mode', False)
 
     @property
-    def dark_mode_schedule_enabled(self):
+    def dark_mode_schedule_enabled(self) -> bool:
         return self.get_bool('UI', 'dark_mode_schedule_enabled', False)
 
     @property
-    def dark_mode_start_time(self):
-        return self.get('UI', 'dark_mode_start_time', '18:00')
+    def dark_mode_start_time(self) -> str:
+        return self.get('UI', 'dark_mode_start_time', '18:00') or '18:00'
 
     @property
-    def dark_mode_end_time(self):
-        return self.get('UI', 'dark_mode_end_time', '06:00')
+    def dark_mode_end_time(self) -> str:
+        return self.get('UI', 'dark_mode_end_time', '06:00') or '06:00'
 
     @property
-    def password_min_length(self):
+    def password_min_length(self) -> int:
         return self.get_int('SECURITY', 'password_min_length', 8)
 
     @property
-    def session_timeout(self):
+    def session_timeout(self) -> int:
         return self.get_int('SECURITY', 'session_timeout_minutes', 60)
 
     @property
-    def logging_enabled(self):
+    def logging_enabled(self) -> bool:
         return self.get_bool('LOGGING', 'enable_logging', True)
 
     @property
-    def log_level(self):
-        return self.get('LOGGING', 'log_level', 'INFO')
+    def log_level(self) -> str:
+        return self.get('LOGGING', 'log_level', 'INFO') or 'INFO'
 
     @property
-    def enable_notifications(self):
+    def enable_notifications(self) -> bool:
         return self.get_bool('NOTIFICATIONS', 'enable_notifications', True)
 
 

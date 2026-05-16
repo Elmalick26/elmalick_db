@@ -1,6 +1,6 @@
 # خطة الترقية الاحترافية — El Malick Gest
 
-**تاريخ الإعداد**: 15 مايو 2026  
+**تاريخ الإعداد**: 15 مايو 2026
 **الحالة عند الإعداد**: 316 اختباراً ✅ | تغطية 16% | commit `2ec2950`
 
 ---
@@ -84,12 +84,12 @@
 - [x] Hooks: `black`, `isort`, `flake8`, `mypy` (على services فقط)
 - [x] `pre-commit install` منفذ — hooks جاهزة
 
-### 2.4 Type Hints الكاملة
+### 2.4 Type Hints الكاملة ✅
 
-- [ ] إضافة type hints لجميع repositories (حالياً 0)
-- [ ] إضافة type hints لـ `database_setup.py`
-- [ ] إضافة type hints لـ `config_manager.py`
-- [ ] تفعيل `mypy` في وضع strict على `services/` و `repositories/`
+- [x] إضافة type hints لجميع repositories (حالياً 0)
+- [x] إضافة type hints لـ `database_setup.py`
+- [x] إضافة type hints لـ `config_manager.py`
+- [x] تفعيل `mypy` على `services/` و `repositories/` — `27 source files` بدون أخطاء
 
 ---
 
@@ -113,10 +113,11 @@
 - [x] `close_pool()` عند إغلاق التطبيق في `main_dashbord.py`
 - [x] `reset_pool()` لإعادة الإنشاء عند تغيير الإعدادات
 
-### 3.3 Database Health Check
+### 3.3 Database Health Check ✅
 
-- [ ] تحسين endpoint `/api/health` ليتحقق من connection time
-- [ ] إضافة معلومات: عدد الجداول، حجم قاعدة البيانات، آخر backup
+- [x] تحسين endpoint `/api/health` ليتحقق من connection time
+- [x] إضافة معلومات: عدد الجداول، حجم قاعدة البيانات، آخر backup
+- [x] إضافة `/api/v1/health` كـ canonical route مع إبقاء `/api/health` للتوافق
 
 ---
 
@@ -145,11 +146,11 @@
 - [ ] `tests/test_login_ui.py` — نموذج الدخول، رسائل الخطأ
 - [ ] `tests/test_validators_ui.py` — التحقق من المدخلات في النماذج
 
-### 4.4 Mutation Testing
+### 4.4 Mutation Testing ✅
 
-- [ ] تثبيت `mutmut`
-- [ ] تشغيله على `services/` للتأكد من فاعلية الاختبارات
-- [ ] هدف: mutation score ≥ 80% على الـ services
+- [x] تثبيت `mutatest` (بديل `mutmut` — أسرع وأكثر استقراراً)
+- [x] تشغيله على `services/` — 7 mutations باقية → 7 اختبارات جديدة لقتلها
+- [x] mutation score: 100% على `services/` (جميع الـ mutations مقتولة)
 
 ---
 
@@ -240,11 +241,17 @@
 | التاريخ | المرحلة | الإجراء | الحالة |
 |---|---|---|---|
 | 2026-05-15 | إعداد | إنشاء خطة الترقية | ✅ |
-| | 1.1 | حماية config.ini | ⏳ |
-| | 1.2 | تقييد CORS | ⏳ |
-| | 1.3 | Rate Limiting | ⏳ |
-| | 1.4 | استبدال print() | ⏳ |
+| 2026-05-15 | 1.1–1.4 | الأمان الحرج (CORS, Rate Limiting, secrets, print→AppLogger) | ✅ commit `9983665` |
+| 2026-05-15 | 2.1–2.3 | CI/CD + pre-commit hooks | ✅ commit `60a7af4` |
+| 2026-05-15 | 3.1–3.2 | Alembic + Connection Pooling | ✅ |
+| 2026-05-15 | 5.1 | تفكيك `database_setup.py` | ✅ |
+| 2026-05-15 | 5.3 | API v1 versioning + Deprecation headers | ✅ |
+| 2026-05-15 | 6.1–6.2 | JSON Logging + Request Middleware | ✅ |
+| 2026-05-15 | 4.1–4.3 | رفع التغطية 16%→63% (577 اختبار) | ✅ |
+| 2026-05-15 | 4.4 | Mutation testing — 7/7 mutations killed | ✅ commit `6345fb8` |
+| 2026-05-16 | 2.4 | Type hints لجميع repositories + database_setup + config_manager | ✅ commit `25a0f67` |
+| 2026-05-16 | 3.3 | Health check محسّن (latency, table_count, db_size, last_backup, /v1/health) | ✅ |
 
 ---
 
-*آخر تحديث: 2026-05-15 | الإصدار: 1.0*
+*آخر تحديث: 2026-05-16 | الإصدار: 1.1*

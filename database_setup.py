@@ -11,13 +11,17 @@ Implementation lives in:
   - db_schema.py   (DDL schema / migrations, ~900 lines)
 """
 
-from db_manager import DatabaseManager  # noqa: F401
+from __future__ import annotations
+
 import logging
+from typing import Any
+
+from db_manager import DatabaseManager  # noqa: F401
 
 logger = logging.getLogger("DatabaseManager")
 
 
-def log_audit(conn, actor: str, action: str, target: str) -> None:
+def log_audit(conn: Any, actor: str, action: str, target: str) -> None:
     """Log an operation to AuditLogs. Call inside an open connection."""
     try:
         cursor = conn.cursor()
@@ -27,6 +31,7 @@ def log_audit(conn, actor: str, action: str, target: str) -> None:
         )
     except Exception as e:
         import logging as _logging
+
         _logging.getLogger("DatabaseManager").warning(f"Audit log failed: {e}")
 
 

@@ -148,16 +148,49 @@ async def parent_portal():
 # ──────────────────────────────────────────── Health check
 @app.get("/api/health", tags=["System"], summary="État du serveur")
 async def health():
-    """Vérification rapide que l'API fonctionne."""
+    """Vérification de l'état de l'API: DB connectivity, latence, taille, dernier backup."""
+    import glob
+    import os
+
     try:
         from database_setup import DatabaseManager
 
         db = DatabaseManager()
+        t0 = time.perf_counter()
         with db.get_connection() as conn:
-            conn.cursor().execute("SELECT 1")
-        return {"status": "ok", "database": "connected"}
+            cur = conn.cursor()
+            cur.execute("SELECT 1")
+            cur.execute("SELECT COUNT(*) FROM information_schema.tables " "WHERE table_schema = 'public'")
+            row = cur.fetchone()
+            table_count: int = row[0] if row else 0
+            cur.execute("SELECT pg_size_pretty(pg_database_size(current_database()))")
+            size_row = cur.fetchone()
+            db_size: str = size_row[0] if size_row else "unknown"
+        db_latency_ms = round((time.perf_counter() - t0) * 1000, 1)
+
+        # آخر backup: أحدث ملف في مجلد backups/
+        from config_manager import ConfigManager
+
+        backup_dir = ConfigManager().backup_dir
+        backup_files = sorted(glob.glob(os.path.join(backup_dir, "*.sql")))
+        last_backup = os.path.basename(backup_files[-1]) if backup_files else None
+
+        return {
+            "status": "ok",
+            "database": "connected",
+            "db_latency_ms": db_latency_ms,
+            "table_count": table_count,
+            "db_size": db_size,
+            "last_backup": last_backup,
+        }
     except Exception as e:
         return JSONResponse(status_code=503, content={"status": "error", "database": str(e)})
+
+
+@app.get("/api/v1/health", tags=["System"], summary="État du serveur (v1)")
+async def health_v1():
+    """Alias v1 du health check — même réponse que /api/health."""
+    return await health()
 
 
 @app.get("/api", tags=["System"], include_in_schema=False)
