@@ -1,0 +1,18 @@
+{
+  "version": "0.2",
+  "language": "en,fr",
+  "words": [],
+  "ignoreRegExpList": ["[\\u0600-\\u06FF\\u0750-\\u077F\\u08A0-\\u08FF]+"],
+  "ignorePaths": [
+    ".venv/**",
+    "dist_release/**",
+    "Origine/**",
+    "logs/**",
+    "backups/**",
+    "Fonts/**",
+    "*.jsonl",
+    "*.sql",
+    "*.backup",
+    "*.rst"
+  ]
+}

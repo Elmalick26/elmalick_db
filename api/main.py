@@ -22,15 +22,15 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from api.auth import router as auth_router
-from api.routes_students import router as students_router
-from api.routes_parent import router as parent_router
 from api.limiter import limiter
+from api.routes_parent import router as parent_router
+from api.routes_students import router as students_router
 
 _req_logger = logging.getLogger("api.requests")
 
@@ -50,7 +50,7 @@ app = FastAPI(
 
 # ──────────────────────────────────────────── Rate Limiter state + handler
 app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
 
 # ──────────────────────────────────────────── CORS
 # En production: remplacer ["*"] par les domaines autorisés
@@ -83,12 +83,12 @@ async def add_deprecation_header(request: Request, call_next):
     path = request.url.path
     # Only flag the old unversioned API paths (not v1, not system endpoints)
     if (
-        path.startswith("/api/") and
-        not path.startswith("/api/v1/") and
-        not path.startswith("/api/docs") and
-        not path.startswith("/api/redoc") and
-        not path.startswith("/api/openapi") and
-        path not in ("/api/health", "/api/")
+        path.startswith("/api/")
+        and not path.startswith("/api/v1/")
+        and not path.startswith("/api/docs")
+        and not path.startswith("/api/redoc")
+        and not path.startswith("/api/openapi")
+        and path not in ("/api/health", "/api/")
     ):
         response.headers["Deprecation"] = "true"
         response.headers["Sunset"] = "Sat, 01 Jan 2027 00:00:00 GMT"
@@ -119,18 +119,17 @@ async def log_requests(request: Request, call_next):
     auth_header = request.headers.get("Authorization", "")
     if auth_header.startswith("Bearer "):
         from api.auth import extract_token_subject
+
         user_id = extract_token_subject(auth_header[7:])
 
-    log_msg = (
-        f"{request.method} {path} {response.status_code} "
-        f"{duration_ms}ms user={user_id}"
-    )
+    log_msg = f"{request.method} {path} {response.status_code} " f"{duration_ms}ms user={user_id}"
     if duration_ms > 2000:
         _req_logger.warning("SLOW REQUEST \u2014 %s", log_msg)
     else:
         _req_logger.info(log_msg)
 
     return response
+
 
 # ──────────────────────────────────────────── Static files (Parent Portal)
 _static_dir = os.path.join(os.path.dirname(__file__), "static")

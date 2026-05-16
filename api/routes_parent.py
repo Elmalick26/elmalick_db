@@ -19,18 +19,19 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-import bcrypt as _bcrypt
 from datetime import timedelta
 from typing import Optional
+
+import bcrypt as _bcrypt
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
-from pydantic import BaseModel
 from jose import JWTError, jwt
+from pydantic import BaseModel
 
-from database_setup import DatabaseManager
-from app_logger import AppLogger
-from api.auth import SECRET_KEY, ALGORITHM, create_access_token, require_role, get_current_user
+from api.auth import ALGORITHM, SECRET_KEY, create_access_token, get_current_user, require_role
 from api.limiter import limiter
+from app_logger import AppLogger
+from database_setup import DatabaseManager
 from repositories.parent_repo import ParentRepository
 
 router = APIRouter(prefix="/parent", tags=["Parent Portal"])
@@ -152,6 +153,8 @@ async def parent_me(parent: dict = Depends(get_current_parent)):
         with db.get_connection() as conn:
             repo = ParentRepository(conn)
             year_id = repo.get_active_year_id()
+            if year_id is None:
+                raise HTTPException(status_code=503, detail="Aucune année scolaire active")
             result = repo.get_student_info(student_id, year_id)
             if not result:
                 raise HTTPException(status_code=404, detail="Élève introuvable")

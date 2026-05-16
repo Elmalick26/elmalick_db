@@ -6,6 +6,7 @@ Configuration Manager System
 import configparser
 import os
 from pathlib import Path
+
 import db_path
 from app_logger import AppLogger
 
@@ -195,7 +196,7 @@ class ConfigManager:
 
             _keyring.set_password(_KEYRING_SERVICE, self.db_user, password)
             # حذف كلمة المرور من config.ini بعد نقلها لـ keyring
-            if self._config.has_option('DATABASE', 'password'):
+            if self._config is not None and self._config.has_option('DATABASE', 'password'):
                 self._config.remove_option('DATABASE', 'password')
                 self._save_config()
             AppLogger.info("ConfigManager", "تم تخزين كلمة مرور DB في Keyring بنجاح")

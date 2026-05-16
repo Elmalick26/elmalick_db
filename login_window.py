@@ -1,16 +1,27 @@
+import os
 import sys
 import time
-import os
-from PyQt6.QtWidgets import (QApplication, QDialog, QVBoxLayout, QLabel, QLineEdit,
-                             QPushButton, QMessageBox, QFrame, QGraphicsDropShadowEffect)
+
 from PyQt6.QtCore import Qt
-from PyQt6.QtGui import QFont, QColor, QIcon
-from database_setup import DatabaseManager
+from PyQt6.QtGui import QColor, QFont, QIcon
+from PyQt6.QtWidgets import (
+    QApplication,
+    QDialog,
+    QFrame,
+    QGraphicsDropShadowEffect,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QPushButton,
+    QVBoxLayout,
+)
+
 import security_utils
 from app_logger import AppLogger
-from ui_styles import Colors
+from database_setup import DatabaseManager
 from db_path import configure_qt_font_environment
 from repositories.login_repo import LoginRepository
+from ui_styles import Colors
 
 
 def _resolve_app_icon_path():
@@ -57,12 +68,14 @@ class LoginWindow(QDialog):
     def init_ui(self):
         # إعداد النمط العام - Deep Slate Theme
         colors = Colors()
-        self.setStyleSheet(f"""
+        self.setStyleSheet(
+            f"""
             QDialog {{
                 background-color: {colors.BG_MAIN};
                 font-family: 'Segoe UI', 'Cairo', sans-serif;
             }}
-        """)
+        """
+        )
 
         # التنسيق الرئيسي
         main_layout = QVBoxLayout(self)
@@ -72,13 +85,15 @@ class LoginWindow(QDialog):
         # إنشاء حاوية (Card)
         self.card = QFrame()
         self.card.setObjectName("LoginCard")
-        self.card.setStyleSheet(f"""
+        self.card.setStyleSheet(
+            f"""
             QFrame#LoginCard {{
                 background-color: {colors.BG_CARD};
                 border-radius: 12px;
                 border: 1px solid {colors.BORDER};
             }}
-        """)
+        """
+        )
 
         # إضافة تأثير الظل
         shadow = QGraphicsDropShadowEffect()
@@ -95,14 +110,16 @@ class LoginWindow(QDialog):
         # 1. العنوان الرئيسي
         lbl_title = QLabel("Système Scolaire\nنظام إدارة المدارس")
         lbl_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        lbl_title.setStyleSheet(f"""
+        lbl_title.setStyleSheet(
+            f"""
             QLabel {{
                 color: {colors.TEXT_PRIMARY};
                 font-size: 24px;
                 font-weight: 800;
                 margin-bottom: 15px;
             }}
-        """)
+        """
+        )
         card_layout.addWidget(lbl_title)
 
         # 2. حقل اسم المستخدم
@@ -129,7 +146,8 @@ class LoginWindow(QDialog):
         btn_login = QPushButton("Connexion / تسجيل الدخول")
         btn_login.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_login.setMinimumHeight(52)
-        btn_login.setStyleSheet(f"""
+        btn_login.setStyleSheet(
+            f"""
             QPushButton {{
                 background-color: {colors.PRIMARY};
                 color: white;
@@ -145,7 +163,8 @@ class LoginWindow(QDialog):
                 background-color: {colors.PRIMARY_DARK};
                 padding-top: 2px;
             }}
-        """)
+        """
+        )
         btn_login.clicked.connect(self.check_login)
         card_layout.addWidget(btn_login)
 
@@ -153,7 +172,9 @@ class LoginWindow(QDialog):
         main_layout.addWidget(self.card)
 
         # Footer
-        lbl_footer = QLabel("v1.0 Professional Edition © 2026 Développé par El Malick\nجميع الحقوق محفوظة © 2026 التطوير بواسطة El Malick\nContact: elmalickdiouf26@gmail.com")
+        lbl_footer = QLabel(
+            "v1.0 Professional Edition © 2026 Développé par El Malick\nجميع الحقوق محفوظة © 2026 التطوير بواسطة El Malick\nContact: elmalickdiouf26@gmail.com"
+        )
         lbl_footer.setAlignment(Qt.AlignmentFlag.AlignCenter)
         lbl_footer.setStyleSheet(f"color: {colors.TEXT_SECONDARY}; font-size: 11px; margin-top: 15px;")
         main_layout.addWidget(lbl_footer)
@@ -161,7 +182,8 @@ class LoginWindow(QDialog):
     def apply_input_style(self, widget):
         """دالة تنسيق الحقول بنمط Slate"""
         colors = Colors()
-        widget.setStyleSheet(f"""
+        widget.setStyleSheet(
+            f"""
             QLineEdit {{
                 padding: 10px 15px;
                 border: 1px solid {colors.BORDER};
@@ -174,7 +196,8 @@ class LoginWindow(QDialog):
                 border: 2px solid {colors.BORDER_FOCUS};
                 background-color: {colors.INPUT_BG_FOCUS};
             }}
-        """)
+        """
+        )
 
     def _force_change_default_password(self, conn, user_id: int) -> bool:
         """
@@ -206,7 +229,7 @@ class LoginWindow(QDialog):
                 self,
                 "كلمة المرور الجديدة / Nouveau mot de passe",
                 "أدخل كلمة مرور قوية (8+ أحرف، أرقام، حروف):\nEntrez un mot de passe fort (8+ caractères, chiffres, lettres):",
-                QInputDialog.InputMode.PasswordInput
+                QLineEdit.EchoMode.Password,
             )
 
             if not ok:
@@ -214,14 +237,11 @@ class LoginWindow(QDialog):
                 return False
 
             # التحقق من قوة كلمة المرور
-            from validators import validate_password_strength, format_errors
+            from validators import format_errors, validate_password_strength
+
             errors = validate_password_strength(new_pass)
             if errors:
-                QMessageBox.warning(
-                    self,
-                    "كلمة مرور ضعيفة / Mot de passe faible",
-                    format_errors(errors)
-                )
+                QMessageBox.warning(self, "كلمة مرور ضعيفة / Mot de passe faible", format_errors(errors))
                 continue
 
             # تأكيد كلمة المرور
@@ -229,7 +249,7 @@ class LoginWindow(QDialog):
                 self,
                 "تأكيد كلمة المرور / Confirmer le mot de passe",
                 "أعد إدخال كلمة المرور:\nVérifiez le mot de passe:",
-                QInputDialog.InputMode.PasswordInput
+                QLineEdit.EchoMode.Password,
             )
 
             if not ok:
@@ -240,7 +260,7 @@ class LoginWindow(QDialog):
                 QMessageBox.warning(
                     self,
                     "عدم التطابق / Non-correspondance",
-                    "كلمتا المرور غير متطابقتين.\nLes mots de passe ne correspondent pas."
+                    "كلمتا المرور غير متطابقتين.\nLes mots de passe ne correspondent pas.",
                 )
                 continue
 
@@ -251,22 +271,17 @@ class LoginWindow(QDialog):
                 conn.commit()
 
                 from database_setup import log_audit
+
                 log_audit(conn, "admin", "FORCE_PASSWORD_CHANGE", "admin")
 
                 AppLogger.info("LoginWindow", "تم تغيير كلمة مرور المسؤول الافتراضية بنجاح")
                 QMessageBox.information(
-                    self,
-                    "تم / Succès",
-                    "تم تغيير كلمة المرور بنجاح!\nMot de passe changé avec succès!"
+                    self, "تم / Succès", "تم تغيير كلمة المرور بنجاح!\nMot de passe changé avec succès!"
                 )
                 return True
             except Exception as e:
                 AppLogger.error("LoginWindow", f"فشل تحديث كلمة مرور المسؤول: {e}")
-                QMessageBox.critical(
-                    self,
-                    "خطأ / Erreur",
-                    f"فشل حفظ كلمة المرور: {e}\nÉchec de l'enregistrement: {e}"
-                )
+                QMessageBox.critical(self, "خطأ / Erreur", f"فشل حفظ كلمة المرور: {e}\nÉchec de l'enregistrement: {e}")
                 return False
 
     def check_login(self):
@@ -284,7 +299,9 @@ class LoginWindow(QDialog):
             colors = Colors()
             msg.setStyleSheet(f"background-color: {colors.BG_CARD}; color: {colors.TEXT_PRIMARY};")
             msg.exec()
-            AppLogger.warning("LoginWindow", f"Tentative de connexion bloquée pour l'utilisateur '{user}' (Verrouillage actif)")
+            AppLogger.warning(
+                "LoginWindow", f"Tentative de connexion bloquée pour l'utilisateur '{user}' (Verrouillage actif)"
+            )
             return
 
         try:
@@ -296,6 +313,7 @@ class LoginWindow(QDialog):
 
                     if status != "Actif":
                         from database_setup import log_audit
+
                         log_audit(conn, user, "LOGIN_DISABLED", user)
                         QMessageBox.warning(self, "Erreur", "Ce compte est désactivé.\nهذا الحساب معطل.")
                         AppLogger.warning("LoginWindow", f"Tentative de connexion sur un compte désactivé '{user}'")
@@ -308,13 +326,17 @@ class LoginWindow(QDialog):
 
                         # تسجيل نجاح الدخول في Audit Log
                         from database_setup import log_audit
+
                         log_audit(conn, user, "LOGIN", user)
 
                         # فرض تغيير كلمة المرور الافتراضية — الحساب الافتراضي admin/admin
-                        if user == "admin" and pwd == "admin":
-                            if not self._force_change_default_password(conn, user_id):
-                                # المستخدم ألغى أو فشل — لا يسمح بالدخول
-                                return
+                        if (
+                            user == "admin"
+                            and pwd == "admin"
+                            and not self._force_change_default_password(conn, user_id)
+                        ):
+                            # المستخدم ألغى أو فشل — لا يسمح بالدخول
+                            return
 
                         # تحديث التجزئة إذا كانت ضعيفة (Auto-upgrade legacy hashes)
                         if security_utils.needs_rehash(stored_hash):
@@ -330,15 +352,18 @@ class LoginWindow(QDialog):
 
                 # إذا وصل الكود هنا، فهذا يعني أن اسم المستخدم أو كلمة المرور غير صحيحة
                 from database_setup import log_audit
+
                 log_audit(conn, user, "LOGIN_FAILED", user)
 
             self.failed_attempts += 1
-            AppLogger.warning("LoginWindow", f"Échec de connexion pour l'utilisateur '{user}' (Tentative {self.failed_attempts}/5)")
+            AppLogger.warning(
+                "LoginWindow", f"Échec de connexion pour l'utilisateur '{user}' (Tentative {self.failed_attempts}/5)"
+            )
 
             if self.failed_attempts >= 5:
                 self.lockout_until = time.time() + (5 * 60)  # قفل لمدة 5 دقائق
                 self.failed_attempts = 0
-                AppLogger.warning("LoginWindow", f"Verrouillage déclenché après 5 échecs consécutifs.")
+                AppLogger.warning("LoginWindow", "Verrouillage déclenché après 5 échecs consécutifs.")
 
             msg = QMessageBox(self)
             msg.setWindowTitle("Erreur / خطأ")

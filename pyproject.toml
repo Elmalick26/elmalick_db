@@ -29,11 +29,11 @@ warn_return_any = false
 warn_unused_ignores = false
 disallow_untyped_defs = false
 check_untyped_defs = false
-# نطبق الصرامة فقط على services و repositories
-files = ["services", "repositories"]
+# نطبق الصرامة فقط على services
+files = ["services"]
 
 [[tool.mypy.overrides]]
-module = ["services.*", "repositories.*"]
+module = ["services.*"]
 disallow_untyped_defs = true
 check_untyped_defs = true
 

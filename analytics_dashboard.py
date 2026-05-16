@@ -13,35 +13,44 @@ from __future__ import annotations
 import sys
 from datetime import date
 
-from PyQt6.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QComboBox, QPushButton, QTabWidget,
-    QScrollArea, QSizePolicy, QFrame, QGridLayout,
-    QSplitter,
-)
+import matplotlib
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtGui import QFont
+from PyQt6.QtWidgets import (
+    QComboBox,
+    QFrame,
+    QGridLayout,
+    QHBoxLayout,
+    QLabel,
+    QMainWindow,
+    QPushButton,
+    QScrollArea,
+    QSizePolicy,
+    QSplitter,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
+)
 
-import matplotlib
 matplotlib.use("Qt5Agg")
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-from matplotlib.figure import Figure
+import matplotlib.pyplot as plt  # noqa: E402
+from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas  # noqa: E402
+from matplotlib.figure import Figure  # noqa: E402
 
-from database_setup import DatabaseManager
-from app_logger import AppLogger
-from ui_styles import ThemeManager, Colors
-from services.grade_service import GradeService
-from repositories.analytics_repo import AnalyticsRepository
+from app_logger import AppLogger  # noqa: E402
+from database_setup import DatabaseManager  # noqa: E402
+from repositories.analytics_repo import AnalyticsRepository  # noqa: E402
+from services.grade_service import GradeService  # noqa: E402
+from ui_styles import Colors, ThemeManager  # noqa: E402
 
 
 # ──────────────────────────────────────────────────────────────
 # Worker: تحميل البيانات في thread منفصل
 # ──────────────────────────────────────────────────────────────
 class AnalyticsWorker(QThread):
-    grades_ready = pyqtSignal(list, list, list)   # (names, averages, coefficients)
-    attendance_ready = pyqtSignal(dict)               # {"YYYY-MM": rate_pct}
-    finance_ready = pyqtSignal(float, float)        # (total_paid, total_due)
+    grades_ready = pyqtSignal(list, list, list)  # (names, averages, coefficients)
+    attendance_ready = pyqtSignal(dict)  # {"YYYY-MM": rate_pct}
+    finance_ready = pyqtSignal(float, float)  # (total_paid, total_due)
     error_signal = pyqtSignal(str)
 
     def __init__(self, year_id: int, class_id: int | None = None):
@@ -109,8 +118,16 @@ class GradesBarChart(QWidget):
     def _draw_empty(self):
         self.ax.clear()
         self.ax.set_facecolor("#1e2433")
-        self.ax.text(0.5, 0.5, "En attente de données…", ha="center", va="center",
-                     color="#aaaaaa", fontsize=12, transform=self.ax.transAxes)
+        self.ax.text(
+            0.5,
+            0.5,
+            "En attente de données…",
+            ha="center",
+            va="center",
+            color="#aaaaaa",
+            fontsize=12,
+            transform=self.ax.transAxes,
+        )
         self.ax.axis("off")
         self.canvas.draw()
 
@@ -120,7 +137,7 @@ class GradesBarChart(QWidget):
             self._draw_empty()
             return
 
-        colors = plt.cm.RdYlGn([a / 20 for a in averages])
+        colors = plt.cm.RdYlGn([a / 20 for a in averages])  # type: ignore[attr-defined]
         bars = self.ax.barh(names, averages, color=colors, edgecolor="#444")
         self.ax.set_xlim(0, 20)
         self.ax.set_xlabel("Moyenne /20", color="#cccccc")
@@ -133,8 +150,14 @@ class GradesBarChart(QWidget):
 
         # أضف القيمة على كل شريط
         for bar, avg in zip(bars, averages):
-            self.ax.text(bar.get_width() + 0.2, bar.get_y() + bar.get_height() / 2,
-                         f"{avg:.1f}", va="center", color="white", fontsize=9)
+            self.ax.text(
+                bar.get_width() + 0.2,
+                bar.get_y() + bar.get_height() / 2,
+                f"{avg:.1f}",
+                va="center",
+                color="white",
+                fontsize=9,
+            )
 
         self.canvas.draw()
 
@@ -153,16 +176,25 @@ class AttendanceLineChart(QWidget):
     def _draw_empty(self):
         self.ax.clear()
         self.ax.set_facecolor("#1e2433")
-        self.ax.text(0.5, 0.5, "Chargement…", ha="center", va="center",
-                     color="#aaaaaa", fontsize=12, transform=self.ax.transAxes)
+        self.ax.text(
+            0.5, 0.5, "Chargement…", ha="center", va="center", color="#aaaaaa", fontsize=12, transform=self.ax.transAxes
+        )
         self.ax.axis("off")
         self.canvas.draw()
 
     def update_data(self, monthly: dict):
         self.ax.clear()
         if not monthly:
-            self.ax.text(0.5, 0.5, "Aucune donnée de présence", ha="center", va="center",
-                         color="#aaaaaa", fontsize=11, transform=self.ax.transAxes)
+            self.ax.text(
+                0.5,
+                0.5,
+                "Aucune donnée de présence",
+                ha="center",
+                va="center",
+                color="#aaaaaa",
+                fontsize=11,
+                transform=self.ax.transAxes,
+            )
             self.ax.axis("off")
             self.canvas.draw()
             return
@@ -171,8 +203,7 @@ class AttendanceLineChart(QWidget):
         rates = list(monthly.values())
         short_labels = [m[5:] for m in months]  # MM only
 
-        self.ax.plot(short_labels, rates, marker="o", linewidth=2,
-                     color="#4fc3f7", markersize=6)
+        self.ax.plot(short_labels, rates, marker="o", linewidth=2, color="#4fc3f7", markersize=6)
         self.ax.fill_between(range(len(rates)), rates, alpha=0.15, color="#4fc3f7")
         self.ax.axhline(80, linestyle="--", color="#ef5350", linewidth=1, label="Seuil 80%")
         self.ax.set_ylim(0, 105)
@@ -201,8 +232,9 @@ class FinancePieChart(QWidget):
     def _draw_empty(self):
         self.ax.clear()
         self.ax.set_facecolor("#1e2433")
-        self.ax.text(0.5, 0.5, "Chargement…", ha="center", va="center",
-                     color="#aaaaaa", fontsize=12, transform=self.ax.transAxes)
+        self.ax.text(
+            0.5, 0.5, "Chargement…", ha="center", va="center", color="#aaaaaa", fontsize=12, transform=self.ax.transAxes
+        )
         self.ax.axis("off")
         self.canvas.draw()
 
@@ -211,8 +243,16 @@ class FinancePieChart(QWidget):
         remaining = max(0, total_due - paid)
 
         if total_due <= 0:
-            self.ax.text(0.5, 0.5, "Aucune donnée financière", ha="center", va="center",
-                         color="#aaaaaa", fontsize=11, transform=self.ax.transAxes)
+            self.ax.text(
+                0.5,
+                0.5,
+                "Aucune donnée financière",
+                ha="center",
+                va="center",
+                color="#aaaaaa",
+                fontsize=11,
+                transform=self.ax.transAxes,
+            )
             self.ax.axis("off")
             self.canvas.draw()
             return
@@ -223,9 +263,13 @@ class FinancePieChart(QWidget):
         colors_pie = ["#66bb6a", "#ef5350"]
 
         wedges, texts, autotexts = self.ax.pie(
-            sizes, labels=labels, autopct="%1.1f%%",
-            colors=colors_pie, explode=explode,
-            startangle=90, textprops={"color": "white", "fontsize": 9},
+            sizes,
+            labels=labels,
+            autopct="%1.1f%%",
+            colors=colors_pie,
+            explode=explode,
+            startangle=90,
+            textprops={"color": "white", "fontsize": 9},
         )
         for at in autotexts:
             at.set_fontsize(10)
@@ -244,12 +288,14 @@ class KpiCard(QFrame):
         super().__init__(parent)
         self.setFrameShape(QFrame.Shape.StyledPanel)
         self.setMinimumHeight(80)
-        self.setStyleSheet(f"""
+        self.setStyleSheet(
+            f"""
             QFrame {{
                 background: #1e2433; border: 1px solid #333;
                 border-radius: 10px; border-left: 4px solid {color};
             }}
-        """)
+        """
+        )
         layout = QVBoxLayout(self)
         layout.setContentsMargins(14, 10, 14, 10)
 
@@ -337,11 +383,13 @@ class AnalyticsDashboardWindow(QMainWindow):
 
         # Charts (tabs)
         self.tabs = QTabWidget()
-        self.tabs.setStyleSheet("""
+        self.tabs.setStyleSheet(
+            """
             QTabWidget::pane { border: 1px solid #333; background: #1e2433; border-radius: 8px; }
             QTabBar::tab { background: #252b3b; color: #aaa; padding: 8px 16px; border-radius: 4px 4px 0 0; }
             QTabBar::tab:selected { background: #1e2433; color: white; border-bottom: 2px solid #4fc3f7; }
-        """)
+        """
+        )
 
         # Tab 1: Grades
         grades_tab = QWidget()
@@ -449,7 +497,7 @@ class AnalyticsDashboardWindow(QMainWindow):
             self.kpi_avg.set_value(f"{gen_avg:.2f}/20\n{mention}")
 
             # Count students at risk (avg < 10)
-            at_risk = sum(1 for a in averages if a < 10)
+            at_risk = sum(a < 10 for a in averages)
             self.kpi_risk.set_value(str(at_risk))
 
     def _on_attendance(self, monthly: dict):
