@@ -34,6 +34,22 @@ class GradeService:
         threshold = self.get_promotion_threshold(cycle_name)
         return "Admis" if float(annual_average) >= threshold else "Redouble"
 
+    def get_honor_mention(self, average: float) -> str:
+        """Return honour mention label based on average out of 20."""
+        avg = float(average)
+        if avg >= 18:
+            return "Excellent / ممتاز"
+        elif avg >= 16:
+            return "Très Bien / جيد جداً"
+        elif avg >= 14:
+            return "Bien / جيد"
+        elif avg >= 12:
+            return "Assez Bien / مقبول"
+        elif avg >= 10:
+            return "Passable / ضعيف"
+        else:
+            return "Insuffisant / راسب"
+
     def get_next_class(
         self, class_map: dict, current_class_id: int, cycle_id: int, decision: str
     ) -> tuple[int | None, str]:

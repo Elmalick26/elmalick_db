@@ -223,7 +223,7 @@ class GradesRepository:
                        AVG(G.score * 20.0 /
                            CASE WHEN LOWER(CY.name_fr) SIMILAR TO '%%(elem|prim|ibtida)%%'
                                 THEN 10.0 ELSE 20.0 END
-                       ), 1
+                       )::numeric, 1
                    ) AS avg_normalized
             FROM Grades G
             JOIN Students S ON G.student_id = S.id
@@ -236,7 +236,7 @@ class GradesRepository:
                        AVG(G.score * 20.0 /
                            CASE WHEN LOWER(CY.name_fr) SIMILAR TO '%%(elem|prim|ibtida)%%'
                                 THEN 10.0 ELSE 20.0 END
-                       ), 1
+                       )::numeric, 1
                    ) < %s
             ORDER BY avg_normalized ASC
             LIMIT 20
