@@ -11,7 +11,9 @@
     "dist_release",
     "Origine",
     "alembic",
-    "**/__pycache__"
+    "**/node_modules",
+    "**/__pycache__",
+    "**/.git"
   ],
   "reportMissingTypeArgument": "none",
   "reportUnknownParameterType": "none",

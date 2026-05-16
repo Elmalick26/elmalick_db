@@ -921,7 +921,7 @@ class ModernStudentManagement(QMainWindow):
             date_to = None
 
         active_year_id = self.get_active_year_id()
-        year_param = active_year_id if active_year_id else -1
+        year_param = active_year_id or -1
 
         db = DatabaseManager()
         with db.get_connection() as conn:
@@ -1047,7 +1047,7 @@ class ModernStudentManagement(QMainWindow):
         date_from = self.date_filter_from.date().toString("yyyy-MM-dd") if hasattr(self, "date_filter_from") else None
         date_to = self.date_filter_to.date().toString("yyyy-MM-dd") if hasattr(self, "date_filter_to") else None
         active_year_id = self.get_active_year_id()
-        year_param = active_year_id if active_year_id else -1
+        year_param = active_year_id or -1
 
         db = DatabaseManager()
         with db.get_connection() as conn:
@@ -1172,7 +1172,7 @@ class ModernStudentManagement(QMainWindow):
         if text is None: return "-"
         if not isinstance(text, str): text = str(text)
         cleaned = text.encode('latin-1', 'ignore').decode('latin-1').strip()
-        return cleaned if cleaned else "-"
+        return cleaned or "-"
 
     def _is_arabic_font_ready(self): return self._get_arabic_font_path() is not None
 

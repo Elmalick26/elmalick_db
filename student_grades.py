@@ -587,7 +587,7 @@ class StudentGradesWindow(QMainWindow):
                     if r[3] is not None: spin.setValue(r[3])
                     self.table_grades.setCellWidget(idx, 3, spin)
 
-                    self.table_grades.setItem(idx, 4, QTableWidgetItem(r[4] if r[4] else ""))
+                    self.table_grades.setItem(idx, 4, QTableWidgetItem(r[4] or ""))
         except Exception as e:
             QMessageBox.critical(self, "Erreur", f"Erreur lors du chargement : {e}")
 
@@ -630,7 +630,7 @@ class StudentGradesWindow(QMainWindow):
                     active_year,
                     class_id=class_id,
                     period_id=period_id,
-                    student_name=student_name if student_name else None,
+                    student_name=student_name or None,
                 )
 
                 self.table_view.setRowCount(0)

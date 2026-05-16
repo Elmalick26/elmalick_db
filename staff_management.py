@@ -620,7 +620,7 @@ class ModernStaffManagement(QMainWindow):
                 self.table_staff.setItem(r_idx, 5, QTableWidgetItem(ctype))
                 self.table_staff.setItem(r_idx, 6, QTableWidgetItem(amount))
 
-                status = row[9] if row[9] else "Actif"
+                status = row[9] or "Actif"
                 status_item = QTableWidgetItem(status)
                 if status == "Actif":
                     status_item.setForeground(QColor(16, 185, 129))
@@ -671,7 +671,7 @@ class ModernStaffManagement(QMainWindow):
         is_monthly = (self.combo_contract.currentIndex() == 0)
         contract = "Monthly" if is_monthly else "Hourly"
         base_sal = self.spin_salary.value() if is_monthly else 0.0
-        hr_rate = self.spin_hourly.value() if not is_monthly else 0.0
+        hr_rate = 0.0 if is_monthly else self.spin_hourly.value()
 
         status_text = self.combo_status.currentText()
         status = status_text.split(" / ")[0]
@@ -772,8 +772,8 @@ class ModernStaffManagement(QMainWindow):
                 except Exception: pass
                 idx = 0 if data[8] == "Monthly" else 1
                 self.combo_contract.setCurrentIndex(idx)
-                self.spin_salary.setValue(data[9] if data[9] else 0)
-                self.spin_hourly.setValue(data[10] if data[10] else 0)
+                self.spin_salary.setValue(data[9] or 0)
+                self.spin_hourly.setValue(data[10] or 0)
 
                 if data[11] and os.path.exists(data[11]):
                     self.current_photo_path = data[11]
@@ -784,7 +784,7 @@ class ModernStaffManagement(QMainWindow):
                     self.lbl_photo.setText("Photo")
                     self.current_photo_path = None
 
-                staff_status = data[12] if data[12] else "Actif"
+                staff_status = data[12] or "Actif"
                 status_map = {
                     "Actif": 0, "Congé": 1, "Suspendu": 2,
                     "Démission": 3, "Licencié": 4, "Retraité": 5

@@ -584,10 +584,9 @@ class DisciplineWindow(QMainWindow):
                 repo = DisciplineRepository(conn)
                 cycle_name = repo.get_cycle_name_for_class(cid)
 
-                is_primary = False
-                if cycle_name:
-                    if "elem" in cycle_name or "prim" in cycle_name or "ibtida" in cycle_name:
-                        is_primary = True
+                is_primary = bool(cycle_name and (
+                    "elem" in cycle_name or "prim" in cycle_name or "ibtida" in cycle_name
+                ))
 
                 if is_primary:
                     self.spin_points.setRange(0, 10)
@@ -708,15 +707,15 @@ class DisciplineWindow(QMainWindow):
                 self.table_history.insertRow(idx)
 
                 # تخزين الـ ID في العنصر الأول
-                name_item = QTableWidgetItem(str(r[1] if r[1] else "-"))
+                name_item = QTableWidgetItem(str(r[1] or "-"))
                 name_item.setData(Qt.ItemDataRole.UserRole, r[0])  # ID
 
                 self.table_history.setItem(idx, 0, name_item)
-                self.table_history.setItem(idx, 1, QTableWidgetItem(str(r[2] if r[2] else "-")))
-                self.table_history.setItem(idx, 2, QTableWidgetItem(str(r[3] if r[3] else "-")))
-                self.table_history.setItem(idx, 3, QTableWidgetItem(str(r[4] if r[4] else "-")))
-                self.table_history.setItem(idx, 4, QTableWidgetItem(str(r[5] if r[5] else "-")))
-                self.table_history.setItem(idx, 5, QTableWidgetItem(str(r[6] if r[6] else "-")))
+                self.table_history.setItem(idx, 1, QTableWidgetItem(str(r[2] or "-")))
+                self.table_history.setItem(idx, 2, QTableWidgetItem(str(r[3] or "-")))
+                self.table_history.setItem(idx, 3, QTableWidgetItem(str(r[4] or "-")))
+                self.table_history.setItem(idx, 4, QTableWidgetItem(str(r[5] or "-")))
+                self.table_history.setItem(idx, 5, QTableWidgetItem(str(r[6] or "-")))
 
                 btn_print = QPushButton("🖨️")
                 btn_print.setToolTip("Imprimer Convocation / Notification")
@@ -726,7 +725,7 @@ class DisciplineWindow(QMainWindow):
                     QPushButton {{ background-color: {colors.PRIMARY}; color: white; border-radius: 4px; border: none; font-weight: bold; }}
                     QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}
                 """)
-                data = {'name': r[1], 'class': r[2] if r[2] else "-", 'inc': r[4], 'date': r[3], 'obs': r[7], 'sanction': r[5], 'pts': r[6]}
+                data = {'name': r[1], 'class': r[2] or "-", 'inc': r[4], 'date': r[3], 'obs': r[7], 'sanction': r[5], 'pts': r[6]}
                 btn_print.clicked.connect(lambda ch, d=data: self.print_action(d))
 
                 w = QWidget()

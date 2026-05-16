@@ -516,7 +516,7 @@ class StaffAttendanceWindow(QMainWindow):
                 idx = self.table_report.rowCount()
                 self.table_report.insertRow(idx)
                 for col, value in enumerate(row):
-                    text = value if value else "-"
+                    text = value or "-"
                     self.table_report.setItem(idx, col, QTableWidgetItem(str(text)))
         except Exception as e:
             AppLogger.error("StaffAttendance", f"Error loading report records: {e}")
@@ -574,7 +574,7 @@ class StaffAttendanceWindow(QMainWindow):
                 repo = StaffRepository(conn)
                 school_info = repo.get_school_info()
                 records = repo.get_attendance_report(
-                    start_date, end_date, staff_id if staff_id else None
+                    start_date, end_date, staff_id or None
                 )
                 is_all = staff_id is None
 
@@ -641,16 +641,16 @@ class StaffAttendanceWindow(QMainWindow):
                     pdf.cell(col_widths[1], 6, date_fmt, 1, 0, 'C', True)
                     pdf.cell(col_widths[2], 6, pdf.sanitize(status), 1, 0, 'C', True)
                     pdf.set_text_color(51, 65, 85)
-                    pdf.cell(col_widths[3], 6, t_in if t_in else "-", 1, 0, 'C', True)
-                    pdf.cell(col_widths[4], 6, t_out if t_out else "-", 1, 0, 'C', True)
-                    pdf.cell(col_widths[5], 6, pdf.sanitize(note if note else ""), 1, 1, 'L', True)
+                    pdf.cell(col_widths[3], 6, t_in or "-", 1, 0, 'C', True)
+                    pdf.cell(col_widths[4], 6, t_out or "-", 1, 0, 'C', True)
+                    pdf.cell(col_widths[5], 6, pdf.sanitize(note or ""), 1, 1, 'L', True)
                 else:
                     pdf.cell(col_widths[0], 6, date_fmt, 1, 0, 'C', True)
                     pdf.cell(col_widths[1], 6, pdf.sanitize(status), 1, 0, 'C', True)
                     pdf.set_text_color(51, 65, 85)
-                    pdf.cell(col_widths[2], 6, t_in if t_in else "-", 1, 0, 'C', True)
-                    pdf.cell(col_widths[3], 6, t_out if t_out else "-", 1, 0, 'C', True)
-                    pdf.cell(col_widths[4], 6, pdf.sanitize(note if note else ""), 1, 1, 'L', True)
+                    pdf.cell(col_widths[2], 6, t_in or "-", 1, 0, 'C', True)
+                    pdf.cell(col_widths[3], 6, t_out or "-", 1, 0, 'C', True)
+                    pdf.cell(col_widths[4], 6, pdf.sanitize(note or ""), 1, 1, 'L', True)
 
             pdf.ln(5)
             pdf.set_text_color(0, 0, 0)

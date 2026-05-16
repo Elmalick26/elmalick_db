@@ -294,7 +294,7 @@ class SystemMaintenanceWindow(QMainWindow):
                 self.load_backups()
                 QMessageBox.information(self, "Succès", "Sauvegarde créée avec succès (PostgreSQL) !")
             else:
-                raise Exception(f"Erreur pg_dump: {result.stderr}")
+                raise RuntimeError(f"Erreur pg_dump: {result.stderr}")
 
         except Exception as e:
             QApplication.restoreOverrideCursor()
@@ -404,8 +404,8 @@ class SystemMaintenanceWindow(QMainWindow):
                     QMessageBox.information(self, "Succès", "Restauration terminée avec succès. L'application va se fermer pour rafraîchir les données.")
                     sys.exit(0)  # الخروج ليقوم المستخدم بإعادة تشغيل البرنامج
                 else:
-                    error_msg = result.stderr if result.stderr else result.stdout
-                    raise Exception(f"pg_restore/psql أرجع رمز الخطأ {result.returncode}:\n{error_msg}")
+                    error_msg = result.stderr or result.stdout
+                    raise RuntimeError(f"pg_restore/psql أرجع رمز الخطأ {result.returncode}:\n{error_msg}")
 
             except Exception as e:
                 QApplication.restoreOverrideCursor()
