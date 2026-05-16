@@ -103,7 +103,7 @@ def initialize_schema(db_manager) -> None:
             """
             CREATE TABLE IF NOT EXISTS SchoolInfo (
                 id SERIAL PRIMARY KEY,
-                republic TEXT, ia TEXT, ief TEXT, school_name TEXT, 
+                republic TEXT, ia TEXT, ief TEXT, school_name TEXT,
                 auth_number TEXT, address TEXT, phone TEXT, logo_path TEXT, director_name TEXT
             )
         """
@@ -246,8 +246,8 @@ def initialize_schema(db_manager) -> None:
         # إضافة الـ Foreign Key الخاص بجدول Users بعد إنشاء Staff
         _safe_execute(
             """
-            ALTER TABLE Users 
-            ADD CONSTRAINT fk_staff 
+            ALTER TABLE Users
+            ADD CONSTRAINT fk_staff
             FOREIGN KEY (staff_id) REFERENCES Staff(id) ON DELETE SET NULL;
         """
         )
@@ -297,7 +297,7 @@ def initialize_schema(db_manager) -> None:
                 FOREIGN KEY (student_id) REFERENCES Students(id) ON DELETE CASCADE,
                 FOREIGN KEY (year_id) REFERENCES AcademicYears(id),
                 FOREIGN KEY (period_id) REFERENCES AcademicPeriods(id)
-           ) 
+           )
         """
         )
 
@@ -312,7 +312,7 @@ def initialize_schema(db_manager) -> None:
                 status TEXT,
                 note TEXT,
                 FOREIGN KEY (staff_id) REFERENCES Staff(id)
-           ) 
+           )
         """
         )
 
@@ -321,7 +321,7 @@ def initialize_schema(db_manager) -> None:
             CREATE TABLE IF NOT EXISTS StaffLeaves (
                 id SERIAL PRIMARY KEY,
                 staff_id INTEGER,
-                leave_type TEXT, 
+                leave_type TEXT,
                 start_date DATE,
                 end_date DATE,
                 days_count INTEGER,
@@ -403,8 +403,8 @@ def initialize_schema(db_manager) -> None:
                 discount REAL DEFAULT 0,
                 amount_paid REAL,
                 remaining_balance REAL,
-                payment_type TEXT, 
-                details TEXT, 
+                payment_type TEXT,
+                details TEXT,
                 FOREIGN KEY (student_id) REFERENCES Students(id) ON DELETE RESTRICT,
                 FOREIGN KEY (year_id) REFERENCES AcademicYears(id)
             )
@@ -435,7 +435,7 @@ def initialize_schema(db_manager) -> None:
             CREATE TABLE IF NOT EXISTS MonthlyPaymentsStatus (
                 id SERIAL PRIMARY KEY,
                 student_id INTEGER,
-                month_index INTEGER, 
+                month_index INTEGER,
                 due_id INTEGER,
                 payment_id INTEGER,
                 amount_paid REAL,
@@ -483,7 +483,7 @@ def initialize_schema(db_manager) -> None:
                 id SERIAL PRIMARY KEY,
                 name_fr TEXT,
                 name_ar TEXT,
-                category TEXT, 
+                category TEXT,
                 quantity INTEGER DEFAULT 0,
                 min_quantity INTEGER DEFAULT 5,
                 unit_price REAL DEFAULT 0.0,
@@ -899,5 +899,3 @@ def initialize_schema(db_manager) -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 # Audit Log Helper
 # ─────────────────────────────────────────────────────────────────────────────
-
-

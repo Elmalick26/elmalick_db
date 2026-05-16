@@ -32,6 +32,7 @@ from app_logger import AppLogger
 # دالة الفحص: هل يجب تشغيل المعالج؟
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 def should_run_wizard() -> bool:
     """
     تعيد True إذا كان المعالج يجب أن يعمل.
@@ -515,7 +516,7 @@ class FirstRunWizard(QDialog):
             config.set("DATABASE", "user", self.txt_db_user.text().strip())
             # تخزين كلمة المرور بأمان في keyring
             config.set_db_password(self.txt_db_pass.text())
-            
+
             # 2b. الترحيل الآمن من config.ini إلى keyring (إذا كانت موجودة)
             config.migrate_password_to_keyring()
 

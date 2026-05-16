@@ -44,21 +44,21 @@ except ImportError:
 
 # --- أعمدة الطالب المتاحة للتعيين ---
 STUDENT_FIELDS = [
-    ("",                 "— Ignorer cette colonne —"),
-    ("first_name_fr",    "Prénom (FR) *"),
-    ("last_name_fr",     "Nom de famille (FR) *"),
-    ("first_name_ar",    "الاسم الأول (AR) *"),
-    ("last_name_ar",     "اسم العائلة (AR) *"),
-    ("birth_date",       "Date de naissance (AAAA-MM-JJ)"),
-    ("birth_place",      "Lieu de naissance"),
-    ("gender",           "Sexe (M / F)"),
-    ("address",          "Adresse"),
-    ("parent_name",      "Nom du parent / tuteur"),
-    ("parent_phone",     "Téléphone parent"),
-    ("parent_email",     "Email parent"),
-    ("parent_address",   "Adresse parent"),
+    ("", "— Ignorer cette colonne —"),
+    ("first_name_fr", "Prénom (FR) *"),
+    ("last_name_fr", "Nom de famille (FR) *"),
+    ("first_name_ar", "الاسم الأول (AR) *"),
+    ("last_name_ar", "اسم العائلة (AR) *"),
+    ("birth_date", "Date de naissance (AAAA-MM-JJ)"),
+    ("birth_place", "Lieu de naissance"),
+    ("gender", "Sexe (M / F)"),
+    ("address", "Adresse"),
+    ("parent_name", "Nom du parent / tuteur"),
+    ("parent_phone", "Téléphone parent"),
+    ("parent_email", "Email parent"),
+    ("parent_address", "Adresse parent"),
 ]
-FIELD_KEYS   = [f[0] for f in STUDENT_FIELDS]
+FIELD_KEYS = [f[0] for f in STUDENT_FIELDS]
 FIELD_LABELS = [f[1] for f in STUDENT_FIELDS]
 
 
@@ -91,21 +91,21 @@ def _normalize_gender(raw) -> str:
 
 class ImportWorker(QThread):
     """خيط الخلفية لتنفيذ الاستيراد الفعلي"""
-    progress    = pyqtSignal(int)          # 0-100
-    row_result  = pyqtSignal(int, bool, str)   # row_index, success, message
+    progress = pyqtSignal(int)          # 0-100
+    row_result = pyqtSignal(int, bool, str)   # row_index, success, message
     finished_sig = pyqtSignal(int, int)    # imported, failed
 
     def __init__(self, rows: list[dict], class_id: int, year_id: int, actor: str):
         super().__init__()
-        self.rows     = rows
+        self.rows = rows
         self.class_id = class_id
-        self.year_id  = year_id
-        self.actor    = actor
+        self.year_id = year_id
+        self.actor = actor
 
     def run(self):
         imported = 0
-        failed   = 0
-        total    = len(self.rows)
+        failed = 0
+        total = len(self.rows)
 
         db = DatabaseManager()
         for idx, data in enumerate(self.rows):
@@ -123,7 +123,7 @@ class ImportWorker(QThread):
                     repo.insert_student_class_number(student_id, self.class_id, self.year_id, next_num)
 
                     log_audit(conn, self.actor, "IMPORT_STUDENT",
-                              f"{data.get('first_name_fr','')} {data.get('last_name_fr','')} (id={student_id})")
+                              f"{data.get('first_name_fr', '')} {data.get('last_name_fr', '')} (id={student_id})")
                     conn.commit()
 
                 imported += 1
@@ -148,14 +148,14 @@ class ImportWizard(QDialog):
 
     def __init__(self, parent=None, actor: str = "system"):
         super().__init__(parent)
-        self.actor    = actor
+        self.actor = actor
         self.setWindowTitle("📥  Importation en masse / استيراد جماعي")
         self.setMinimumSize(950, 680)
         self.setModal(True)
         ThemeManager.apply_theme(self)
 
         self._raw_headers: list[str] = []
-        self._raw_rows:    list[list] = []
+        self._raw_rows: list[list] = []
         self._mapping_combos: list[QComboBox] = []
         self._validated_rows: list[dict] = []  # صفوف صالحة بعد التحقق
         self._worker: ImportWorker | None = None
@@ -326,7 +326,7 @@ class ImportWizard(QDialog):
                     self._log("⚠️ Fichier vide.")
                     return
                 self._raw_headers = [str(c) if c is not None else f"Col{i}" for i, c in enumerate(rows[0])]
-                self._raw_rows    = [list(r) for r in rows[1:] if any(c is not None for c in r)]
+                self._raw_rows = [list(r) for r in rows[1:] if any(c is not None for c in r)]
             elif ext == ".csv":
                 with open(path, encoding="utf-8-sig", newline="") as f:
                     reader = csv.reader(f)
@@ -335,7 +335,7 @@ class ImportWizard(QDialog):
                     self._log("⚠️ Fichier vide.")
                     return
                 self._raw_headers = all_rows[0]
-                self._raw_rows    = [r for r in all_rows[1:] if any(c.strip() for c in r)]
+                self._raw_rows = [r for r in all_rows[1:] if any(c.strip() for c in r)]
             else:
                 self._log("❌ Format non supporté.")
                 return
@@ -389,17 +389,17 @@ class ImportWizard(QDialog):
         """تخمين تلقائي للحقل بناءً على اسم العمود"""
         h = header.strip().lower()
         mapping = {
-            "prenom": "first_name_fr",  "prénom": "first_name_fr",
+            "prenom": "first_name_fr", "prénom": "first_name_fr",
             "first_name": "first_name_fr", "nom": "last_name_fr",
-            "last_name": "last_name_fr",   "الاسم الأول": "first_name_ar",
+            "last_name": "last_name_fr", "الاسم الأول": "first_name_ar",
             "اسم العائلة": "last_name_ar", "naissance": "birth_date",
-            "birth": "birth_date",         "nais": "birth_date",
-            "lieu": "birth_place",         "sexe": "gender",
-            "genre": "gender",             "gender": "gender",
-            "adresse": "address",          "address": "address",
-            "parent": "parent_name",       "tuteur": "parent_name",
-            "phone": "parent_phone",       "tel": "parent_phone",
-            "email": "parent_email",       "mail": "parent_email",
+            "birth": "birth_date", "nais": "birth_date",
+            "lieu": "birth_place", "sexe": "gender",
+            "genre": "gender", "gender": "gender",
+            "adresse": "address", "address": "address",
+            "parent": "parent_name", "tuteur": "parent_name",
+            "phone": "parent_phone", "tel": "parent_phone",
+            "email": "parent_email", "mail": "parent_email",
         }
         for key, field in mapping.items():
             if key in h:
@@ -482,7 +482,7 @@ class ImportWizard(QDialog):
     # ---------------------------------------------------------------- Import
     def _run_import(self):
         class_id = self.combo_class.currentData()
-        year_id  = self.combo_year.currentData()
+        year_id = self.combo_year.currentData()
 
         if not class_id or not year_id:
             QMessageBox.warning(self, "Sélection manquante",
@@ -531,8 +531,8 @@ class ImportWizard(QDialog):
         if imported > 0:
             QMessageBox.information(
                 self, "Importation terminée",
-                f"✅  {imported} élève(s) importé(s) avec succès.\n"
-                + (f"⚠️  {failed} ligne(s) en erreur." if failed else "")
+                f"✅  {imported} élève(s) importé(s) avec succès.\n" +
+                (f"⚠️  {failed} ligne(s) en erreur." if failed else "")
             )
 
     # ---------------------------------------------------------------- Template

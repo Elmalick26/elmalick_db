@@ -57,3 +57,7 @@ exclude_lines = [
     "if __name__ == .__main__.:",
     "raise NotImplementedError",
 ]
+
+[tool.mutmut]
+paths_to_mutate = "services/"
+runner = ".venv/Scripts/python.exe -m pytest tests/test_attendance_service.py tests/test_backup_service.py tests/test_finance_service.py tests/test_grade_service.py tests/test_migration_service.py -q --tb=no"

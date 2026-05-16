@@ -3,8 +3,8 @@
 Unified UI Styles for the School Management System
 """
 
-from PyQt6.QtWidgets import (QApplication, QPushButton, QLineEdit, QComboBox, 
-                             QDateEdit, QDoubleSpinBox, QTextEdit, QLabel, 
+from PyQt6.QtWidgets import (QApplication, QPushButton, QLineEdit, QComboBox,
+                             QDateEdit, QDoubleSpinBox, QTextEdit, QLabel,
                              QFrame, QGraphicsDropShadowEffect)
 from PyQt6.QtGui import QFont, QColor
 from PyQt6.QtCore import Qt
@@ -13,81 +13,83 @@ from db_path import configure_qt_font_environment
 configure_qt_font_environment()
 
 # ========== COLORS (لوحة الألوان) ==========
+
+
 class Colors:
     """مجموعة الألوان الموحدة - Deep Slate Theme (Light Mode)"""
-    PRIMARY       = "#3B82F6"  # Blue 500
+    PRIMARY = "#3B82F6"  # Blue 500
     PRIMARY_HOVER = "#2563EB"  # Blue 600
-    PRIMARY_DARK  = "#1E40AF"  # Blue 700
-    
-    SECONDARY     = "#8B5CF6"  # Violet 500
-    
-    SUCCESS       = "#10B981"  # Emerald 500
+    PRIMARY_DARK = "#1E40AF"  # Blue 700
+
+    SECONDARY = "#8B5CF6"  # Violet 500
+
+    SUCCESS = "#10B981"  # Emerald 500
     SUCCESS_HOVER = "#059669"  # Emerald 600
-    WARNING       = "#F59E0B"  # Amber 500
-    DANGER        = "#EF4444"  # Red 500
-    DANGER_HOVER  = "#DC2626"  # Red 600
-    
+    WARNING = "#F59E0B"  # Amber 500
+    DANGER = "#EF4444"  # Red 500
+    DANGER_HOVER = "#DC2626"  # Red 600
+
     # خلفيات
-    BG_MAIN       = "#F1F5F9"  # Slate 100 (Application Background)
-    BG_CARD       = "#FFFFFF"  # White (Card Background)
-    BG_HEADER     = "#1E293B"  # Slate 800 (Header Background)
-    
+    BG_MAIN = "#F1F5F9"  # Slate 100 (Application Background)
+    BG_CARD = "#FFFFFF"  # White (Card Background)
+    BG_HEADER = "#1E293B"  # Slate 800 (Header Background)
+
     # نصوص وحدود
-    TEXT_PRIMARY  = "#334155"  # Slate 700
-    TEXT_SECONDARY= "#64748B"  # Slate 500
-    HEADER_TEXT   = "#FFFFFF"
-    BORDER        = "#E2E8F0"  # Slate 200
-    BORDER_FOCUS  = "#3B82F6"  # Primary Color
-    INPUT_BG      = "#EEF2F7"  # Slate 100
-    INPUT_BG_FOCUS= "#FFFFFF"  # White
-    INPUT_BORDER  = "#94A3B8"  # Slate 400
-    TAB_BG        = "#E2E8F0"  # Slate 200
-    TAB_HOVER_BG  = "#CBD5E1"  # Slate 300
-    
+    TEXT_PRIMARY = "#334155"  # Slate 700
+    TEXT_SECONDARY = "#64748B"  # Slate 500
+    HEADER_TEXT = "#FFFFFF"
+    BORDER = "#E2E8F0"  # Slate 200
+    BORDER_FOCUS = "#3B82F6"  # Primary Color
+    INPUT_BG = "#EEF2F7"  # Slate 100
+    INPUT_BG_FOCUS = "#FFFFFF"  # White
+    INPUT_BORDER = "#94A3B8"  # Slate 400
+    TAB_BG = "#E2E8F0"  # Slate 200
+    TAB_HOVER_BG = "#CBD5E1"  # Slate 300
+
     # عناصر إضافية
-    SCROLL_BG     = "#F1F5F9"
+    SCROLL_BG = "#F1F5F9"
     SCROLL_HANDLE = "#CBD5E1"
 
 
 class DarkColors:
     """مجموعة الألوان للوضع الداكن - Dark Theme"""
-    PRIMARY       = "#60A5FA"  # Blue 400 (Lighter for dark mode)
+    PRIMARY = "#60A5FA"  # Blue 400 (Lighter for dark mode)
     PRIMARY_HOVER = "#3B82F6"
-    PRIMARY_DARK  = "#2563EB"
-    
-    SECONDARY     = "#A78BFA"
-    
-    SUCCESS       = "#34D399"
+    PRIMARY_DARK = "#2563EB"
+
+    SECONDARY = "#A78BFA"
+
+    SUCCESS = "#34D399"
     SUCCESS_HOVER = "#10B981"
-    WARNING       = "#FBBF24"
-    DANGER        = "#F87171"
-    DANGER_HOVER  = "#EF4444"
-    
+    WARNING = "#FBBF24"
+    DANGER = "#F87171"
+    DANGER_HOVER = "#EF4444"
+
     # خلفيات
-    BG_MAIN       = "#0F172A"  # Slate 900
-    BG_CARD       = "#1E293B"  # Slate 800
-    BG_HEADER     = "#020617"  # Slate 950
-    
+    BG_MAIN = "#0F172A"  # Slate 900
+    BG_CARD = "#1E293B"  # Slate 800
+    BG_HEADER = "#020617"  # Slate 950
+
     # نصوص وحدود
-    TEXT_PRIMARY  = "#F8FAFC"  # Slate 50
-    TEXT_SECONDARY= "#94A3B8"  # Slate 400
-    HEADER_TEXT   = "#E2E8F0"
-    BORDER        = "#334155"  # Slate 700
-    BORDER_FOCUS  = "#60A5FA"
-    INPUT_BG      = "#111827"  # Gray 900
-    INPUT_BG_FOCUS= "#1F2937"  # Gray 800
-    INPUT_BORDER  = "#64748B"  # Slate 500
-    TAB_BG        = "#0F172A"  # Slate 900
-    TAB_HOVER_BG  = "#1F2937"  # Gray 800
-    
+    TEXT_PRIMARY = "#F8FAFC"  # Slate 50
+    TEXT_SECONDARY = "#94A3B8"  # Slate 400
+    HEADER_TEXT = "#E2E8F0"
+    BORDER = "#334155"  # Slate 700
+    BORDER_FOCUS = "#60A5FA"
+    INPUT_BG = "#111827"  # Gray 900
+    INPUT_BG_FOCUS = "#1F2937"  # Gray 800
+    INPUT_BORDER = "#64748B"  # Slate 500
+    TAB_BG = "#0F172A"  # Slate 900
+    TAB_HOVER_BG = "#1F2937"  # Gray 800
+
     # عناصر إضافية
-    SCROLL_BG     = "#0F172A"
+    SCROLL_BG = "#0F172A"
     SCROLL_HANDLE = "#334155"
 
 
 # ========== BASE STYLES (القوالب الأساسية) ==========
 class StyleTemplates:
-    
+
     @staticmethod
     def get_common_styles(colors):
         """توليد الأنماط المشتركة بناءً على الألوان الممررة"""
@@ -218,13 +220,13 @@ class StyleTemplates:
                 background-color: {colors.BG_HEADER};
                 border: none;
             }}
-            
+
             /* --- TabWidget (Modern Pills) --- */
             QTabWidget::pane {{
                 border: 1px solid {colors.BORDER};
                 border-radius: 8px;
                 background: {colors.BG_CARD};
-                top: -1px; 
+                top: -1px;
             }}
             QTabBar::tab {{
                 background: {colors.TAB_BG};
@@ -322,21 +324,21 @@ class StyleTemplates:
             }}
             QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}
             QPushButton:pressed {{ background-color: {colors.PRIMARY_DARK}; }}
-            
+
             /* Specific Classes (Assign these manually in code if needed) */
             QPushButton[class="danger"] {{ background-color: {colors.DANGER}; }}
             QPushButton[class="danger"]:hover {{ background-color: {colors.DANGER_HOVER}; }}
-            
+
             QPushButton[class="success"] {{ background-color: {colors.SUCCESS}; }}
             QPushButton[class="success"]:hover {{ background-color: {colors.SUCCESS_HOVER}; }}
-            
-            QPushButton[class="outline"] {{ 
-                background-color: transparent; 
-                border: 2px solid {colors.PRIMARY}; 
-                color: {colors.PRIMARY}; 
+
+            QPushButton[class="outline"] {{
+                background-color: transparent;
+                border: 2px solid {colors.PRIMARY};
+                color: {colors.PRIMARY};
             }}
-            QPushButton[class="outline"]:hover {{ 
-                background-color: {colors.PRIMARY}10; 
+            QPushButton[class="outline"]:hover {{
+                background-color: {colors.PRIMARY}10;
             }}
         """
 
@@ -344,7 +346,7 @@ class StyleTemplates:
 # ========== THEME MANAGER ==========
 class ThemeManager:
     """يدير تطبيق الأنماط على التطبيق بالكامل"""
-    
+
     _current_theme = "light"
 
     @staticmethod
@@ -354,7 +356,7 @@ class ThemeManager:
     @staticmethod
     def set_theme(theme):
         ThemeManager._current_theme = theme
-    
+
     @staticmethod
     def apply_theme(app_or_window, theme=None):
         """
@@ -365,12 +367,12 @@ class ThemeManager:
             theme = ThemeManager._current_theme
         else:
             ThemeManager._current_theme = theme
-            
+
         colors = DarkColors if theme == "dark" else Colors
-        
+
         # دمج الأنماط العامة وأنماط الأزرار
         full_stylesheet = StyleTemplates.get_common_styles(colors) + StyleTemplates.get_button_styles(colors)
-        
+
         app_or_window.setStyleSheet(full_stylesheet)
 
     @staticmethod
@@ -389,14 +391,17 @@ def create_shadow_effect(blur=15, offset=4, opacity=40):
     shadow.setColor(QColor(0, 0, 0, opacity))
     return shadow
 
+
 def apply_shadow_to_widget(widget):
     """تطبيق الظل مباشرة على الويدجت"""
     widget.setGraphicsEffect(create_shadow_effect())
+
 
 def rgba(color, alpha):
     """Return rgba() string from a hex color and alpha (0-255)."""
     qcolor = color if isinstance(color, QColor) else QColor(color)
     return f"rgba({qcolor.red()}, {qcolor.green()}, {qcolor.blue()}, {alpha})"
+
 
 def get_card_style():
     """نمط البطاقة البيضاء"""
@@ -408,6 +413,7 @@ def get_card_style():
             border: 1px solid {colors.BORDER};
         }}
     """
+
 
 def get_table_style():
     """نمط موحد للجداول"""
@@ -441,6 +447,7 @@ def get_table_style():
             font-weight: bold;
         }}
     """
+
 
 def get_tabs_style():
     """نمط موحد للتبويبات"""

@@ -11,9 +11,9 @@ try:
 except ImportError:
     HAS_CONFIG_MANAGER = False
 
-from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
-                             QHBoxLayout, QTableWidget, QTableWidgetItem, 
-                             QPushButton, QLabel, QLineEdit, QComboBox, 
+from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
+                             QHBoxLayout, QTableWidget, QTableWidgetItem,
+                             QPushButton, QLabel, QLineEdit, QComboBox,
                              QMessageBox, QHeaderView, QFrame, QSpinBox,
                              QTabWidget, QGridLayout, QDoubleSpinBox, QFileDialog, QGraphicsDropShadowEffect)
 from PyQt6.QtCore import Qt
@@ -22,6 +22,7 @@ from PyQt6.QtGui import QFont, QColor
 from ui_styles import ThemeManager, get_card_style, apply_shadow_to_widget, Colors, get_table_style, get_tabs_style
 
 THEME_AVAILABLE = True
+
 
 class AcademicSettingsWindow(QMainWindow):
     def __init__(self):
@@ -63,34 +64,34 @@ class AcademicSettingsWindow(QMainWindow):
         header_frame = QFrame()
         header_frame.setStyleSheet(f"background-color: {colors.BG_HEADER}; border-radius: 10px;")
         header_frame.setMaximumHeight(80)
-        
+
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(15); shadow.setColor(QColor(15, 23, 42, 40)); shadow.setOffset(0, 4)
         header_frame.setGraphicsEffect(shadow)
 
         header_layout = QHBoxLayout(header_frame)
         header_layout.setContentsMargins(20, 10, 20, 10)
-        
+
         icon_lbl = QLabel("⚙️")
         icon_lbl.setStyleSheet("font-size: 32px; background: transparent;")
-        
+
         title_box = QVBoxLayout()
         header_label = QLabel("CONFIGURATION SCOLAIRE")
         header_label.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
         header_label.setStyleSheet(f"color: {colors.HEADER_TEXT}; background: transparent;")
-        
+
         sub_label = QLabel("إعداد البيانات، الهيكل، المواد والتقييمات")
         sub_label.setFont(QFont("Cairo", 11))
         sub_label.setStyleSheet(f"color: {colors.TEXT_SECONDARY}; background: transparent;")
-        
+
         title_box.addWidget(header_label)
         title_box.addWidget(sub_label)
-        
+
         header_layout.addWidget(icon_lbl)
         header_layout.addSpacing(15)
         header_layout.addLayout(title_box)
         header_layout.addStretch()
-        
+
         self.main_layout.addWidget(header_frame)
 
         self.tabs = QTabWidget()
@@ -120,12 +121,12 @@ class AcademicSettingsWindow(QMainWindow):
             shadow = QGraphicsDropShadowEffect()
             shadow.setBlurRadius(20); shadow.setColor(QColor(15, 23, 42, 15)); shadow.setOffset(0, 4)
             frame.setGraphicsEffect(shadow)
-            
+
         layout = QVBoxLayout(frame)
         layout.setContentsMargins(20, 20, 20, 20)
         lbl = QLabel(title)
         lbl.setFont(QFont("Arial", 11, QFont.Weight.Bold))
-        
+
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
         lbl.setStyleSheet(f"color: {colors.TEXT_PRIMARY}; margin-bottom: 10px;")
         layout.addWidget(lbl)
@@ -138,7 +139,7 @@ class AcademicSettingsWindow(QMainWindow):
         le.setStyleSheet(f"QLineEdit {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }} QLineEdit:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}")
         le.setMinimumHeight(38)
         return le
-    
+
     def styled_combo(self):
         combo = QComboBox()
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
@@ -161,7 +162,7 @@ class AcademicSettingsWindow(QMainWindow):
         layout = QHBoxLayout(widget)
         layout.setContentsMargins(2, 2, 2, 2)
         layout.setSpacing(5)
-        
+
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
 
         if edit_func:
@@ -171,7 +172,7 @@ class AcademicSettingsWindow(QMainWindow):
             btn_edit.setStyleSheet(f"background-color: {colors.WARNING}; color: white; border-radius: 4px; border: none;")
             btn_edit.clicked.connect(lambda _, val=id_val: edit_func(val))
             layout.addWidget(btn_edit)
-        
+
         if delete_func:
             btn_del = QPushButton("✕")
             btn_del.setFixedSize(28, 28)
@@ -179,7 +180,7 @@ class AcademicSettingsWindow(QMainWindow):
             btn_del.setStyleSheet(f"background-color: {colors.DANGER}; color: white; border-radius: 4px; border: none;")
             btn_del.clicked.connect(lambda _, val=id_val: delete_func(val))
             layout.addWidget(btn_del)
-            
+
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         table.setCellWidget(row_idx, table.columnCount() - 1, widget)
 
@@ -188,11 +189,11 @@ class AcademicSettingsWindow(QMainWindow):
         tab = QWidget()
         layout = QVBoxLayout(tab)
         layout.setContentsMargins(20, 20, 20, 20)
-        
+
         card, grid_lay = self.create_card("🏛️ Identification de l'Établissement / بيانات المؤسسة")
         grid = QGridLayout()
         grid.setSpacing(15)
-        
+
         self.info_inputs = {
             'rep': self.styled_input("Ex: République du Sénégal"),
             'ia': self.styled_input("Inspection d'Académie (IA)"),
@@ -203,13 +204,13 @@ class AcademicSettingsWindow(QMainWindow):
             'loc': self.styled_input("Adresse"),
             'tel': self.styled_input("Téléphone")
         }
-        
+
         self.logo_path_display = self.styled_input("Logo Path")
         self.logo_path_display.setReadOnly(True)
-        
+
         labels = {
             'rep': "En-tête:", 'ia': "IA:", 'ief': "IEF:",
-            'name': "Nom:", 'auth': "Autorisation:", 
+            'name': "Nom:", 'auth': "Autorisation:",
             'director': "Directeur:", 'loc': "Adresse:", 'tel': "Tel:"
         }
 
@@ -218,7 +219,7 @@ class AcademicSettingsWindow(QMainWindow):
             grid.addWidget(QLabel(labels[k]), r, 0)
             grid.addWidget(v, r, 1)
             r += 1
-            
+
         grid.addWidget(QLabel("Logo:"), r, 0)
         logo_h = QHBoxLayout()
         logo_h.addWidget(self.logo_path_display)
@@ -229,13 +230,13 @@ class AcademicSettingsWindow(QMainWindow):
         btn_logo.clicked.connect(self.browse_logo)
         logo_h.addWidget(btn_logo)
         grid.addLayout(logo_h, r, 1)
-        
+
         btn_save = QPushButton("💾 Enregistrer / حفظ")
         btn_save.setMinimumHeight(45)
         btn_save.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_save.setStyleSheet(f"background-color: {colors.SUCCESS}; color: white; border-radius: 8px; font-weight: bold; font-size: 14px;")
         btn_save.clicked.connect(self.save_school_info)
-        
+
         grid_lay.addLayout(grid)
         grid_lay.addWidget(btn_save)
         layout.addWidget(card)
@@ -257,7 +258,7 @@ class AcademicSettingsWindow(QMainWindow):
         self.btn_y = QPushButton("Ajouter")
         self.btn_y.setStyleSheet(f"background-color: {colors.PRIMARY}; color: white; padding: 8px; border-radius: 6px; font-weight: bold;")
         self.btn_y.clicked.connect(self.save_year)
-        self.table_years = QTableWidget(0, 4) 
+        self.table_years = QTableWidget(0, 4)
         self.style_table(self.table_years)
         self.table_years.setHorizontalHeaderLabels(["ID", "Année", "Actif", "Action"])
         self.table_years.setColumnWidth(0, 40)
@@ -291,16 +292,16 @@ class AcademicSettingsWindow(QMainWindow):
         self.sp_order.setRange(1, 20)
         self.sp_order.setMinimumHeight(38)
         self.sp_order.setStyleSheet(f"border: 1px solid {colors.BORDER}; border-radius: 6px; padding: 5px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY};")
-        
+
         self.btn_cls = QPushButton("Ajouter")
         self.btn_cls.setStyleSheet(f"background-color: {colors.PRIMARY}; color: white; padding: 8px; border-radius: 6px; font-weight: bold;")
         self.btn_cls.clicked.connect(self.save_class)
-        
-        self.table_classes = QTableWidget(0, 5) 
+
+        self.table_classes = QTableWidget(0, 5)
         self.style_table(self.table_classes)
         self.table_classes.setHorizontalHeaderLabels(["ID", "Cycle", "Classe (FR)", "Classe (AR)", "Action"])
         self.table_classes.setColumnWidth(0, 40)
-        
+
         cls_lay.addWidget(QLabel("Cycle:"))
         cls_lay.addWidget(self.combo_cycles_cls)
         cls_lay.addWidget(self.txt_cls_fr)
@@ -322,12 +323,12 @@ class AcademicSettingsWindow(QMainWindow):
         layout.setContentsMargins(20, 20, 20, 20)
 
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-        
+
         card, vlay = self.create_card("📚 Matières par Cycle / المواد حسب المرحلة")
-        
+
         form = QGridLayout()
         form.setSpacing(10)
-        
+
         self.combo_cycles_sub = self.styled_combo()
         self.txt_sub_fr = self.styled_input("Matière (FR)")
         self.txt_sub_ar = self.styled_input("المادة (عربي)")
@@ -336,10 +337,10 @@ class AcademicSettingsWindow(QMainWindow):
         self.sp_coeff.setSingleStep(0.1)
         self.sp_coeff.setMinimumHeight(38)
         self.sp_coeff.setStyleSheet(f"border: 1px solid {colors.BORDER}; border-radius: 6px; padding: 5px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY};")
-        
+
         self.combo_sub_lang = self.styled_combo()
         self.combo_sub_lang.addItems(["Français", "Arabe"])
-        
+
         form.addWidget(QLabel("Cycle:"), 0, 0)
         form.addWidget(self.combo_cycles_sub, 0, 1)
         form.addWidget(QLabel("Nom FR:"), 1, 0)
@@ -350,24 +351,24 @@ class AcademicSettingsWindow(QMainWindow):
         form.addWidget(self.sp_coeff, 3, 1)
         form.addWidget(QLabel("Langue:"), 4, 0)
         form.addWidget(self.combo_sub_lang, 4, 1)
-        
+
         self.btn_sub = QPushButton("Ajouter Matière")
         self.btn_sub.setMinimumHeight(40)
         self.btn_sub.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_sub.setStyleSheet(f"background-color: {colors.PRIMARY}; color: white; border-radius: 6px; font-weight: bold;")
         self.btn_sub.clicked.connect(self.save_subject)
-        
+
         vlay.addLayout(form)
         vlay.addWidget(self.btn_sub)
-        
-        self.table_subjects = QTableWidget(0, 7) 
+
+        self.table_subjects = QTableWidget(0, 7)
         self.style_table(self.table_subjects)
         self.table_subjects.setHorizontalHeaderLabels(["ID", "Cycle", "Matière (FR)", "المادة (AR)", "Lang", "Coef", "Act"])
         self.table_subjects.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.table_subjects.setColumnWidth(0, 40)
         self.table_subjects.setColumnWidth(6, 80)
         vlay.addWidget(self.table_subjects)
-        
+
         layout.addWidget(card)
         self.tabs.addTab(tab, "  📖 Matières / المواد  ")
 
@@ -379,9 +380,9 @@ class AcademicSettingsWindow(QMainWindow):
         layout.setSpacing(15)
 
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-        
+
         gen_card, gen_lay = self.create_card("⚙️ Génération Automatique (Périodes & Évaluations)")
-        
+
         hbox = QHBoxLayout()
         hbox.setSpacing(15)
         self.combo_year_gen = self.styled_combo()
@@ -390,14 +391,14 @@ class AcademicSettingsWindow(QMainWindow):
         btn_gen.setMinimumHeight(40)
         btn_gen.setStyleSheet(f"background-color: {colors.WARNING}; color: white; font-weight: bold; border-radius: 6px;")
         btn_gen.clicked.connect(self.generate_academic_logic)
-        
+
         hbox.addWidget(QLabel("Année:"))
         hbox.addWidget(self.combo_year_gen, 1)
         hbox.addWidget(QLabel("Cycle:"))
         hbox.addWidget(self.combo_cycle_gen, 1)
         hbox.addWidget(btn_gen)
         gen_lay.addLayout(hbox)
-        
+
         layout.addWidget(gen_card)
 
         self.table_evals = QTableWidget(0, 7)
@@ -512,7 +513,7 @@ class AcademicSettingsWindow(QMainWindow):
         ar = self.txt_cls_ar.text().strip()
         order = self.sp_order.value()
         if not cid or not fr: return
-        
+
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
@@ -530,7 +531,7 @@ class AcademicSettingsWindow(QMainWindow):
         db = DatabaseManager()
         with db.get_connection() as conn:
             res = AcademicRepository(conn).get_class(id)
-        
+
         if res:
             idx = self.combo_cycles_cls.findData(res[0])
             self.combo_cycles_cls.setCurrentIndex(idx)
@@ -559,25 +560,25 @@ class AcademicSettingsWindow(QMainWindow):
         coef = self.sp_coeff.value()
         lang = self.combo_sub_lang.currentText()
         if not cid or not fr: return
-        
+
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
                 AcademicRepository(conn).upsert_subject(self.current_subject_id, cid, fr, ar, coef, lang)
                 conn.commit()
-            
+
             self.txt_sub_fr.clear(); self.txt_sub_ar.clear(); self.sp_coeff.setValue(1)
             self.current_subject_id = None
             self.btn_sub.setText("Ajouter Matière")
             self.refresh_all_data()
         except Exception as e:
-             QMessageBox.critical(self, "Erreur", str(e))
+            QMessageBox.critical(self, "Erreur", str(e))
 
     def edit_subject(self, id):
         db = DatabaseManager()
         with db.get_connection() as conn:
             res = AcademicRepository(conn).get_subject(id)
-        
+
         if res:
             idx = self.combo_cycles_sub.findData(res[0])
             self.combo_cycles_sub.setCurrentIndex(idx)
@@ -609,7 +610,7 @@ class AcademicSettingsWindow(QMainWindow):
                     conn.commit()
                 self.refresh_all_data()
             except psycopg2.IntegrityError:
-                 QMessageBox.warning(self, "Erreur", "Impossible, des notes existent pour cette évaluation.")
+                QMessageBox.warning(self, "Erreur", "Impossible, des notes existent pour cette évaluation.")
 
     # --- Other Methods ---
     def save_school_info(self):
@@ -640,7 +641,7 @@ class AcademicSettingsWindow(QMainWindow):
             QMessageBox.information(self, "Succès", "Informations enregistrées et mises à jour.")
         except Exception as e:
             QMessageBox.critical(self, "Erreur", str(e))
-    
+
     def browse_logo(self):
         file_path, _ = QFileDialog.getOpenFileName(self, "Sélectionner le logo", "", "Image Files (*.png *.jpg *.jpeg *.bmp *.gif)")
         if file_path:
@@ -652,7 +653,7 @@ class AcademicSettingsWindow(QMainWindow):
         cycle_id = self.combo_cycle_gen.currentData()
         cycle_name = self.combo_cycle_gen.currentText().lower()
 
-        if not year_id or not cycle_id: 
+        if not year_id or not cycle_id:
             QMessageBox.warning(self, "Attention", "Sélectionnez l'année et le cycle.")
             return
 
@@ -660,8 +661,8 @@ class AcademicSettingsWindow(QMainWindow):
             db = DatabaseManager()
             with db.get_connection() as conn:
                 is_elementary = (
-                    "elem" in cycle_name or "prim" in cycle_name
-                    or "\u0625\u0628\u062a\u062f\u0627\u0626\u064a" in cycle_name
+                    "elem" in cycle_name or "prim" in cycle_name or
+                    "\u0625\u0628\u062a\u062f\u0627\u0626\u064a" in cycle_name
                 )
                 AcademicRepository(conn).generate_periods_and_assessments(
                     year_id, cycle_id, is_elementary
@@ -689,7 +690,7 @@ class AcademicSettingsWindow(QMainWindow):
                     if len(info) > 5: self.info_inputs['auth'].setText(str(info[5] or ""))
                     if len(info) > 6: self.info_inputs['loc'].setText(str(info[6] or ""))
                     if len(info) > 7: self.info_inputs['tel'].setText(str(info[7] or ""))
-                    if len(info) > 8: 
+                    if len(info) > 8:
                         self.logo_path_value = info[8]
                         self.logo_path_display.setText(os.path.basename(info[8]) if info[8] else "")
                     if len(info) > 9: self.info_inputs['director'].setText(str(info[9] or ""))
@@ -706,19 +707,19 @@ class AcademicSettingsWindow(QMainWindow):
                     self.table_years.insertRow(idx)
                     self.table_years.setItem(idx, 0, QTableWidgetItem(str(r[0])))
                     self.table_years.setItem(idx, 1, QTableWidgetItem(self.safe_text(r[1])))
-                    
+
                     status_item = QTableWidgetItem("✓ Actif" if r[2] else "✕")
                     status_item.setTextAlignment(Qt.AlignmentFlag.AlignCenter)
                     if THEME_AVAILABLE:
                         colors = ThemeManager.get_colors()
                         status_item.setForeground(QColor(colors.SUCCESS if r[2] else colors.TEXT_SECONDARY))
                     self.table_years.setItem(idx, 2, status_item)
-                    
+
                     widget = QWidget()
                     layout = QHBoxLayout(widget)
                     layout.setContentsMargins(2, 2, 2, 2)
                     layout.setSpacing(5)
-                    
+
                     colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
                     btn_activate = QPushButton("Activer")
                     btn_activate.setFixedHeight(28)
@@ -729,21 +730,21 @@ class AcademicSettingsWindow(QMainWindow):
                     )
                     btn_activate.clicked.connect(lambda checked, id=r[0]: self.activate_year(id))
                     layout.addWidget(btn_activate)
-                    
+
                     btn_edit = QPushButton("✎")
                     btn_edit.setFixedSize(28, 28)
                     btn_edit.setCursor(Qt.CursorShape.PointingHandCursor)
                     btn_edit.setStyleSheet(f"background-color: {colors.WARNING}; color: white; border-radius: 4px; border: none;")
                     btn_edit.clicked.connect(lambda checked, id=r[0]: self.edit_year(id))
                     layout.addWidget(btn_edit)
-                    
+
                     btn_del = QPushButton("✕")
                     btn_del.setFixedSize(28, 28)
                     btn_del.setCursor(Qt.CursorShape.PointingHandCursor)
                     btn_del.setStyleSheet(f"background-color: {colors.DANGER}; color: white; border-radius: 4px; border: none;")
                     btn_del.clicked.connect(lambda checked, id=r[0]: self.delete_year(id))
                     layout.addWidget(btn_del)
-                    
+
                     layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
                     self.table_years.setCellWidget(idx, 3, widget)
                     self.combo_year_gen.addItem(self.safe_text(r[1]), r[0])
@@ -760,7 +761,7 @@ class AcademicSettingsWindow(QMainWindow):
                     self.table_cycles.setItem(idx, 1, QTableWidgetItem(self.safe_text(r[1])))
                     self.table_cycles.setItem(idx, 2, QTableWidgetItem(self.safe_text(r[2])))
                     self.add_action_buttons(self.table_cycles, idx, r[0], self.edit_cycle, self.delete_cycle)
-                    
+
                     cycle_label = self.safe_text(r[1])
                     self.combo_cycles_cls.addItem(cycle_label, r[0])
                     self.combo_cycles_sub.addItem(cycle_label, r[0])
@@ -799,7 +800,8 @@ class AcademicSettingsWindow(QMainWindow):
                     self.add_action_buttons(self.table_evals, idx, r[0], None, self.delete_evaluation)
 
         except Exception as e:
-             QMessageBox.critical(self, "Erreur de chargement", str(e))
+            QMessageBox.critical(self, "Erreur de chargement", str(e))
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

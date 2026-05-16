@@ -83,12 +83,12 @@ async def add_deprecation_header(request: Request, call_next):
     path = request.url.path
     # Only flag the old unversioned API paths (not v1, not system endpoints)
     if (
-        path.startswith("/api/")
-        and not path.startswith("/api/v1/")
-        and not path.startswith("/api/docs")
-        and not path.startswith("/api/redoc")
-        and not path.startswith("/api/openapi")
-        and path not in ("/api/health", "/api/")
+        path.startswith("/api/") and
+        not path.startswith("/api/v1/") and
+        not path.startswith("/api/docs") and
+        not path.startswith("/api/redoc") and
+        not path.startswith("/api/openapi") and
+        path not in ("/api/health", "/api/")
     ):
         response.headers["Deprecation"] = "true"
         response.headers["Sunset"] = "Sat, 01 Jan 2027 00:00:00 GMT"

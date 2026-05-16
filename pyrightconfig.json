@@ -1,0 +1,20 @@
+{
+  "pythonVersion": "3.12",
+  "typeCheckingMode": "basic",
+  "include": [
+    "services",
+    "repositories",
+    "api"
+  ],
+  "exclude": [
+    ".venv",
+    "dist_release",
+    "Origine",
+    "alembic",
+    "**/__pycache__"
+  ],
+  "reportMissingTypeArgument": "none",
+  "reportUnknownParameterType": "none",
+  "reportMissingParameterType": "none",
+  "reportUnknownVariableType": "none"
+}

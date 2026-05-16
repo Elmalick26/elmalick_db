@@ -39,10 +39,10 @@ from repositories.analytics_repo import AnalyticsRepository
 # Worker: تحميل البيانات في thread منفصل
 # ──────────────────────────────────────────────────────────────
 class AnalyticsWorker(QThread):
-    grades_ready    = pyqtSignal(list, list, list)   # (names, averages, coefficients)
+    grades_ready = pyqtSignal(list, list, list)   # (names, averages, coefficients)
     attendance_ready = pyqtSignal(dict)               # {"YYYY-MM": rate_pct}
-    finance_ready   = pyqtSignal(float, float)        # (total_paid, total_due)
-    error_signal    = pyqtSignal(str)
+    finance_ready = pyqtSignal(float, float)        # (total_paid, total_due)
+    error_signal = pyqtSignal(str)
 
     def __init__(self, year_id: int, class_id: int | None = None):
         super().__init__()
@@ -64,10 +64,10 @@ class AnalyticsWorker(QThread):
     def _load_grades(self, repo: AnalyticsRepository):
         rows = repo.get_grades_by_subject(self.year_id, self.class_id)
 
-        names       = [r[0] for r in rows]
-        averages    = [float(r[1]) if r[1] is not None else 0.0 for r in rows]
-        max_scores  = [float(r[3]) for r in rows]
-        normalized  = [avg / mx * 20 if mx else 0 for avg, mx in zip(averages, max_scores)]
+        names = [r[0] for r in rows]
+        averages = [float(r[1]) if r[1] is not None else 0.0 for r in rows]
+        max_scores = [float(r[3]) for r in rows]
+        normalized = [avg / mx * 20 if mx else 0 for avg, mx in zip(averages, max_scores)]
 
         self.grades_ready.emit(names, normalized, [float(r[2]) for r in rows])
 
@@ -217,7 +217,7 @@ class FinancePieChart(QWidget):
             self.canvas.draw()
             return
 
-        sizes  = [paid, remaining]
+        sizes = [paid, remaining]
         labels = [f"Payé\n{paid:,.0f} FCFA", f"Restant\n{remaining:,.0f} FCFA"]
         explode = (0.05, 0)
         colors_pie = ["#66bb6a", "#ef5350"]
@@ -327,10 +327,10 @@ class AnalyticsDashboardWindow(QMainWindow):
 
         # KPI Cards
         kpi_row = QHBoxLayout()
-        self.kpi_avg    = KpiCard("Moyenne Générale",   "—", "🎓", "#66bb6a")
-        self.kpi_att    = KpiCard("Taux de Présence",   "—", "📅", "#4fc3f7")
-        self.kpi_paid   = KpiCard("Taux de Recouvrement","—", "💰", "#ffa726")
-        self.kpi_risk   = KpiCard("Élèves en Difficulté","—", "⚠️", "#ef5350")
+        self.kpi_avg = KpiCard("Moyenne Générale", "—", "🎓", "#66bb6a")
+        self.kpi_att = KpiCard("Taux de Présence", "—", "📅", "#4fc3f7")
+        self.kpi_paid = KpiCard("Taux de Recouvrement", "—", "💰", "#ffa726")
+        self.kpi_risk = KpiCard("Élèves en Difficulté", "—", "⚠️", "#ef5350")
         for card in (self.kpi_avg, self.kpi_att, self.kpi_paid, self.kpi_risk):
             kpi_row.addWidget(card)
         root.addLayout(kpi_row)

@@ -36,17 +36,17 @@ from ui_styles import ThemeManager
 ResultItem = tuple[str, str, str, str, int]
 
 CATEGORY_ICONS = {
-    "Élève":    "👨‍🎓",
-    "Personnel":"👥",
+    "Élève": "👨‍🎓",
+    "Personnel": "👥",
     "Paiement": "💰",
-    "Audit":    "🔍",
+    "Audit": "🔍",
 }
 
 CATEGORY_MODULES = {
-    "Élève":    "student_management",
-    "Personnel":"staff_management",
+    "Élève": "student_management",
+    "Personnel": "staff_management",
     "Paiement": "finance_payments",
-    "Audit":    None,          # pas de navigation pour audit
+    "Audit": None,          # pas de navigation pour audit
 }
 
 

@@ -8,11 +8,11 @@ from database_setup import DatabaseManager, log_audit
 from app_logger import AppLogger
 from repositories.staff_repo import StaffRepository
 from repositories.finance_repo import FinanceRepository
-from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
-                             QHBoxLayout, QTableWidget, QTableWidgetItem, 
-                             QPushButton, QLabel, QLineEdit, QComboBox, 
-                             QMessageBox, QHeaderView, QGroupBox, QDateEdit, 
-                             QTabWidget, QGraphicsDropShadowEffect, QFrame, 
+from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
+                             QHBoxLayout, QTableWidget, QTableWidgetItem,
+                             QPushButton, QLabel, QLineEdit, QComboBox,
+                             QMessageBox, QHeaderView, QGroupBox, QDateEdit,
+                             QTabWidget, QGraphicsDropShadowEffect, QFrame,
                              QFileDialog, QDoubleSpinBox, QScrollArea, QGridLayout)
 from PyQt6.QtCore import Qt, QDate, QSize, QBuffer, QByteArray
 from PyQt6.QtGui import QFont, QColor, QPixmap, QIcon, QTextDocument
@@ -34,6 +34,7 @@ try:
 except ModuleNotFoundError:
     ARABIC_SUPPORT = False
 
+
 def _get_arabic_font_path():
     base_dir = os.path.dirname(os.path.abspath(__file__))
     candidates = [
@@ -49,6 +50,7 @@ def _get_arabic_font_path():
             return path
     return None
 
+
 def _contains_arabic(text):
     if text is None:
         return False
@@ -58,6 +60,7 @@ def _contains_arabic(text):
         "\u0600" <= ch <= "\u06FF" or "\u0750" <= ch <= "\u077F" or "\u08A0" <= ch <= "\u08FF"
         for ch in text
     )
+
 
 def _prepare_pdf_text(text):
     if text is None:
@@ -72,12 +75,14 @@ def _prepare_pdf_text(text):
             return text
     return text
 
+
 def _sanitize_latin(text):
     if text is None:
         return ""
     if not isinstance(text, str):
         text = str(text)
     return text.encode('latin-1', 'ignore').decode('latin-1')
+
 
 def _register_arabic_font(pdf):
     font_path = _get_arabic_font_path()
@@ -91,6 +96,7 @@ def _register_arabic_font(pdf):
         return True
     except Exception:
         return False
+
 
 class StaffReportPDF(FPDF):
     def __init__(self, school_info, report_title, orientation='L'):
@@ -162,12 +168,13 @@ class StaffReportPDF(FPDF):
         self.cell(page_w / 2, 4, f"Imprimé le {date_str}", 0, 0, 'L')
         self.cell(page_w / 2, 4, f"Page {self.page_no()}", 0, 0, 'R')
 
+
 class ModernStaffManagement(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Gestion des RH / إدارة الموارد البشرية")
         self.setMinimumSize(1100, 700)
-        
+
         if THEME_AVAILABLE:
             ThemeManager.apply_theme(self)
         else:
@@ -182,10 +189,10 @@ class ModernStaffManagement(QMainWindow):
                 QGroupBox::title {{ subcontrol-origin: margin; subcontrol-position: top left; padding: 0 5px; left: 10px; }}
                 QScrollArea {{ border: none; background: transparent; }}
             """)
-        
+
         self.current_photo_path = None
         self.selected_staff_id = None
-        
+
         self.init_ui()
         self.load_staff_list()
         self.load_classes_into_combo()
@@ -202,37 +209,37 @@ class ModernStaffManagement(QMainWindow):
         # 1. Header Frame
         header_frame = QFrame()
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-            
+
         header_frame.setStyleSheet(f"QFrame {{ background-color: {colors.BG_HEADER}; border-radius: 10px; }}")
         header_frame.setMaximumHeight(80)
-        
+
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(15); shadow.setColor(QColor(15, 23, 42, 40)); shadow.setOffset(0, 4)
         header_frame.setGraphicsEffect(shadow)
 
         hl = QHBoxLayout(header_frame)
         hl.setContentsMargins(20, 15, 20, 15)
-        
+
         icon_lbl = QLabel("👥")
         icon_lbl.setStyleSheet("font-size: 32px; background: transparent;")
-        
+
         title_layout = QVBoxLayout()
         header_lbl = QLabel("RESSOURCES HUMAINES")
         header_lbl.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
         header_lbl.setStyleSheet(f"color: {colors.HEADER_TEXT}; background: transparent;")
-        
+
         sub_lbl = QLabel("إدارة الموظفين، الرواتب، والجدول الزمني")
         sub_lbl.setFont(QFont("Cairo", 11))
         sub_lbl.setStyleSheet(f"color: {colors.TEXT_SECONDARY}; background: transparent;")
-        
+
         title_layout.addWidget(header_lbl)
         title_layout.addWidget(sub_lbl)
-        
+
         hl.addWidget(icon_lbl)
         hl.addSpacing(15)
         hl.addLayout(title_layout)
         hl.addStretch()
-        
+
         self.main_layout.addWidget(header_frame)
 
         # 2. Tabs
@@ -246,10 +253,10 @@ class ModernStaffManagement(QMainWindow):
                 QTabBar::tab:selected {{ background: {colors.BG_HEADER}; color: {colors.HEADER_TEXT}; }}
                 QTabBar::tab:hover {{ background: {colors.BORDER}; }}
             """)
-        
+
         self.setup_staff_tab()
         self.setup_timetable_tab()
-        
+
         self.main_layout.addWidget(self.tabs)
 
     def create_card(self):
@@ -314,14 +321,14 @@ class ModernStaffManagement(QMainWindow):
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFixedWidth(420)
-        
+
         form_container = QFrame()
         form_container.setStyleSheet(f"background-color: {colors.BG_CARD}; border-radius: 12px; border: 1px solid {colors.BORDER};")
-        
+
         form_layout = QVBoxLayout(form_container)
         form_layout.setSpacing(15)
         form_layout.setContentsMargins(20, 20, 20, 20)
-        
+
         lbl_new = QLabel("📝 Nouveau Profil / ملف جديد")
         lbl_new.setAlignment(Qt.AlignmentFlag.AlignCenter)
         lbl_new.setStyleSheet(f"background-color: {colors.BG_MAIN}; color: {colors.TEXT_SECONDARY}; font-weight: bold; font-size: 14px; padding: 10px; border-radius: 6px; border: 1px dashed {colors.BORDER};")
@@ -334,18 +341,18 @@ class ModernStaffManagement(QMainWindow):
         self.lbl_photo.setStyleSheet(f"background-color: {colors.BG_MAIN}; border-radius: 55px; border: 3px solid {colors.BORDER}; color: {colors.TEXT_SECONDARY};")
         self.lbl_photo.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.lbl_photo.setText("Photo")
-        
+
         btn_upload = QPushButton("📷")
         btn_upload.setFixedSize(36, 36)
         btn_upload.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_upload.setStyleSheet(f"background-color: {colors.PRIMARY_DARK}; color: white; border-radius: 18px; border: 2px solid {colors.BG_CARD};")
         btn_upload.clicked.connect(self.upload_photo)
-        
+
         photo_wrapper = QWidget()
         photo_wrapper.setStyleSheet("background: transparent;")
         pw_layout = QVBoxLayout(photo_wrapper)
         pw_layout.addWidget(self.lbl_photo)
-        
+
         photo_layout.addStretch()
         photo_layout.addWidget(photo_wrapper)
         photo_layout.addWidget(btn_upload, 0, Qt.AlignmentFlag.AlignBottom)
@@ -356,22 +363,22 @@ class ModernStaffManagement(QMainWindow):
         lbl_info = QLabel("👤 Infos Personnelles / البيانات الشخصية")
         lbl_info.setStyleSheet(f"font-weight: bold; color: {colors.TEXT_PRIMARY}; border-bottom: 2px solid {colors.BORDER}; padding-bottom: 5px;")
         form_layout.addWidget(lbl_info)
-        
+
         self.txt_fname = self.styled_input("Prénom / الاسم")
         self.txt_lname = self.styled_input("Nom / اللقب")
-        
+
         self.combo_role = self.styled_combo()
         self.combo_role.addItems(["Professeur", "Administration", "Comptabilité", "Agent", "Sécurité"])
-        
+
         form_layout.addWidget(self.txt_fname)
         form_layout.addWidget(self.txt_lname)
         form_layout.addWidget(self.combo_role)
-        
+
         self.txt_spec = self.styled_input("Spécialité (Ex: Math)")
         self.txt_phone = self.styled_input("Téléphone / الهاتف")
-        self.txt_email = self.styled_input("Email / البريد الإلكتروني") 
+        self.txt_email = self.styled_input("Email / البريد الإلكتروني")
         self.txt_address = self.styled_input("Adresse / العنوان")
-        
+
         self.combo_status = self.styled_combo()
         self.combo_status.addItems(["Actif / نشط", "Congé / إجازة", "Suspendu / موقوف", "Démission / استقالة", "Licencié / مفصول", "Retraité / متقاعد"])
 
@@ -386,16 +393,16 @@ class ModernStaffManagement(QMainWindow):
         lbl_contract = QLabel("💼 Contrat & Salaire / العقد والراتب")
         lbl_contract.setStyleSheet(f"font-weight: bold; color: {colors.TEXT_PRIMARY}; margin-top: 10px; border-bottom: 2px solid {colors.BORDER}; padding-bottom: 5px;")
         form_layout.addWidget(lbl_contract)
-        
+
         self.date_hire = QDateEdit()
         self.date_hire.setCalendarPopup(True)
         self.date_hire.setDate(QDate.currentDate())
         self.date_hire.setStyleSheet(f"QDateEdit {{ padding: 8px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }} QDateEdit:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}")
         self.date_hire.setMinimumHeight(38)
-        
+
         form_layout.addWidget(QLabel("Date d'embauche:"))
         form_layout.addWidget(self.date_hire)
-        
+
         self.combo_contract = self.styled_combo()
         self.combo_contract.addItems(["Salaire Mensuel (راتب شهري)", "Vacataire/Horaire (بالساعة)"])
         self.combo_contract.currentIndexChanged.connect(self.toggle_salary_fields)
@@ -409,7 +416,7 @@ class ModernStaffManagement(QMainWindow):
         self.spin_salary.setStyleSheet(f"QDoubleSpinBox {{ padding: 8px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }} QDoubleSpinBox:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}")
         self.spin_salary.setMinimumHeight(38)
         self.lbl_salary = QLabel("Salaire de Base:")
-        
+
         self.spin_hourly = QDoubleSpinBox()
         self.spin_hourly.setRange(0, 100000)
         self.spin_hourly.setPrefix("FCFA ")
@@ -417,12 +424,12 @@ class ModernStaffManagement(QMainWindow):
         self.spin_hourly.setStyleSheet(f"QDoubleSpinBox {{ padding: 8px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }} QDoubleSpinBox:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}")
         self.spin_hourly.setMinimumHeight(38)
         self.lbl_hourly = QLabel("Taux Horaire:")
-        
+
         form_layout.addWidget(self.lbl_salary)
         form_layout.addWidget(self.spin_salary)
         form_layout.addWidget(self.lbl_hourly)
         form_layout.addWidget(self.spin_hourly)
-        
+
         # Buttons
         btn_layout = QHBoxLayout()
         self.btn_save = QPushButton("💾 Enregistrer")
@@ -430,17 +437,17 @@ class ModernStaffManagement(QMainWindow):
         self.btn_save.setMinimumHeight(45)
         self.btn_save.setStyleSheet(f"QPushButton {{ background-color: {colors.SUCCESS}; color: white; border-radius: 8px; font-weight: bold; border: none; }} QPushButton:hover {{ background-color: {colors.SUCCESS_HOVER}; }}")
         self.btn_save.clicked.connect(self.save_staff)
-        
+
         btn_clear = QPushButton("🔄")
         btn_clear.setMinimumHeight(45)
         btn_clear.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_clear.setStyleSheet(f"QPushButton {{ background-color: {colors.BG_CARD}; color: {colors.TEXT_SECONDARY}; border-radius: 8px; font-weight: bold; border: 1px solid {colors.BORDER}; }} QPushButton:hover {{ background-color: {colors.BG_MAIN}; }}")
         btn_clear.clicked.connect(self.clear_form)
-        
+
         btn_layout.addWidget(self.btn_save)
         btn_layout.addWidget(btn_clear)
         form_layout.addLayout(btn_layout)
-        
+
         form_layout.addStretch()
         scroll.setWidget(form_container)
         scroll.setStyleSheet("QScrollArea { background: transparent; border: none; }")
@@ -451,20 +458,20 @@ class ModernStaffManagement(QMainWindow):
         list_layout = QVBoxLayout(list_container)
         list_layout.setSpacing(15)
         list_layout.setContentsMargins(0, 0, 0, 0)
-        
+
         # Search Bar
         search_card = self.create_card()
         slayout = QHBoxLayout(search_card)
         slayout.setContentsMargins(10, 10, 10, 10)
-        
+
         self.txt_search = self.styled_input("🔍 Rechercher un employé...")
         self.txt_search.textChanged.connect(self.load_staff_list)
-        
+
         btn_print = QPushButton("🖨️ Liste")
         btn_print.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_print.setStyleSheet(f"QPushButton {{ background-color: {colors.PRIMARY}; color: white; padding: 8px 15px; border-radius: 6px; font-weight: bold; border: none; }} QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}")
         btn_print.clicked.connect(self.print_staff_list)
-        
+
         slayout.addWidget(self.txt_search)
         slayout.addWidget(btn_print)
         list_layout.addWidget(search_card)
@@ -480,10 +487,10 @@ class ModernStaffManagement(QMainWindow):
         self.table_staff.setColumnWidth(8, 120)
         self.table_staff.setIconSize(QSize(32, 32))
         self.table_staff.itemSelectionChanged.connect(self.on_staff_selected)
-        
+
         list_layout.addWidget(self.table_staff)
         layout.addWidget(list_container)
-        
+
         self.toggle_salary_fields()
         self.tabs.addTab(tab, "  👨‍💼 Personnel / الموظفون  ")
 
@@ -492,7 +499,7 @@ class ModernStaffManagement(QMainWindow):
         layout = QVBoxLayout(tab)
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(15)
-        
+
         # Control Card
         control_card = self.create_card()
         clayout = QVBoxLayout(control_card)
@@ -503,18 +510,18 @@ class ModernStaffManagement(QMainWindow):
         row_top.setSpacing(10)
         row_bottom = QHBoxLayout()
         row_bottom.setSpacing(10)
-        
+
         self.combo_prof_tt = self.styled_combo()
         self.combo_class_tt = self.styled_combo()
         self.combo_subject_tt = self.styled_combo()
         self.combo_day_tt = self.styled_combo()
         self.combo_day_tt.addItems(["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"])
-        
+
         self.txt_time_start = self.styled_input("Début (08:00)")
         self.txt_time_start.setMaximumWidth(100)
         self.txt_time_end = self.styled_input("Fin (10:00)")
         self.txt_time_end.setMaximumWidth(100)
-        
+
         btn_add_tt = QPushButton("➕ Ajouter")
         btn_add_tt.setCursor(Qt.CursorShape.PointingHandCursor)
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
@@ -543,7 +550,7 @@ class ModernStaffManagement(QMainWindow):
 
         clayout.addLayout(row_top)
         clayout.addLayout(row_bottom)
-        
+
         layout.addWidget(control_card)
 
         # Table
@@ -554,19 +561,19 @@ class ModernStaffManagement(QMainWindow):
         self.table_tt.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.table_tt.setColumnWidth(0, 50)
         self.table_tt.setColumnWidth(6, 60)
-        
+
         layout.addWidget(self.table_tt)
         self.tabs.addTab(tab, "  🗓️ Emploi du Temps / الجدول  ")
 
     # --- Logic Methods ---
     def toggle_salary_fields(self):
         idx = self.combo_contract.currentIndex()
-        if idx == 0: # Monthly
+        if idx == 0:  # Monthly
             self.lbl_salary.setVisible(True)
             self.spin_salary.setVisible(True)
             self.lbl_hourly.setVisible(False)
             self.spin_hourly.setVisible(False)
-        else: # Hourly
+        else:  # Hourly
             self.lbl_salary.setVisible(False)
             self.spin_salary.setVisible(False)
             self.lbl_hourly.setVisible(True)
@@ -578,7 +585,7 @@ class ModernStaffManagement(QMainWindow):
             self.current_photo_path = file_path
             pixmap = QPixmap(file_path)
             self.lbl_photo.setPixmap(pixmap.scaled(100, 100, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation))
-            self.lbl_photo.setText("") 
+            self.lbl_photo.setText("")
 
     def load_staff_list(self):
         self.table_staff.setRowCount(0)
@@ -590,29 +597,29 @@ class ModernStaffManagement(QMainWindow):
             with db.get_connection() as conn:
                 repo = StaffRepository(conn)
                 rows = repo.list_staff(search_txt)
-            
+
             for row in rows:
                 r_idx = self.table_staff.rowCount()
                 self.table_staff.insertRow(r_idx)
-                
+
                 self.table_staff.setItem(r_idx, 0, QTableWidgetItem(str(row[0])))
-                
+
                 name_item = QTableWidgetItem(row[1] or "")
                 if row[8] and os.path.exists(row[8]):
                     icon = QIcon(row[8])
                     name_item.setIcon(icon)
                 self.table_staff.setItem(r_idx, 1, name_item)
-                
+
                 self.table_staff.setItem(r_idx, 2, QTableWidgetItem(row[2] or ""))
                 self.table_staff.setItem(r_idx, 3, QTableWidgetItem(row[3] or ""))
                 self.table_staff.setItem(r_idx, 4, QTableWidgetItem(row[4] or ""))
-                
+
                 ctype = "Mensuel" if row[5] == "Monthly" else "Horaire"
                 amount = f"{row[6]:,.0f}" if row[5] == "Monthly" else f"{row[7]:,.0f}/h"
-                
+
                 self.table_staff.setItem(r_idx, 5, QTableWidgetItem(ctype))
                 self.table_staff.setItem(r_idx, 6, QTableWidgetItem(amount))
-                
+
                 status = row[9] if row[9] else "Actif"
                 status_item = QTableWidgetItem(status)
                 if status == "Actif":
@@ -622,7 +629,7 @@ class ModernStaffManagement(QMainWindow):
                 else:
                     status_item.setForeground(QColor(239, 68, 68))
                 self.table_staff.setItem(r_idx, 7, status_item)
-                
+
                 role_value = row[2] or ""
                 if ("Prof" in role_value or "Ens" in role_value) and status == "Actif":
                     self.combo_prof_tt.addItem(row[1], row[0])
@@ -631,20 +638,20 @@ class ModernStaffManagement(QMainWindow):
                 btn_layout = QHBoxLayout(btn_widget)
                 btn_layout.setContentsMargins(2, 2, 2, 2)
                 btn_layout.setSpacing(5)
-                
+
                 colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
                 btn_edit = QPushButton("✎")
                 btn_edit.setFixedSize(28, 28)
                 btn_edit.setCursor(Qt.CursorShape.PointingHandCursor)
                 btn_edit.setStyleSheet(f"background-color: {colors.WARNING}; color: white; border-radius: 4px; border: none;")
                 btn_edit.clicked.connect(lambda ch, pid=row[0]: self.load_staff_details(pid))
-                
+
                 btn_del = QPushButton("✕")
                 btn_del.setFixedSize(28, 28)
                 btn_del.setCursor(Qt.CursorShape.PointingHandCursor)
                 btn_del.setStyleSheet(f"background-color: {colors.DANGER}; color: white; border-radius: 4px; border: none;")
                 btn_del.clicked.connect(lambda ch, pid=row[0]: self.delete_staff_from_table(pid))
-                
+
                 btn_layout.addWidget(btn_edit)
                 btn_layout.addWidget(btn_del)
                 self.table_staff.setCellWidget(r_idx, 8, btn_widget)
@@ -657,24 +664,24 @@ class ModernStaffManagement(QMainWindow):
         role = self.combo_role.currentText()
         spec = self.txt_spec.text().strip()
         phone = self.txt_phone.text().strip()
-        email = self.txt_email.text().strip() 
+        email = self.txt_email.text().strip()
         address = self.txt_address.text().strip()
         hire_d = self.date_hire.date().toString("yyyy-MM-dd")
-        
+
         is_monthly = (self.combo_contract.currentIndex() == 0)
         contract = "Monthly" if is_monthly else "Hourly"
         base_sal = self.spin_salary.value() if is_monthly else 0.0
         hr_rate = self.spin_hourly.value() if not is_monthly else 0.0
-        
+
         status_text = self.combo_status.currentText()
-        status = status_text.split(" / ")[0] 
+        status = status_text.split(" / ")[0]
 
         if not fname or not lname:
             QMessageBox.warning(self, "Erreur", "Nom et Prénom obligatoires.")
             return
 
         saved_photo_path = ""
-        
+
         try:
             db = DatabaseManager()
             if self.current_photo_path:
@@ -711,10 +718,10 @@ class ModernStaffManagement(QMainWindow):
                               "ADD_STAFF", f"{fname} {lname}")
                     QMessageBox.information(self, "Succès", "Employé ajouté avec succès.")
                 conn.commit()
-            
+
             self.load_staff_list()
             self.clear_form()
-            
+
         except Exception as e:
             QMessageBox.critical(self, "Erreur", f"Une erreur s'est produite lors de l'enregistrement: {str(e)}")
 
@@ -749,7 +756,7 @@ class ModernStaffManagement(QMainWindow):
             with db.get_connection() as conn:
                 repo = StaffRepository(conn)
                 data = repo.get_staff_details(staff_id)
-            
+
             if data:
                 self.selected_staff_id = staff_id
                 self.txt_fname.setText(data[0] or "")
@@ -759,7 +766,7 @@ class ModernStaffManagement(QMainWindow):
                 self.txt_phone.setText(data[4] or "")
                 self.txt_email.setText(data[5] or "")
                 self.txt_address.setText(data[6] or "")
-                
+
                 try:
                     if data[7]: self.date_hire.setDate(QDate.fromString(data[7], "yyyy-MM-dd"))
                 except Exception: pass
@@ -767,7 +774,7 @@ class ModernStaffManagement(QMainWindow):
                 self.combo_contract.setCurrentIndex(idx)
                 self.spin_salary.setValue(data[9] if data[9] else 0)
                 self.spin_hourly.setValue(data[10] if data[10] else 0)
-                
+
                 if data[11] and os.path.exists(data[11]):
                     self.current_photo_path = data[11]
                     pixmap = QPixmap(data[11])
@@ -776,10 +783,10 @@ class ModernStaffManagement(QMainWindow):
                     self.lbl_photo.clear()
                     self.lbl_photo.setText("Photo")
                     self.current_photo_path = None
-                
+
                 staff_status = data[12] if data[12] else "Actif"
                 status_map = {
-                    "Actif": 0, "Congé": 1, "Suspendu": 2, 
+                    "Actif": 0, "Congé": 1, "Suspendu": 2,
                     "Démission": 3, "Licencié": 4, "Retraité": 5
                 }
                 self.combo_status.setCurrentIndex(status_map.get(staff_status, 0))
@@ -849,7 +856,7 @@ class ModernStaffManagement(QMainWindow):
                 pdf.cell(col_widths[5], 6, pdf.sanitize(row[5]), 1, 0, 'L', fill)
                 pdf.cell(col_widths[6], 6, pdf.sanitize(row[6]), 1, 0, 'L', fill)
                 pdf.cell(col_widths[7], 6, pdf.sanitize(row[7]), 1, 0, 'C', fill)
-                pdf.cell(col_widths[8], 6, pdf.sanitize("Mensuel" if row[8]=="Monthly" else "Horaire"), 1, 0, 'L', fill)
+                pdf.cell(col_widths[8], 6, pdf.sanitize("Mensuel" if row[8] == "Monthly" else "Horaire"), 1, 0, 'L', fill)
                 pdf.cell(col_widths[9], 6, pdf.sanitize(f"{row[9]:.0f}" if row[9] is not None else ""), 1, 0, 'R', fill)
                 pdf.cell(col_widths[10], 6, pdf.sanitize(f"{row[10]:.0f}" if row[10] is not None else ""), 1, 0, 'R', fill)
                 pdf.cell(col_widths[11], 6, pdf.sanitize(row[11]), 1, 1, 'C', fill)
@@ -928,7 +935,7 @@ class ModernStaffManagement(QMainWindow):
         start = self.txt_time_start.text().strip()
         end = self.txt_time_end.text().strip()
 
-        if not teacher_id or not class_id or not sub_id or not start or not end: 
+        if not teacher_id or not class_id or not sub_id or not start or not end:
             QMessageBox.warning(self, "Attention", "Veuillez remplir tous les champs du calendrier.")
             return
 
@@ -962,14 +969,14 @@ class ModernStaffManagement(QMainWindow):
                 self.table_tt.insertRow(idx)
                 for c, val in enumerate(row):
                     self.table_tt.setItem(idx, c, QTableWidgetItem(str(val)))
-                
+
                 btn = QPushButton("✕")
                 btn.setFixedSize(24, 24)
                 btn.setCursor(Qt.CursorShape.PointingHandCursor)
                 colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
                 btn.setStyleSheet(f"background-color: {colors.DANGER}; color: white; border-radius: 4px; border: none;")
                 btn.clicked.connect(lambda ch, tid=row[0]: self.delete_tt(tid))
-                
+
                 container = QWidget()
                 layout = QHBoxLayout(container)
                 layout.setContentsMargins(0, 0, 0, 0)
@@ -989,7 +996,7 @@ class ModernStaffManagement(QMainWindow):
                     conn.commit()
                 self.load_timetable()
             except Exception as e:
-                 QMessageBox.critical(self, "Erreur", str(e))
+                QMessageBox.critical(self, "Erreur", str(e))
 
     # ================== طباعة جدول الفصل (Print Class Timetable) ==================
     def print_class_timetable(self):
@@ -1013,14 +1020,14 @@ class ModernStaffManagement(QMainWindow):
             pdf.add_page()
 
             # الألوان والخطوط للجدول المطبوع
-            pdf.set_fill_color(30, 41, 59) # Header color
+            pdf.set_fill_color(30, 41, 59)  # Header color
             pdf.set_text_color(255, 255, 255)
             font_to_use = "ArabicFont" if pdf.arabic_font_ready else "Helvetica"
             pdf.set_font(font_to_use, 'B', 10)
 
-            col_widths = [30, 40, 50, 70] # Total 190 (A4 Portrait width minus margins)
+            col_widths = [30, 40, 50, 70]  # Total 190 (A4 Portrait width minus margins)
             headers = ["Jour", "Horaire", "Matière", "Professeur"]
-            
+
             for i, header in enumerate(headers):
                 ln_val = 1 if i == len(headers) - 1 else 0
                 pdf.cell(col_widths[i], 8, pdf.sanitize(header), 1, ln_val, 'C', True)
@@ -1031,11 +1038,11 @@ class ModernStaffManagement(QMainWindow):
             current_day = ""
             for i, row in enumerate(timetable_data):
                 day, start, end, subject, prof = row
-                
+
                 # تلوين تبادلي بناءً على الأيام لسهولة القراءة
                 if day != current_day:
                     current_day = day
-                    pdf.set_fill_color(226, 232, 240) # لون رمادي فاتح لفاصل الأيام
+                    pdf.set_fill_color(226, 232, 240)  # لون رمادي فاتح لفاصل الأيام
                     pdf.set_font(font_to_use, 'B', 9)
                     pdf.cell(sum(col_widths), 6, pdf.sanitize(day.upper()), 1, 1, 'C', True)
                     pdf.set_font(font_to_use, '', 9)
@@ -1064,6 +1071,7 @@ class ModernStaffManagement(QMainWindow):
 
         except Exception as e:
             QMessageBox.critical(self, "Erreur", f"Erreur lors de la génération du PDF: {str(e)}")
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

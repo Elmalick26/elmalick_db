@@ -5,10 +5,10 @@ from datetime import datetime
 from database_setup import DatabaseManager
 from app_logger import AppLogger
 from repositories.finance_repo import FinanceRepository
-from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
-                             QHBoxLayout, QTableWidget, QTableWidgetItem, 
-                             QPushButton, QLabel, QLineEdit, QComboBox, 
-                             QMessageBox, QHeaderView, QFrame, QGridLayout, 
+from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
+                             QHBoxLayout, QTableWidget, QTableWidgetItem,
+                             QPushButton, QLabel, QLineEdit, QComboBox,
+                             QMessageBox, QHeaderView, QFrame, QGridLayout,
                              QDoubleSpinBox, QDateEdit, QTabWidget,
                              QGraphicsDropShadowEffect)
 from PyQt6.QtCore import Qt, QDate
@@ -30,13 +30,14 @@ class StudentDuesReportPDF(FPDF):
         value = str(text)
         return value.encode("latin-1", "ignore").decode("latin-1")
 
+
 class StudentDuesWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Gestion des Factures / إدارة الفواتير والمطالبات")
         self.setMinimumSize(1100, 700)
         self._ensure_student_dues_schema()
-        
+
         # تطبيق المظهر
         if THEME_AVAILABLE:
             ThemeManager.apply_theme(self)
@@ -46,7 +47,7 @@ class StudentDuesWindow(QMainWindow):
                 QMainWindow {{ background-color: {colors.BG_MAIN}; }}
                 QLabel {{ font-family: 'Segoe UI', 'Cairo', sans-serif; color: {colors.TEXT_PRIMARY}; }}
             """)
-            
+
         self.init_ui()
         self.load_classes()
 
@@ -84,7 +85,7 @@ class StudentDuesWindow(QMainWindow):
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
         header_frame.setStyleSheet(f"QFrame {{ background-color: {colors.BG_HEADER}; border-radius: 10px; }}")
         header_frame.setFixedHeight(80)
-        
+
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(15)
         shadow.setColor(QColor(15, 23, 42, 40))
@@ -93,10 +94,10 @@ class StudentDuesWindow(QMainWindow):
 
         hl = QHBoxLayout(header_frame)
         hl.setContentsMargins(20, 15, 20, 15)
-        
+
         icon_lbl = QLabel("🧾")
         icon_lbl.setStyleSheet("font-size: 32px; background: transparent;")
-        
+
         title_box = QVBoxLayout()
         header_lbl = QLabel("GESTION DES FACTURES & ENGAGEMENTS")
         header_lbl.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
@@ -106,7 +107,7 @@ class StudentDuesWindow(QMainWindow):
         sub_lbl.setStyleSheet(f"color: {colors.TEXT_SECONDARY}; background: transparent;")
         title_box.addWidget(header_lbl)
         title_box.addWidget(sub_lbl)
-        
+
         hl.addWidget(icon_lbl)
         hl.addSpacing(15)
         hl.addLayout(title_box)
@@ -118,29 +119,29 @@ class StudentDuesWindow(QMainWindow):
         slay = QHBoxLayout(sel_card)
         slay.setContentsMargins(20, 15, 20, 15)
         slay.setSpacing(15)
-        
+
         self.combo_classes = self.styled_combo()
         self.combo_classes.currentIndexChanged.connect(self.load_students)
-        
+
         self.combo_students = self.styled_combo()
         self.combo_students.currentIndexChanged.connect(self.load_student_dues)
-        
+
         slay.addWidget(QLabel("📂 Classe (الفصل):"))
         slay.addWidget(self.combo_classes, 1)
         slay.addWidget(QLabel("👤 Élève (الطالب):"))
         slay.addWidget(self.combo_students, 2)
-        
+
         self.main_layout.addWidget(sel_card)
 
         # ================= 3. منطقة العمل (تقسيم الشاشة لجزئين) =================
         work_layout = QHBoxLayout()
-        
+
         # --- الجزء الأيسر: لوحة التحكميات (إضافة فاتورة / تطبيق خصم) ---
         control_panel = self.create_card()
         control_panel.setFixedWidth(350)
         c_layout = QVBoxLayout(control_panel)
         c_layout.setContentsMargins(15, 15, 15, 15)
-        
+
         self.tabs = QTabWidget()
         if THEME_AVAILABLE:
             self.tabs.setStyleSheet(f"""
@@ -159,16 +160,16 @@ class StudentDuesWindow(QMainWindow):
         tab_add = QWidget()
         tab_add_layout = QVBoxLayout(tab_add)
         tab_add_layout.setSpacing(12)
-        
+
         self.txt_fee_title = self.styled_input("Ex: Frais de Transport (وصف الرسوم)")
         self.spin_fee_amount = self.styled_spinbox("Montant: ")
         self.date_fee_due = self.styled_date()
         self.date_fee_due.setDate(QDate.currentDate())
-        
+
         btn_add_fee = QPushButton("➕ Ajouter la Facture (إضافة)")
         self.style_action_button(btn_add_fee, colors.SUCCESS)
         btn_add_fee.clicked.connect(self.add_custom_due)
-        
+
         tab_add_layout.addWidget(QLabel("Type / Description:"))
         tab_add_layout.addWidget(self.txt_fee_title)
         tab_add_layout.addWidget(QLabel("Montant (المبلغ):"))
@@ -177,22 +178,22 @@ class StudentDuesWindow(QMainWindow):
         tab_add_layout.addWidget(self.date_fee_due)
         tab_add_layout.addStretch()
         tab_add_layout.addWidget(btn_add_fee)
-        
+
         # التبويب 2: تطبيق خصم (Remise)
         tab_discount = QWidget()
         tab_disc_layout = QVBoxLayout(tab_discount)
         tab_disc_layout.setSpacing(12)
-        
+
         self.lbl_selected_due = QLabel("Sélectionnez une facture dans le tableau\n(اختر فاتورة من الجدول أولاً)")
         self.lbl_selected_due.setStyleSheet(f"color: {colors.WARNING}; font-style: italic;")
         self.lbl_selected_due.setWordWrap(True)
-        
+
         self.spin_discount_val = self.styled_spinbox("Remise: ")
-        
+
         btn_apply_disc = QPushButton("🎁 Appliquer Remise (تطبيق الخصم)")
         self.style_action_button(btn_apply_disc, colors.PRIMARY)
         btn_apply_disc.clicked.connect(self.apply_discount)
-        
+
         tab_disc_layout.addWidget(self.lbl_selected_due)
         tab_disc_layout.addWidget(QLabel("Montant de la remise (قيمة الخصم):"))
         tab_disc_layout.addWidget(self.spin_discount_val)
@@ -201,9 +202,9 @@ class StudentDuesWindow(QMainWindow):
 
         self.tabs.addTab(tab_add, "➕ Nouvelle")
         self.tabs.addTab(tab_discount, "🎁 Remise")
-        
+
         c_layout.addWidget(self.tabs)
-        
+
         # زر توليد الرسوم التلقائية للصف (اختياري)
         btn_generate_auto = QPushButton("⚙️ Générer Mensualités (توليد أقساط)")
         if THEME_AVAILABLE:
@@ -216,7 +217,7 @@ class StudentDuesWindow(QMainWindow):
         # --- الجزء الأيمن: جدول الفواتير (Ledger) ---
         table_panel = self.create_card()
         t_layout = QVBoxLayout(table_panel)
-        
+
         table_title = QLabel("📄 Relevé de Compte (كشف حساب المطالبات)")
         table_title.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
         table_title.setStyleSheet(f"color: {colors.TEXT_PRIMARY};")
@@ -230,7 +231,7 @@ class StudentDuesWindow(QMainWindow):
         title_row.addWidget(table_title)
         title_row.addStretch()
         title_row.addWidget(btn_export)
-        
+
         self.table_dues = QTableWidget()
         self.style_table(self.table_dues)
         self.table_dues.setColumnCount(8)
@@ -240,13 +241,13 @@ class StudentDuesWindow(QMainWindow):
         ])
         self.table_dues.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.table_dues.itemSelectionChanged.connect(self.on_due_selected)
-        
+
         t_layout.addLayout(title_row)
         t_layout.addWidget(self.table_dues)
-        
+
         work_layout.addWidget(control_panel)
         work_layout.addWidget(table_panel, 1)
-        
+
         self.main_layout.addLayout(work_layout)
 
     # ================== Helper UI Methods ==================
@@ -289,7 +290,7 @@ class StudentDuesWindow(QMainWindow):
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
         sb.setStyleSheet(f"QDoubleSpinBox {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; font-weight: bold; }}")
         return sb
-        
+
     def styled_date(self):
         de = QDateEdit()
         de.setCalendarPopup(True)
@@ -357,10 +358,10 @@ class StudentDuesWindow(QMainWindow):
         self.table_dues.setRowCount(0)
         self.lbl_selected_due.setText("Sélectionnez une facture dans le tableau")
         self.spin_discount_val.setValue(0)
-        
+
         sid = self.combo_students.currentData()
         if not sid: return
-        
+
         active_year = self.get_active_year_id()
         if active_year == -1: return
 
@@ -384,29 +385,29 @@ class StudentDuesWindow(QMainWindow):
                     original_amount = _to_float(row[3])
                     discount_amount = _to_float(row[4])
                     net_amount = _to_float(row[5])
-                    
+
                     self.table_dues.setItem(idx, 0, QTableWidgetItem(str(row[0])))
-                    
+
                     desc = (str(row[2] or row[1] or "-")).strip() or "-"
                     self.table_dues.setItem(idx, 1, QTableWidgetItem(desc))
                     self.table_dues.setItem(idx, 2, QTableWidgetItem(str(row[6] or "-")))
-                    
+
                     self.table_dues.setItem(idx, 3, QTableWidgetItem(f"{original_amount:,.0f}"))
                     self.table_dues.setItem(idx, 4, QTableWidgetItem(f"{discount_amount:,.0f}"))
-                    
+
                     net_item = QTableWidgetItem(f"{net_amount:,.0f}")
                     net_item.setFont(QFont("Arial", 10, QFont.Weight.Bold))
                     self.table_dues.setItem(idx, 5, net_item)
-                    
+
                     status_txt = "✅ Réglé (مدفوع)" if row[7] else "⏳ En attente (مستحق)"
                     status_item = QTableWidgetItem(status_txt)
                     status_item.setForeground(QColor(colors.SUCCESS if row[7] else colors.WARNING))
                     self.table_dues.setItem(idx, 6, status_item)
-                    
+
                     container = QWidget()
                     btn_layout = QHBoxLayout(container)
                     btn_layout.setContentsMargins(2, 2, 2, 2)
-                    if not row[7]: # إذا لم تكن مدفوعة
+                    if not row[7]:  # إذا لم تكن مدفوعة
                         btn_del = QPushButton("✕")
                         btn_del.setFixedSize(28, 28)
                         btn_del.setStyleSheet(f"background: {colors.DANGER}; color: white; border-radius: 4px;")
@@ -420,16 +421,16 @@ class StudentDuesWindow(QMainWindow):
         rows = self.table_dues.selectedItems()
         if not rows: return
         r = rows[0].row()
-        
+
         due_id = self.table_dues.item(r, 0).text()
         desc = self.table_dues.item(r, 1).text()
         original = float(self.table_dues.item(r, 3).text().replace(',', ''))
         discount = float(self.table_dues.item(r, 4).text().replace(',', ''))
-        
+
         self.lbl_selected_due.setText(f"Facture sélectionnée:\n[{due_id}] {desc}\nOriginal: {original:,.0f}")
         self.spin_discount_val.setMaximum(original)
         self.spin_discount_val.setValue(discount)
-        
+
         self.tabs.setCurrentIndex(1)
 
     def add_custom_due(self):
@@ -437,18 +438,18 @@ class StudentDuesWindow(QMainWindow):
         if not sid:
             QMessageBox.warning(self, "Erreur", "Veuillez sélectionner un élève d'abord.")
             return
-            
+
         desc = self.txt_fee_title.text().strip()
         amt = self.spin_fee_amount.value()
         date_d = self.date_fee_due.date().toString("yyyy-MM-dd")
-        
+
         if not desc or amt <= 0:
             QMessageBox.warning(self, "Erreur", "La description et le montant sont obligatoires.")
             return
-            
+
         active_year = self.get_active_year_id()
         if active_year == -1: return
-        
+
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
@@ -459,7 +460,7 @@ class StudentDuesWindow(QMainWindow):
             self.txt_fee_title.clear()
             self.spin_fee_amount.setValue(0)
             self.load_student_dues()
-            
+
         except Exception as e:
             QMessageBox.critical(self, "Erreur", str(e))
 
@@ -468,18 +469,18 @@ class StudentDuesWindow(QMainWindow):
         if not rows:
             QMessageBox.warning(self, "Erreur", "Veuillez sélectionner une facture.")
             return
-            
+
         r = rows[0].row()
         due_id = self.table_dues.item(r, 0).text()
         original_amt = float(self.table_dues.item(r, 3).text().replace(',', ''))
         new_discount = self.spin_discount_val.value()
-        
+
         if new_discount > original_amt:
             QMessageBox.warning(self, "Erreur", "La remise ne peut pas dépasser le montant original.")
             return
-            
+
         new_net = original_amt - new_discount
-        
+
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
@@ -492,12 +493,12 @@ class StudentDuesWindow(QMainWindow):
 
             QMessageBox.information(self, "Succès", "Remise appliquée avec succès.")
             self.load_student_dues()
-            
+
         except Exception as e:
             QMessageBox.critical(self, "Erreur", str(e))
 
     def delete_due(self, due_id):
-        reply = QMessageBox.question(self, "Confirmation", "Voulez-vous supprimer cette facture ?", 
+        reply = QMessageBox.question(self, "Confirmation", "Voulez-vous supprimer cette facture ?",
                                      QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
         if reply == QMessageBox.StandardButton.Yes:
             try:
@@ -514,16 +515,16 @@ class StudentDuesWindow(QMainWindow):
         if not cid:
             QMessageBox.warning(self, "Attention", "Veuillez sélectionner une classe pour générer les factures.")
             return
-            
+
         active_year = self.get_active_year_id()
         if active_year == -1: return
 
-        reply = QMessageBox.question(self, "Confirmation", 
-            "Cette action va générer les factures (Inscription et Mensualités) pour TOUS les élèves de cette classe qui n'en ont pas encore. Continuer ?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
-            
+        reply = QMessageBox.question(self, "Confirmation",
+                                     "Cette action va générer les factures (Inscription et Mensualités) pour TOUS les élèves de cette classe qui n'en ont pas encore. Continuer ?",
+                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+
         if reply != QMessageBox.StandardButton.Yes: return
-        
+
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
@@ -668,6 +669,7 @@ class StudentDuesWindow(QMainWindow):
             )
         except Exception as e:
             QMessageBox.critical(self, "Erreur", f"Erreur lors de l'export du rapport: {e}")
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

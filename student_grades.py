@@ -1,14 +1,14 @@
-﻿import sys
+import sys
 import os
 from database_setup import DatabaseManager
 from app_logger import AppLogger
 from repositories.grades_repo import GradesRepository
 from repositories.student_repo import StudentRepository
 from repositories.finance_repo import FinanceRepository
-from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
-                             QHBoxLayout, QTableWidget, QTableWidgetItem, 
-                             QPushButton, QLabel, QComboBox, QMessageBox, 
-                             QHeaderView, QFrame, QGroupBox, QDoubleSpinBox, 
+from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
+                             QHBoxLayout, QTableWidget, QTableWidgetItem,
+                             QPushButton, QLabel, QComboBox, QMessageBox,
+                             QHeaderView, QFrame, QGroupBox, QDoubleSpinBox,
                              QGridLayout, QTabWidget, QLineEdit,
                              QGraphicsDropShadowEffect)
 from PyQt6.QtCore import Qt, QDate
@@ -28,6 +28,7 @@ try:
     ARABIC_SUPPORT = True
 except ModuleNotFoundError:
     ARABIC_SUPPORT = False
+
 
 def _get_arabic_font_files():
     base_dir = os.path.dirname(os.path.abspath(__file__))
@@ -80,6 +81,7 @@ def _get_arabic_font_files():
             }
     return None
 
+
 def _contains_arabic(text):
     if text is None:
         return False
@@ -89,6 +91,7 @@ def _contains_arabic(text):
         "\u0600" <= ch <= "\u06FF" or "\u0750" <= ch <= "\u077F" or "\u08A0" <= ch <= "\u08FF"
         for ch in text
     )
+
 
 def _prepare_pdf_text(text):
     if text is None:
@@ -103,12 +106,14 @@ def _prepare_pdf_text(text):
             return text
     return text
 
+
 def _sanitize_latin(text):
     if text is None:
         return ""
     if not isinstance(text, str):
         text = str(text)
     return text.encode('latin-1', 'ignore').decode('latin-1')
+
 
 def _register_arabic_font(pdf):
     font_files = _get_arabic_font_files()
@@ -124,6 +129,8 @@ def _register_arabic_font(pdf):
         return False
 
 # --- فئة تقارير PDF الرسمية ---
+
+
 class GradesSheetPDF(FPDF):
     def __init__(self, title_doc="FEUILLE DE NOTES"):
         super().__init__()
@@ -187,12 +194,13 @@ class GradesSheetPDF(FPDF):
         self.set_font(self.font_name, 'I', 8)
         self.cell(0, 10, f'Page {self.page_no()}', 0, 0, 'C')
 
+
 class StudentGradesWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Gestion des Notes / إدارة العلامات")
         self.setMinimumSize(1100, 700)
-        
+
         # تطبيق المظهر
         if THEME_AVAILABLE:
             ThemeManager.apply_theme(self)
@@ -206,7 +214,7 @@ class StudentGradesWindow(QMainWindow):
                     background-color: {colors.BG_CARD}; font-weight: bold; color: {colors.TEXT_SECONDARY};
                 }}
             """)
-        
+
         self.init_ui()
         self.load_classes(self.combo_class)
         self.load_classes(self.combo_view_class)
@@ -231,12 +239,12 @@ class StudentGradesWindow(QMainWindow):
         # 1. Header
         header_frame = QFrame()
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-        
+
         header_frame.setStyleSheet(f"""
             QFrame {{ background-color: {colors.BG_HEADER}; border-radius: 10px; }}
         """)
         header_frame.setMaximumHeight(80)
-        
+
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(15)
         shadow.setColor(QColor(15, 23, 42, 40))
@@ -245,27 +253,27 @@ class StudentGradesWindow(QMainWindow):
 
         hl = QHBoxLayout(header_frame)
         hl.setContentsMargins(20, 15, 20, 15)
-        
+
         icon_lbl = QLabel("📝")
         icon_lbl.setStyleSheet("font-size: 32px; background: transparent;")
-        
+
         title_layout = QVBoxLayout()
         header_lbl = QLabel("GESTION DES NOTES")
         header_lbl.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
         header_lbl.setStyleSheet(f"color: {colors.HEADER_TEXT}; background: transparent;")
-        
+
         sub_lbl = QLabel("إدارة العلامات والاختبارات")
         sub_lbl.setFont(QFont("Cairo", 11))
         sub_lbl.setStyleSheet(f"color: {colors.TEXT_SECONDARY}; background: transparent;")
-        
+
         title_layout.addWidget(header_lbl)
         title_layout.addWidget(sub_lbl)
-        
+
         hl.addWidget(icon_lbl)
         hl.addSpacing(15)
         hl.addLayout(title_layout)
         hl.addStretch()
-        
+
         self.main_layout.addWidget(header_frame)
 
         # 2. Tabs
@@ -501,7 +509,7 @@ class StudentGradesWindow(QMainWindow):
         active_year = self.get_active_year_id()
         if active_year == -1:
             return
-        
+
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
@@ -529,11 +537,12 @@ class StudentGradesWindow(QMainWindow):
                     self.combo_assessment.addItem(a[1], a[0])
         except Exception: pass
     # ===== جلب الطلاب باستخدام جدول التسجيل SCN =====
+
     def load_grading_sheet(self):
         class_id = self.combo_class.currentData()
         subject_id = self.combo_subject.currentData()
         assess_id = self.combo_assessment.currentData()
-        
+
         if not all([class_id, subject_id, assess_id]):
             QMessageBox.warning(self, "Attention", "Veuillez sélectionner la classe, la matière et l'évaluation.")
             return
@@ -550,26 +559,26 @@ class StudentGradesWindow(QMainWindow):
                 max_score = repo.get_max_score_for_class(class_id)
                 self.table_grades.horizontalHeaderItem(3).setText(f"Note /{int(max_score)}")
                 rows = repo.load_grading_sheet(class_id, subject_id, assess_id, active_year)
-                
+
                 self.table_grades.setRowCount(0)
                 colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
 
                 for r in rows:
                     idx = self.table_grades.rowCount()
                     self.table_grades.insertRow(idx)
-                    
+
                     id_item = QTableWidgetItem(str(r[0]))
                     id_item.setFlags(Qt.ItemFlag.ItemIsEnabled)
                     self.table_grades.setItem(idx, 0, id_item)
-                    
+
                     item_fr = QTableWidgetItem(r[1])
                     item_fr.setFlags(Qt.ItemFlag.ItemIsEnabled)
                     self.table_grades.setItem(idx, 1, item_fr)
-                    
+
                     item_ar = QTableWidgetItem(r[2])
                     item_ar.setFlags(Qt.ItemFlag.ItemIsEnabled)
                     self.table_grades.setItem(idx, 2, item_ar)
-                    
+
                     spin = QDoubleSpinBox()
                     spin.setRange(0, max_score)
                     spin.setSingleStep(0.25)
@@ -577,7 +586,7 @@ class StudentGradesWindow(QMainWindow):
                     spin.setStyleSheet(f"background: {colors.INPUT_BG}; border: 1px solid {colors.BORDER}; color: {colors.TEXT_PRIMARY};")
                     if r[3] is not None: spin.setValue(r[3])
                     self.table_grades.setCellWidget(idx, 3, spin)
-                    
+
                     self.table_grades.setItem(idx, 4, QTableWidgetItem(r[4] if r[4] else ""))
         except Exception as e:
             QMessageBox.critical(self, "Erreur", f"Erreur lors du chargement : {e}")
@@ -586,7 +595,7 @@ class StudentGradesWindow(QMainWindow):
         class_id = self.combo_class.currentData()
         subject_id = self.combo_subject.currentData()
         assess_id = self.combo_assessment.currentData()
-        
+
         if not all([class_id, subject_id, assess_id]): return
 
         active_year = self.get_active_year_id()
@@ -623,7 +632,7 @@ class StudentGradesWindow(QMainWindow):
                     period_id=period_id,
                     student_name=student_name if student_name else None,
                 )
-                
+
                 self.table_view.setRowCount(0)
                 for r in rows:
                     idx = self.table_view.rowCount()
@@ -692,23 +701,23 @@ class StudentGradesWindow(QMainWindow):
             pdf = GradesSheetPDF()
             pdf.set_school_info(school_info)
             pdf.add_page()
-            
+
             pdf.set_font(pdf.font_name, '', 11)
             cls_txt_pdf = pdf.sanitize(self.combo_class.currentText())
             sub_txt_pdf = pdf.sanitize(self.combo_subject.currentText())
             eval_txt_pdf = pdf.sanitize(self.combo_assessment.currentText())
-            
+
             pdf.cell(0, 7, f"Classe: {cls_txt_pdf}", 0, 1)
             pdf.cell(0, 7, f"Matiere: {sub_txt_pdf}", 0, 1)
             pdf.cell(0, 7, f"Evaluation: {eval_txt_pdf}", 0, 1)
             pdf.ln(5)
-            
+
             apply_table_header_style(pdf, pdf.font_name, 10)
             pdf.cell(15, 8, "ID", 1, 0, 'C', True)
             pdf.cell(80, 8, "Nom et Prenom", 1, 0, 'C', True)
             pdf.cell(30, 8, "Note", 1, 0, 'C', True)
             pdf.cell(65, 8, "Observation", 1, 1, 'C', True)
-            
+
             apply_table_body_style(pdf, pdf.font_name, 10)
             for row in range(self.table_grades.rowCount()):
                 sid = self.table_grades.item(row, 0).text()
@@ -732,6 +741,7 @@ class StudentGradesWindow(QMainWindow):
             )
         except Exception as e:
             QMessageBox.critical(self, "Erreur PDF", str(e))
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

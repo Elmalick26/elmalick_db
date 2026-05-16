@@ -1,12 +1,12 @@
-﻿import sys
+import sys
 import psycopg2
 import os
 from datetime import datetime
 from database_setup import DatabaseManager
 from app_logger import AppLogger
-from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
-                             QHBoxLayout, QTableWidget, QTableWidgetItem, 
-                             QPushButton, QLabel, QComboBox, QMessageBox, 
+from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
+                             QHBoxLayout, QTableWidget, QTableWidgetItem,
+                             QPushButton, QLabel, QComboBox, QMessageBox,
                              QHeaderView, QGroupBox, QDateEdit, QTimeEdit,
                              QTabWidget, QGridLayout, QLineEdit,
                              QFrame, QGraphicsDropShadowEffect)
@@ -29,6 +29,7 @@ try:
 except ModuleNotFoundError:
     ARABIC_SUPPORT = False
 
+
 def _get_arabic_font_path():
     base_dir = os.path.dirname(os.path.abspath(__file__))
     candidates = [
@@ -44,6 +45,7 @@ def _get_arabic_font_path():
             return path
     return None
 
+
 def _contains_arabic(text):
     if text is None:
         return False
@@ -53,6 +55,7 @@ def _contains_arabic(text):
         "\u0600" <= ch <= "\u06FF" or "\u0750" <= ch <= "\u077F" or "\u08A0" <= ch <= "\u08FF"
         for ch in text
     )
+
 
 def _prepare_pdf_text(text):
     if text is None:
@@ -67,12 +70,14 @@ def _prepare_pdf_text(text):
             return text
     return text
 
+
 def _sanitize_latin(text):
     if text is None:
         return ""
     if not isinstance(text, str):
         text = str(text)
     return text.encode('latin-1', 'ignore').decode('latin-1')
+
 
 def _register_arabic_font(pdf):
     font_path = _get_arabic_font_path()
@@ -88,6 +93,8 @@ def _register_arabic_font(pdf):
         return False
 
 # --- فئة تقارير PDF للحضور ---
+
+
 class StaffAttendancePDF(FPDF):
     def __init__(self, school_info=None, orientation='P', unit='mm', format='A4'):
         super().__init__(orientation, unit, format)
@@ -151,12 +158,13 @@ class StaffAttendancePDF(FPDF):
         self.cell(0, 10, f'Page {self.page_no()}', 0, 0, 'C')
         self.cell(0, 10, datetime.now().strftime('%d/%m/%Y'), 0, 0, 'R')
 
+
 class StaffAttendanceWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Gestion de Présence / إدارة حضور الموظفين")
         self.setMinimumSize(1100, 700)
-        
+
         # تطبيق المظهر باستخدام ThemeManager
         if THEME_AVAILABLE:
             ThemeManager.apply_theme(self)
@@ -170,7 +178,7 @@ class StaffAttendanceWindow(QMainWindow):
                     background-color: {colors.BG_CARD}; font-weight: bold; color: {colors.TEXT_SECONDARY};
                 }}
             """)
-        
+
         self.init_ui()
         self.load_staff_combo()
         self.load_attendance_list()
@@ -192,7 +200,7 @@ class StaffAttendanceWindow(QMainWindow):
 
         header_frame.setStyleSheet(f"QFrame {{ background-color: {bg_header}; border-radius: 10px; }}")
         header_frame.setMaximumHeight(80)
-        
+
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(15)
         shadow.setColor(QColor(15, 23, 42, 40))
@@ -201,27 +209,27 @@ class StaffAttendanceWindow(QMainWindow):
 
         hl = QHBoxLayout(header_frame)
         hl.setContentsMargins(20, 15, 20, 15)
-        
+
         icon_lbl = QLabel("📅")
         icon_lbl.setStyleSheet("font-size: 32px; background: transparent;")
-        
+
         title_layout = QVBoxLayout()
         header_lbl = QLabel("POINTAGE PERSONNEL")
         header_lbl.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
         header_lbl.setStyleSheet(f"color: {header_text}; background: transparent;")
-        
+
         sub_lbl = QLabel("تسجيل الحضور والانصراف للموظفين")
         sub_lbl.setFont(QFont("Cairo", 11))
         sub_lbl.setStyleSheet(f"color: {sub_text}; background: transparent;")
-        
+
         title_layout.addWidget(header_lbl)
         title_layout.addWidget(sub_lbl)
-        
+
         hl.addWidget(icon_lbl)
         hl.addSpacing(15)
         hl.addLayout(title_layout)
         hl.addStretch()
-        
+
         self.main_layout.addWidget(header_frame)
 
         # 2. Tabs
@@ -235,10 +243,10 @@ class StaffAttendanceWindow(QMainWindow):
                 QTabBar::tab:selected {{ background: {colors.BG_HEADER}; color: {colors.HEADER_TEXT}; }}
                 QTabBar::tab:hover {{ background: {colors.BORDER}; }}
             """)
-        
+
         self.setup_daily_tab()
         self.setup_reports_tab()
-        
+
         self.main_layout.addWidget(self.tabs)
 
     def create_card(self):
@@ -295,7 +303,7 @@ class StaffAttendanceWindow(QMainWindow):
         layout = QVBoxLayout(tab)
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(15)
-        
+
         control_card = self.create_card()
         h_layout = QHBoxLayout(control_card)
         h_layout.setContentsMargins(15, 15, 15, 15)
@@ -324,7 +332,7 @@ class StaffAttendanceWindow(QMainWindow):
         h_layout.addWidget(self.combo_role_filter)
         h_layout.addWidget(btn_refresh)
         h_layout.addStretch()
-        
+
         layout.addWidget(control_card)
 
         # Table
@@ -337,7 +345,7 @@ class StaffAttendanceWindow(QMainWindow):
         self.table_attendance.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.table_attendance.setColumnWidth(0, 50)
         self.table_attendance.verticalHeader().setDefaultSectionSize(40)
-        
+
         layout.addWidget(self.table_attendance)
 
         # Save Button
@@ -360,25 +368,25 @@ class StaffAttendanceWindow(QMainWindow):
         layout = QVBoxLayout(tab)
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(15)
-        
+
         filter_card = self.create_card()
         glay = QGridLayout(filter_card)
         glay.setContentsMargins(15, 15, 15, 15)
         glay.setSpacing(15)
-        
+
         card_title = QLabel("Rapport Mensuel / تقرير شهري")
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
         card_title.setStyleSheet(f"font-weight: bold; color: {colors.TEXT_PRIMARY}; font-size: 14px;")
         glay.addWidget(card_title, 0, 0, 1, 4)
-        
+
         self.combo_staff_report = self.styled_combo()
         self.combo_staff_report.currentIndexChanged.connect(self.load_report_records)
-        
+
         self.date_report_month = self.styled_date()
         self.date_report_month.setDisplayFormat("MM/yyyy")
         self.date_report_month.setDate(QDate.currentDate())
         self.date_report_month.dateChanged.connect(self.load_report_records)
-        
+
         btn_gen_report = QPushButton("🖨️ Générer PDF")
         btn_gen_report.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_gen_report.setStyleSheet(f"""
@@ -392,7 +400,7 @@ class StaffAttendanceWindow(QMainWindow):
         glay.addWidget(QLabel("Mois:"), 1, 2)
         glay.addWidget(self.date_report_month, 1, 3)
         glay.addWidget(btn_gen_report, 1, 4)
-        
+
         layout.addWidget(filter_card)
 
         self.table_report = QTableWidget(0, 6)
@@ -427,7 +435,7 @@ class StaffAttendanceWindow(QMainWindow):
         self.table_attendance.setRowCount(0)
         selected_date = self.date_picker.date().toString("yyyy-MM-dd")
         role_filter = self.combo_role_filter.currentText()
-        
+
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
@@ -458,7 +466,7 @@ class StaffAttendanceWindow(QMainWindow):
 
                     time_in = QTimeEdit()
                     time_in.setDisplayFormat("HH:mm")
-                    time_in.setTime(QTime(8, 0)) 
+                    time_in.setTime(QTime(8, 0))
                     time_in.setStyleSheet("QTimeEdit { border: none; background: transparent; }")
                     self.table_attendance.setCellWidget(row_idx, 4, time_in)
 
@@ -526,7 +534,7 @@ class StaffAttendanceWindow(QMainWindow):
 
     def save_all_attendance(self):
         selected_date = self.date_picker.date().toString("yyyy-MM-dd")
-        
+
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
@@ -555,7 +563,7 @@ class StaffAttendanceWindow(QMainWindow):
         staff_name = self.combo_staff_report.currentText()
         month = self.date_report_month.date().toString("yyyy-MM")
         start_date, end_date = self._month_bounds(month)
-        
+
         if not start_date: return
 
         default_name = f"Pointage_{self.sanitize_filename(staff_name)}_{month}.pdf"
@@ -572,40 +580,40 @@ class StaffAttendanceWindow(QMainWindow):
 
             pdf = StaffAttendancePDF(school_info)
             pdf.add_page()
-            
+
             pdf.set_font(pdf.font_name, 'B', 10)
             pdf.cell(40, 8, "Employé(e):", 0, 0)
             pdf.set_font(pdf.font_name, '', 10)
             pdf.cell(60, 8, pdf.sanitize(staff_name), 0, 0)
-            
+
             pdf.set_font(pdf.font_name, 'B', 10)
             pdf.cell(40, 8, "Mois:", 0, 0)
             pdf.set_font(pdf.font_name, '', 10)
             pdf.cell(60, 8, month, 0, 1)
-            
+
             pdf.ln(5)
-            
+
             apply_table_header_style(pdf, pdf.font_name, 9)
-            
+
             if is_all:
                 col_widths = [45, 25, 25, 20, 20, 55]
                 headers = ["Employé", "Date", "Statut", "Entrée", "Sortie", "Note"]
             else:
                 col_widths = [30, 30, 30, 30, 70]
                 headers = ["Date", "Statut", "Entrée", "Sortie", "Note"]
-            
+
             for i, header in enumerate(headers):
                 pdf.cell(col_widths[i], 7, pdf.sanitize(header), 1, 0, 'C', True)
             pdf.ln(7)
-            
+
             apply_table_body_style(pdf, pdf.font_name, 9)
-            
+
             total_days = len(records)
             present_cnt = 0
-            
+
             for i, record in enumerate(records):
                 set_zebra_row_fill(pdf, i)
-                
+
                 if is_all:
                     emp_name = record[0]
                     date_val = record[1]
@@ -623,11 +631,11 @@ class StaffAttendanceWindow(QMainWindow):
 
                 date_fmt = datetime.strptime(date_val, '%Y-%m-%d').strftime('%d/%m/%Y') if date_val else ""
                 if status == "Présent": present_cnt += 1
-                
+
                 if status == "Absent": pdf.set_text_color(200, 0, 0)
                 elif status == "Retard": pdf.set_text_color(200, 150, 0)
                 else: pdf.set_text_color(0, 0, 0)
-                
+
                 if is_all:
                     pdf.cell(col_widths[0], 6, pdf.sanitize(emp_name), 1, 0, 'L', True)
                     pdf.cell(col_widths[1], 6, date_fmt, 1, 0, 'C', True)
@@ -661,9 +669,10 @@ class StaffAttendanceWindow(QMainWindow):
                 success_save_message="Rapport généré avec succès.",
                 success_print_message="Rapport envoyé à l'imprimante.",
             )
-            
+
         except Exception as e:
             QMessageBox.critical(self, "Erreur PDF", f"Échec de la génération: {str(e)}")
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

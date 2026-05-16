@@ -1,4 +1,4 @@
-﻿import sys
+import sys
 import psycopg2
 import os
 from datetime import datetime
@@ -7,11 +7,11 @@ from app_logger import AppLogger
 from repositories.attendance_repo import AttendanceRepository
 from repositories.student_repo import StudentRepository
 from repositories.finance_repo import FinanceRepository
-from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
-                             QHBoxLayout, QTableWidget, QTableWidgetItem, 
-                             QPushButton, QLabel, QLineEdit, QComboBox, 
+from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
+                             QHBoxLayout, QTableWidget, QTableWidgetItem,
+                             QPushButton, QLabel, QLineEdit, QComboBox,
                              QMessageBox, QHeaderView, QFrame, QDateEdit,
-                             QTabWidget, QGraphicsDropShadowEffect, QGridLayout, 
+                             QTabWidget, QGraphicsDropShadowEffect, QGridLayout,
                              QCheckBox, QGroupBox)
 from PyQt6.QtCore import Qt, QDate
 from PyQt6.QtGui import QFont, QColor
@@ -31,6 +31,7 @@ try:
 except ModuleNotFoundError:
     ARABIC_SUPPORT = False
 
+
 def _get_arabic_font_path():
     base_dir = os.path.dirname(os.path.abspath(__file__))
     candidates = [
@@ -46,6 +47,7 @@ def _get_arabic_font_path():
             return path
     return None
 
+
 def _contains_arabic(text):
     if text is None:
         return False
@@ -55,6 +57,7 @@ def _contains_arabic(text):
         "\u0600" <= ch <= "\u06FF" or "\u0750" <= ch <= "\u077F" or "\u08A0" <= ch <= "\u08FF"
         for ch in text
     )
+
 
 def _prepare_pdf_text(text):
     if text is None:
@@ -69,12 +72,14 @@ def _prepare_pdf_text(text):
             return text
     return text
 
+
 def _sanitize_latin(text):
     if text is None:
         return ""
     if not isinstance(text, str):
         text = str(text)
     return text.encode('latin-1', 'ignore').decode('latin-1')
+
 
 def _register_arabic_font(pdf):
     font_path = _get_arabic_font_path()
@@ -90,6 +95,8 @@ def _register_arabic_font(pdf):
         return False
 
 # --- فئة تقارير PDF الرسمية ---
+
+
 class AttendancePDF(FPDF):
     def __init__(self, school_info):
         super().__init__(orientation='P')
@@ -150,12 +157,13 @@ class AttendancePDF(FPDF):
         self.set_font(self.font_name, 'I', 8)
         self.cell(0, 10, f'Page {self.page_no()} | {datetime.now().strftime("%Y-%m-%d %H:%M")}', 0, 0, 'C')
 
+
 class StudentAttendanceWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Gestion de l'Assiduité / إدارة الحضور والغياب")
         self.setMinimumSize(1100, 750)
-        
+
         # تطبيق المظهر باستخدام ThemeManager
         if THEME_AVAILABLE:
             ThemeManager.apply_theme(self)
@@ -165,7 +173,7 @@ class StudentAttendanceWindow(QMainWindow):
                 QMainWindow {{ background-color: {colors.BG_MAIN}; }}
                 QLabel {{ font-family: 'Segoe UI', 'Cairo', sans-serif; color: {colors.TEXT_PRIMARY}; }}
             """)
-        
+
         self.init_ui()
         self.load_classes()
 
@@ -230,7 +238,7 @@ class StudentAttendanceWindow(QMainWindow):
             QFrame {{ background-color: {colors.BG_HEADER}; border-radius: 10px; }}
         """)
         header_frame.setMaximumHeight(80)
-        
+
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(15)
         shadow.setColor(QColor(15, 23, 42, 40))
@@ -239,27 +247,27 @@ class StudentAttendanceWindow(QMainWindow):
 
         hl = QHBoxLayout(header_frame)
         hl.setContentsMargins(20, 15, 20, 15)
-        
+
         icon_lbl = QLabel("📅")
         icon_lbl.setStyleSheet("font-size: 32px; background: transparent;")
-        
+
         title_layout = QVBoxLayout()
         header_lbl = QLabel("SUIVI DE L'ASSIDUITÉ")
         header_lbl.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
         header_lbl.setStyleSheet(f"color: {colors.HEADER_TEXT}; background: transparent;")
-        
+
         sub_lbl = QLabel("متابعة الغياب والحضور اليومي")
         sub_lbl.setFont(QFont("Cairo", 11))
         sub_lbl.setStyleSheet(f"color: {colors.TEXT_SECONDARY}; background: transparent;")
-        
+
         title_layout.addWidget(header_lbl)
         title_layout.addWidget(sub_lbl)
-        
+
         hl.addWidget(icon_lbl)
         hl.addSpacing(15)
         hl.addLayout(title_layout)
         hl.addStretch()
-        
+
         self.main_layout.addWidget(header_frame)
 
         # 2. Tabs
@@ -291,7 +299,7 @@ class StudentAttendanceWindow(QMainWindow):
             shadow.setBlurRadius(20); shadow.setColor(QColor(15, 23, 42, 15)); shadow.setOffset(0, 4)
             frame.setGraphicsEffect(shadow)
         return frame
-    
+
     def styled_combo(self):
         combo = QComboBox()
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
@@ -379,8 +387,8 @@ class StudentAttendanceWindow(QMainWindow):
         btn_save_all = QPushButton("💾 Enregistrer / حفظ")
         btn_save_all.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_save_all.setStyleSheet(f"""
-            QPushButton {{ 
-                background-color: {colors.SUCCESS}; color: white; padding: 12px; font-weight: bold; 
+            QPushButton {{
+                background-color: {colors.SUCCESS}; color: white; padding: 12px; font-weight: bold;
                 font-size: 14px; border-radius: 8px; border: none;
             }}
             QPushButton:hover {{ background-color: {colors.SUCCESS_HOVER}; }}
@@ -434,10 +442,10 @@ class StudentAttendanceWindow(QMainWindow):
 
         btn_layout = QHBoxLayout()
         btn_layout.setSpacing(10)
-        
+
         btn_style = "QPushButton { color: white; font-weight: bold; border-radius: 6px; padding: 10px; border: none; }"
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-        
+
         btn_daily_pdf = QPushButton("📄 Journalier (Journal)")
         btn_daily_pdf.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_daily_pdf.setStyleSheet(btn_style + f"QPushButton {{ background-color: {colors.WARNING}; }}")
@@ -456,7 +464,7 @@ class StudentAttendanceWindow(QMainWindow):
         btn_layout.addWidget(btn_daily_pdf)
         btn_layout.addWidget(btn_indiv_pdf)
         btn_layout.addWidget(btn_global_pdf)
-        
+
         grid.addLayout(btn_layout, 2, 2, 1, 2)
         layout.addWidget(filter_card)
 
@@ -487,17 +495,17 @@ class StudentAttendanceWindow(QMainWindow):
             db = DatabaseManager()
             with db.get_connection() as conn:
                 classes = AttendanceRepository(conn).list_classes()
-            
+
             self.combo_class_entry.clear()
             self.combo_class_entry.addItem("Choisir une Classe...", None)
             self.combo_period_entry.clear()
             self.combo_period_entry.addItem("Toutes les périodes", None)
-            
+
             self.combo_class_report.clear()
             self.combo_class_report.addItem("Toutes les classes", None)
             self.combo_period_report.clear()
             self.combo_period_report.addItem("Toutes les périodes", None)
-            
+
             for c in classes:
                 self.combo_class_entry.addItem(c[1], c[0])
                 self.combo_class_report.addItem(c[1], c[0])
@@ -510,7 +518,7 @@ class StudentAttendanceWindow(QMainWindow):
         period_id = self.combo_period_entry.currentData()
         date_sel = self.date_entry.date().toString("yyyy-MM-dd")
         self.table_entry.setRowCount(0)
-        
+
         if not class_id: return
 
         active_year = self.get_active_year_id()
@@ -524,27 +532,27 @@ class StudentAttendanceWindow(QMainWindow):
                 rows = AttendanceRepository(conn).load_students_for_attendance(
                     class_id, date_sel, active_year, period_id
                 )
-            
+
             for r in rows:
                 idx = self.table_entry.rowCount()
                 self.table_entry.insertRow(idx)
-                
+
                 # ID & Name
                 id_item = QTableWidgetItem(str(r[0]))
                 id_item.setFlags(id_item.flags() ^ Qt.ItemFlag.ItemIsEditable)
                 self.table_entry.setItem(idx, 0, id_item)
-                
+
                 name_item = QTableWidgetItem(r[1])
                 name_item.setFlags(name_item.flags() ^ Qt.ItemFlag.ItemIsEditable)
                 self.table_entry.setItem(idx, 1, name_item)
-                
+
                 # Status Combo
                 cmb_status = QComboBox()
                 cmb_status.addItems(["Présent", "Absent", "Retard", "Exclu"])
                 if r[2]: cmb_status.setCurrentText(r[2])
                 cmb_status.setStyleSheet("QComboBox { border: none; background: transparent; }")
                 self.table_entry.setCellWidget(idx, 2, cmb_status)
-                
+
                 # Justified Checkbox
                 chk_widget = QWidget()
                 chk_box = QCheckBox()
@@ -552,13 +560,13 @@ class StudentAttendanceWindow(QMainWindow):
                 chk_layout = QHBoxLayout(chk_widget)
                 chk_layout.addWidget(chk_box)
                 chk_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                chk_layout.setContentsMargins(0,0,0,0)
+                chk_layout.setContentsMargins(0, 0, 0, 0)
                 self.table_entry.setCellWidget(idx, 3, chk_widget)
-                
+
                 # Reason & Notes
                 self.table_entry.setItem(idx, 4, QTableWidgetItem(r[4] if r[4] else ""))
                 self.table_entry.setItem(idx, 5, QTableWidgetItem(r[5] if r[5] else ""))
-                
+
                 # Action
                 btn_reset = QPushButton("↺")
                 btn_reset.setToolTip("Réinitialiser")
@@ -573,7 +581,7 @@ class StudentAttendanceWindow(QMainWindow):
             QMessageBox.critical(self, "Erreur", f"Erreur de chargement: {e}")
 
     def reset_row(self, row):
-        self.table_entry.cellWidget(row, 2).setCurrentIndex(0) # Présent
+        self.table_entry.cellWidget(row, 2).setCurrentIndex(0)  # Présent
         self.table_entry.cellWidget(row, 3).findChild(QCheckBox).setChecked(False)
         self.table_entry.item(row, 4).setText("")
         self.table_entry.item(row, 5).setText("")
@@ -582,8 +590,8 @@ class StudentAttendanceWindow(QMainWindow):
         class_id = self.combo_class_entry.currentData()
         period_id = self.combo_period_entry.currentData()
         date_sel = self.date_entry.date().toString("yyyy-MM-dd")
-        
-        if not class_id: 
+
+        if not class_id:
             QMessageBox.warning(self, "Attention", "Veuillez sélectionner une classe.")
             return
 
@@ -615,7 +623,7 @@ class StudentAttendanceWindow(QMainWindow):
         class_id = self.combo_class_report.currentData()
         self.combo_student_report.clear()
         self.combo_student_report.addItem("Tous les élèves", None)
-        
+
         if not class_id: return
         active_year = self.get_active_year_id()
 
@@ -636,15 +644,15 @@ class StudentAttendanceWindow(QMainWindow):
             self.table_report.setItem(idx, 0, QTableWidgetItem(str(r['date']) if r['date'] else ""))
             self.table_report.setItem(idx, 1, QTableWidgetItem(r['name']))
             self.table_report.setItem(idx, 2, QTableWidgetItem(r['class']))
-            
+
             # Color coding the status for visual clarity
             status_item = QTableWidgetItem(r['status'])
             if r['status'] == 'Absent':
-                status_item.setForeground(QColor(239, 68, 68)) # Red
+                status_item.setForeground(QColor(239, 68, 68))  # Red
             elif r['status'] == 'Retard':
-                status_item.setForeground(QColor(245, 158, 11)) # Orange
+                status_item.setForeground(QColor(245, 158, 11))  # Orange
             self.table_report.setItem(idx, 3, status_item)
-            
+
             motif = r['reason']
             if r['justifie']: motif += " (Justifié)"
             self.table_report.setItem(idx, 4, QTableWidgetItem(motif))
@@ -725,7 +733,7 @@ class StudentAttendanceWindow(QMainWindow):
             if report_type == "daily": title = f"RAPPORT JOURNALIER ({self.date_to.date().toString('yyyy-MM-dd')})"
             elif report_type == "individual": title = "HISTORIQUE INDIVIDUEL D'ASSIDUITE"
             elif report_type == "stats": title = "RAPPORT STATISTIQUE"
-            
+
             pdf.set_font(pdf.font_name, 'B', 12)
             pdf.cell(0, 10, pdf.sanitize(title), 0, 1, 'C')
             pdf.set_font(pdf.font_name, '', 10)
@@ -738,7 +746,7 @@ class StudentAttendanceWindow(QMainWindow):
                 pdf.cell(30, 10, "Absences", 1, 0, 'C', True)
                 pdf.cell(30, 10, "Retards", 1, 0, 'C', True)
                 pdf.cell(50, 10, "Taux Presence", 1, 1, 'C', True)
-                
+
                 stats = {}
                 for row in data:
                     name = row['name']
@@ -746,7 +754,7 @@ class StudentAttendanceWindow(QMainWindow):
                     stats[name]['total'] += 1
                     if row['status'] == 'Absent': stats[name]['abs'] += 1
                     if row['status'] == 'Retard': stats[name]['late'] += 1
-                
+
                 apply_table_body_style(pdf, pdf.font_name, 10)
                 for idx, (name, val) in enumerate(stats.items()):
                     rate = 100 - ((val['abs'] / val['total']) * 100) if val['total'] > 0 else 100
@@ -767,12 +775,12 @@ class StudentAttendanceWindow(QMainWindow):
                     set_zebra_row_fill(pdf, idx)
                     pdf.cell(30, 10, str(row['date']), 1, 0, 'L', True)
                     pdf.cell(60, 10, self.sanitize_text(row['name']), 1, 0, 'L', True)
-                    
+
                     status_txt = self.sanitize_text(row['status'])
                     if row['justifie']: status_txt += " (J)"
-                    
+
                     pdf.cell(30, 10, status_txt, 1, 0, 'C', True)
-                    
+
                     motif = self.sanitize_text(row['reason']) if row['reason'] else "-"
                     pdf.cell(70, 10, motif, 1, 1, 'L', True)
 
@@ -787,6 +795,7 @@ class StudentAttendanceWindow(QMainWindow):
             )
         except Exception as e:
             QMessageBox.critical(self, "Erreur", f"Erreur PDF: {str(e)}")
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

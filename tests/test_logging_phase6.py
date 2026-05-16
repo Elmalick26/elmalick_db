@@ -219,8 +219,8 @@ class TestRequestLoggingMiddleware:
         repo.list_students.return_value = []
 
         with patch("api.routes_students.DatabaseManager", return_value=db), \
-             patch("api.routes_students.StudentsApiRepository", return_value=repo), \
-             caplog.at_level(logging.INFO, logger="api.requests"):
+                patch("api.routes_students.StudentsApiRepository", return_value=repo), \
+                caplog.at_level(logging.INFO, logger="api.requests"):
             r = client.get("/api/v1/students/", headers=_admin_headers())
 
         assert r.status_code == 200
@@ -233,8 +233,8 @@ class TestRequestLoggingMiddleware:
         repo.list_students.return_value = []
 
         with patch("api.routes_students.DatabaseManager", return_value=db), \
-             patch("api.routes_students.StudentsApiRepository", return_value=repo), \
-             caplog.at_level(logging.INFO, logger="api.requests"):
+                patch("api.routes_students.StudentsApiRepository", return_value=repo), \
+                caplog.at_level(logging.INFO, logger="api.requests"):
             client.get("/api/v1/students/", headers=_admin_headers())
 
         assert any("200" in m for m in caplog.messages)
@@ -246,8 +246,8 @@ class TestRequestLoggingMiddleware:
         repo.list_students.return_value = []
 
         with patch("api.routes_students.DatabaseManager", return_value=db), \
-             patch("api.routes_students.StudentsApiRepository", return_value=repo), \
-             caplog.at_level(logging.INFO, logger="api.requests"):
+                patch("api.routes_students.StudentsApiRepository", return_value=repo), \
+                caplog.at_level(logging.INFO, logger="api.requests"):
             client.get("/api/v1/students/", headers=_admin_headers())
 
         assert any("user=admin" in m for m in caplog.messages)
@@ -279,9 +279,9 @@ class TestRequestLoggingMiddleware:
         # under our control (needed because time.perf_counter is a C built-in
         # that patch() cannot reliably replace on Python 3.14).
         with patch("api.main.time") as mock_time, \
-             patch("api.routes_students.DatabaseManager", return_value=db), \
-             patch("api.routes_students.StudentsApiRepository", return_value=repo), \
-             patch("api.main._req_logger", mock_logger):
+                patch("api.routes_students.DatabaseManager", return_value=db), \
+                patch("api.routes_students.StudentsApiRepository", return_value=repo), \
+                patch("api.main._req_logger", mock_logger):
             mock_time.perf_counter = fake_counter
             client.get("/api/v1/students/", headers=_admin_headers())
 

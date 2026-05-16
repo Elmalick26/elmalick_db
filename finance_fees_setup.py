@@ -6,8 +6,8 @@ from database_setup import DatabaseManager
 from repositories.finance_repo import FinanceRepository
 from app_logger import AppLogger
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
-                             QHBoxLayout, QTableWidget, QTableWidgetItem, 
-                             QPushButton, QLabel, QComboBox, QMessageBox, 
+                             QHBoxLayout, QTableWidget, QTableWidgetItem,
+                             QPushButton, QLabel, QComboBox, QMessageBox,
                              QHeaderView, QGroupBox, QDoubleSpinBox, QTabWidget,
                              QFrame, QGridLayout, QGraphicsDropShadowEffect)
 from PyQt6.QtCore import Qt
@@ -20,6 +20,7 @@ from ui_styles import ThemeManager, Colors, get_table_style, get_tabs_style, get
 THEME_AVAILABLE = True
 FEES_REPORT_OUTPUT_MODE = get_report_output_mode("fees_report_mode", "save")
 
+
 class FeesSetupWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -28,7 +29,7 @@ class FeesSetupWindow(QMainWindow):
         self.current_fees_report_rows = []
         self.current_fees_report_headers = []
         self.current_fees_report_title = ""
-        
+
         # تطبيق المظهر (Dark Mode أو Light Mode)
         if THEME_AVAILABLE:
             ThemeManager.apply_theme(self)
@@ -44,7 +45,7 @@ class FeesSetupWindow(QMainWindow):
                 }}
                 QGroupBox::title {{ subcontrol-origin: margin; subcontrol-position: top left; padding: 0 5px; left: 10px; }}
             """)
-        
+
         self.init_ui()
         self.load_classes()
 
@@ -73,7 +74,7 @@ class FeesSetupWindow(QMainWindow):
             QFrame {{ background-color: {bg_header}; border-radius: 10px; }}
         """)
         header_frame.setMaximumHeight(80)
-        
+
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(15)
         shadow.setColor(QColor(15, 23, 42, 40))
@@ -82,10 +83,10 @@ class FeesSetupWindow(QMainWindow):
 
         hl = QHBoxLayout(header_frame)
         hl.setContentsMargins(20, 15, 20, 15)
-        
+
         icon_lbl = QLabel("⚙️")
         icon_lbl.setStyleSheet("font-size: 32px; background: transparent;")
-        
+
         title_layout = QVBoxLayout()
         header_lbl = QLabel("CONFIGURATION FINANCIÈRE")
         header_lbl.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
@@ -169,15 +170,15 @@ class FeesSetupWindow(QMainWindow):
         layout = QVBoxLayout(tab)
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(15)
-        
+
         reg_card = self.create_card()
         hlay = QHBoxLayout(reg_card)
         hlay.setContentsMargins(20, 20, 20, 20)
         hlay.setSpacing(15)
-        
+
         self.combo_class_reg = self.styled_combo()
         self.spin_reg_amount = self.styled_spinbox()
-        
+
         btn_save_reg = QPushButton("Enregistrer")
         btn_save_reg.setCursor(Qt.CursorShape.PointingHandCursor)
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
@@ -186,21 +187,21 @@ class FeesSetupWindow(QMainWindow):
             QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}
         """)
         btn_save_reg.clicked.connect(self.save_registration_fee)
-        
+
         hlay.addWidget(QLabel("Classe:"))
         hlay.addWidget(self.combo_class_reg, 1)
         hlay.addWidget(QLabel("Montant:"))
         hlay.addWidget(self.spin_reg_amount, 1)
         hlay.addWidget(btn_save_reg)
-        
+
         layout.addWidget(reg_card)
-        
+
         self.table_reg = QTableWidget(0, 2)
         self.style_table(self.table_reg)
         self.table_reg.setHorizontalHeaderLabels(["Classe / الفصل", "Montant Inscription / مبلغ التسجيل"])
         self.table_reg.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         layout.addWidget(self.table_reg)
-        
+
         self.tabs.addTab(tab, "  📝 Inscription / التسجيل  ")
 
     # ============================================
@@ -211,14 +212,14 @@ class FeesSetupWindow(QMainWindow):
         layout = QVBoxLayout(tab)
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(15)
-        
+
         sel_card = self.create_card()
         slay = QHBoxLayout(sel_card)
         slay.setContentsMargins(20, 20, 20, 20)
-        
+
         self.combo_class_month = self.styled_combo()
         self.combo_class_month.currentIndexChanged.connect(self.load_monthly_schedule)
-        
+
         slay.addWidget(QLabel("Configurer pour la classe:"))
         slay.addWidget(self.combo_class_month, 1)
         layout.addWidget(sel_card)
@@ -230,10 +231,10 @@ class FeesSetupWindow(QMainWindow):
             QLabel {{ color: {colors.TEXT_PRIMARY}; font-weight: bold; }}
         """)
         tool_layout = QVBoxLayout(tool_frame)
-        
+
         tool_header = QLabel("⚡ Outil de Calcul Rapide / أداة الحساب السريع")
         tool_layout.addWidget(tool_header)
-        
+
         tlay = QHBoxLayout()
         self.spin_base_price = self.styled_spinbox()
         self.spin_base_price.setValue(5000)
@@ -241,7 +242,7 @@ class FeesSetupWindow(QMainWindow):
             QDoubleSpinBox {{ background: {colors.INPUT_BG}; border: 1px solid {colors.SUCCESS}; border-radius: 4px; padding: 5px; color: {colors.TEXT_PRIMARY}; }}
             QDoubleSpinBox:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}
         """)
-        
+
         btn_apply_smart = QPushButton("Répartition 4+4 (Smart)")
         btn_apply_smart.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_apply_smart.setStyleSheet(f"""
@@ -249,7 +250,7 @@ class FeesSetupWindow(QMainWindow):
             QPushButton:hover {{ background-color: {colors.SUCCESS_HOVER}; }}
         """)
         btn_apply_smart.clicked.connect(self.apply_smart_distribution)
-        
+
         btn_apply_flat = QPushButton("Prix Unique (Flat)")
         btn_apply_flat.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_apply_flat.setStyleSheet(f"""
@@ -257,13 +258,13 @@ class FeesSetupWindow(QMainWindow):
             QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}
         """)
         btn_apply_flat.clicked.connect(self.apply_flat_distribution)
-        
+
         tlay.addWidget(QLabel("Prix de base:"))
         tlay.addWidget(self.spin_base_price)
         tlay.addWidget(btn_apply_smart)
         tlay.addWidget(btn_apply_flat)
         tool_layout.addLayout(tlay)
-        
+
         layout.addWidget(tool_frame)
 
         self.table_months = QTableWidget(9, 2)
@@ -271,13 +272,13 @@ class FeesSetupWindow(QMainWindow):
         self.table_months.setHorizontalHeaderLabels(["Mois / الشهر", "Montant à Payer (FCFA)"])
         self.table_months.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.table_months.verticalHeader().setDefaultSectionSize(40)
-        
+
         self.academic_months = [
-            (10, "Octobre / أكتوبر"), (11, "Novembre / نوفمبر"), (12, "Décembre / ديسمبر"), 
-            (1, "Janvier / يناير"), (2, "Février / فبراير"), (3, "Mars / مارس"), 
+            (10, "Octobre / أكتوبر"), (11, "Novembre / نوفمبر"), (12, "Décembre / ديسمبر"),
+            (1, "Janvier / يناير"), (2, "Février / فبراير"), (3, "Mars / مارس"),
             (4, "Avril / أبريل"), (5, "Mai / مايو"), (6, "Juin / يونيو")
         ]
-        
+
         for i, (idx, name) in enumerate(self.academic_months):
             self.table_months.setItem(i, 0, QTableWidgetItem(name))
             sp = QDoubleSpinBox()
@@ -285,7 +286,7 @@ class FeesSetupWindow(QMainWindow):
             sp.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)
             sp.setStyleSheet(f"background: transparent; border: none; font-weight: bold; color: {colors.TEXT_PRIMARY};")
             self.table_months.setCellWidget(i, 1, sp)
-            
+
         layout.addWidget(self.table_months)
 
         btn_save_schedule = QPushButton("💾 ENREGISTRER L'ÉCHÉANCIER")
@@ -358,17 +359,17 @@ class FeesSetupWindow(QMainWindow):
             db = DatabaseManager()
             with db.get_connection() as conn:
                 classes = FinanceRepository(conn).list_classes()
-                
+
                 self.combo_class_reg.clear()
                 self.combo_class_month.clear()
                 self.combo_class_reg.addItem("- Choisir -", None)
                 self.combo_class_month.addItem("- Choisir -", None)
-                
+
                 for c in classes:
                     class_name = c[1] if c[1] else "-"
                     self.combo_class_reg.addItem(class_name, c[0])
                     self.combo_class_month.addItem(class_name, c[0])
-            
+
             self.load_reg_table()
         except Exception as e:
             QMessageBox.critical(self, "Erreur", f"Erreur de chargement: {e}")
@@ -376,9 +377,9 @@ class FeesSetupWindow(QMainWindow):
     def save_registration_fee(self):
         class_id = self.combo_class_reg.currentData()
         amount = self.spin_reg_amount.value()
-        if not class_id: 
+        if not class_id:
             return
-            
+
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
@@ -396,11 +397,11 @@ class FeesSetupWindow(QMainWindow):
             with db.get_connection() as conn:
                 rows = FinanceRepository(conn).get_registration_fees_table()
             for r in rows:
-                    idx = self.table_reg.rowCount()
-                    self.table_reg.insertRow(idx)
-                    amount = float(r[1] or 0)
-                    self.table_reg.setItem(idx, 0, QTableWidgetItem(r[0] if r[0] else "-"))
-                    self.table_reg.setItem(idx, 1, QTableWidgetItem(f"{amount:,.0f} FCFA"))
+                idx = self.table_reg.rowCount()
+                self.table_reg.insertRow(idx)
+                amount = float(r[1] or 0)
+                self.table_reg.setItem(idx, 0, QTableWidgetItem(r[0] if r[0] else "-"))
+                self.table_reg.setItem(idx, 1, QTableWidgetItem(f"{amount:,.0f} FCFA"))
         except Exception as e:
             AppLogger.error("FinanceFeesSetup", f"Error loading registration table: {e}")
 
@@ -415,12 +416,12 @@ class FeesSetupWindow(QMainWindow):
 
     def apply_flat_distribution(self):
         base = self.spin_base_price.value()
-        for i in range(9): 
+        for i in range(9):
             self.table_months.cellWidget(i, 1).setValue(base)
 
     def save_monthly_schedule(self):
         class_id = self.combo_class_month.currentData()
-        if not class_id: 
+        if not class_id:
             QMessageBox.warning(self, "Erreur", "Veuillez sélectionner une classe.")
             return
 
@@ -440,16 +441,16 @@ class FeesSetupWindow(QMainWindow):
     def load_monthly_schedule(self):
         class_id = self.combo_class_month.currentData()
         for i in range(9): self.table_months.cellWidget(i, 1).setValue(0)
-        
+
         if not class_id: return
-        
+
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
                 rows = FinanceRepository(conn).get_monthly_fee_schedule(class_id)
-            
+
             data_map = {r[0]: r[2] for r in rows}
-            
+
             for i, (m_idx, _) in enumerate(self.academic_months):
                 if m_idx in data_map:
                     self.table_months.cellWidget(i, 1).setValue(data_map[m_idx])
@@ -559,6 +560,7 @@ class FeesSetupWindow(QMainWindow):
             success_save_message="Rapport des frais exporté.",
             success_print_message="Rapport des frais envoyé à l'imprimante.",
         )
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

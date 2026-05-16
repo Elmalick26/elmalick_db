@@ -1,12 +1,12 @@
-﻿import sys
+import sys
 import os
 from datetime import datetime
 from database_setup import DatabaseManager
 from app_logger import AppLogger
-from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
-                             QHBoxLayout, QTableWidget, QTableWidgetItem, 
-                             QPushButton, QLabel, QComboBox, QMessageBox, 
-                             QHeaderView, QFrame, QGroupBox, QFileDialog, 
+from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
+                             QHBoxLayout, QTableWidget, QTableWidgetItem,
+                             QPushButton, QLabel, QComboBox, QMessageBox,
+                             QHeaderView, QFrame, QGroupBox, QFileDialog,
                              QTabWidget, QGridLayout, QSpinBox, QGraphicsDropShadowEffect)
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QFont, QColor
@@ -26,6 +26,7 @@ try:
 except ModuleNotFoundError:
     ARABIC_SUPPORT = False
 
+
 def _get_arabic_font_path():
     base_dir = os.path.dirname(os.path.abspath(__file__))
     candidates = [
@@ -41,6 +42,7 @@ def _get_arabic_font_path():
             return path
     return None
 
+
 def _contains_arabic(text):
     if text is None:
         return False
@@ -50,6 +52,7 @@ def _contains_arabic(text):
         "\u0600" <= ch <= "\u06FF" or "\u0750" <= ch <= "\u077F" or "\u08A0" <= ch <= "\u08FF"
         for ch in text
     )
+
 
 def _prepare_pdf_text(text):
     if text is None:
@@ -64,12 +67,14 @@ def _prepare_pdf_text(text):
             return text
     return text
 
+
 def _sanitize_latin(text):
     if text is None:
         return ""
     if not isinstance(text, str):
         text = str(text)
     return text.encode('latin-1', 'ignore').decode('latin-1')
+
 
 def _register_arabic_font(pdf):
     font_path = _get_arabic_font_path()
@@ -85,6 +90,8 @@ def _register_arabic_font(pdf):
         return False
 
 # --- 1. محرك الحسابات المنطقي (Back-End Logic) ---
+
+
 class GradeCalculator:
     def __init__(self):
         pass
@@ -165,19 +172,19 @@ class GradeCalculator:
 
                 for sub in subjects:
                     sub_id, sub_name_fr, sub_name_ar, sub_coef = sub
-                    
+
                     sum_devoirs = 0
                     count_devoirs = 0
                     exam_score = 0
                     has_exam = False
-                    
+
                     weighted_sum_prim = 0
                     total_weight_prim = 0
 
                     for assess in assessments:
                         assess_id, assess_name, assess_code, assess_w = assess
                         score = self._get_grade_score(repo, std_id, sub_id, assess_id, year_id)
-                        
+
                         if not is_primary:
                             if 'DEV' in str(assess_code).upper() or 'DEVOIR' in str(assess_name).upper():
                                 sum_devoirs += score
@@ -202,7 +209,7 @@ class GradeCalculator:
                         moy_subject = (weighted_sum_prim / total_weight_prim) if total_weight_prim > 0 else 0
 
                     points = moy_subject * sub_coef
-                    
+
                     subject_label = f"{sub_name_fr} / {sub_name_ar}" if sub_name_ar else sub_name_fr
 
                     student_data['subjects'].append({
@@ -216,7 +223,7 @@ class GradeCalculator:
                         'points': points,
                         'appreciation': self.get_appreciation(moy_subject, max_score)
                     })
-                    
+
                     student_data['total_points'] += points
                     student_data['total_coef'] += sub_coef
 
@@ -230,7 +237,7 @@ class GradeCalculator:
 
                 if student_data['total_coef'] > 0:
                     student_data['general_average'] = student_data['total_points'] / student_data['total_coef']
-                
+
                 class_results.append(student_data)
 
         return self.calculate_rank(class_results, 'general_average')
@@ -238,7 +245,7 @@ class GradeCalculator:
     def get_student_bulletin_data(self, student_id, class_id, period_id):
         all_results = self.get_student_averages(class_id, period_id, include_conduct=True)
         target_student = next((s for s in all_results if s['id'] == student_id), None)
-        
+
         if not target_student: return None
 
         db = DatabaseManager()
@@ -254,33 +261,33 @@ class GradeCalculator:
             abs_cnt = self._get_attendance_count(repo, student_id, 'Absent', year_id, period_id)
             ret_cnt = self._get_attendance_count(repo, student_id, 'Retard', year_id, period_id)
             target_student['attendance'] = {'abs': abs_cnt, 'ret': ret_cnt}
-            
+
             if 'discipline' not in target_student:
                 target_student['discipline'] = self._get_discipline_data(
                     repo, student_id, year_id, target_student['is_primary'], period_id
                 )
-            
+
             target_student['mention'] = self.get_mention(target_student['general_average'], target_student['max_score'])
             target_student['observation'] = self.get_observation(target_student['general_average'], target_student['max_score'])
 
             # Annual Logic
             meta = repo.get_period_meta(period_id)
             target_student['annual'] = None
-            
+
             if meta:
                 y_id, c_id = meta
                 all_periods = repo.list_periods_for_year_and_cycle(y_id, c_id)
-                
+
                 if all_periods and all_periods[-1][0] == period_id:
                     annual_avgs = []
-                    
+
                     period_results_cache = {}
                     for pid, _, _ in all_periods:
                         period_results_cache[pid] = self.get_student_averages(class_id, pid)
 
                     # ===== تعديل مهم: جلب الطلاب من جدول التسجيل SCN =====
                     all_ids = repo.list_student_ids_in_class(class_id, y_id)
-                    
+
                     class_annual_avgs = {}
                     for sid in all_ids:
                         s_sum = 0
@@ -293,7 +300,7 @@ class GradeCalculator:
                         class_annual_avgs[sid] = s_sum / s_cnt if s_cnt > 0 else 0.0
 
                     ann_avg = class_annual_avgs.get(student_id, 0.0)
-                    
+
                     for pid, pname_fr, pname_ar in all_periods:
                         p_res = next((x for x in period_results_cache[pid] if x['id'] == student_id), None)
                         val = p_res['general_average'] if p_res else 0.0
@@ -302,9 +309,9 @@ class GradeCalculator:
 
                     sorted_students = sorted(class_annual_avgs.items(), key=lambda x: x[1], reverse=True)
                     annual_rank = next((i + 1 for i, (sid, _) in enumerate(sorted_students) if sid == student_id), 1)
-                    
-                    verdict = "Admis" if ann_avg >= (target_student['max_score']/2) else "Redouble"
-                    
+
+                    verdict = "Admis" if ann_avg >= (target_student['max_score'] / 2) else "Redouble"
+
                     target_student['annual'] = {
                         'periods': annual_avgs,
                         'annual_average': ann_avg,
@@ -320,12 +327,12 @@ class GradeCalculator:
             'required_points': required_points,
             'total_coef': target_student['total_coef'],
             'average': target_student['general_average'],
-            'rank': target_student['rank'], 
+            'rank': target_student['rank'],
             'class_size': class_size,
             'mention': target_student['mention'],
             'observation': target_student['observation']
         }
-        
+
         target_student['transcript'] = []
         for sub in target_student['subjects']:
             target_student['transcript'].append({
@@ -358,7 +365,7 @@ class GradeCalculator:
         if n < 16: return "Bien / جيد"
         if n < 18: return "Très Bien / جيد جداً"
         return "Excellent / ممتاز"
-    
+
     def get_decision(self, avg, is_primary, max_s=20):
         threshold = 5.0 if is_primary else 10.0
         return "Admis" if avg >= threshold else "Ajourné"
@@ -371,7 +378,7 @@ class GradeCalculator:
         if n < 14: return "Bon travail. Continuez ainsi. / عمل جيد استمر هكذا."
         if n < 16: return "Très bon travail. Félicitations. / عمل ممتاز ومستحق التهاني."
         return "Excellent travail. Tableau d'Honneur. Félicitations. / عمل متميز جداً وجدير بلوحة الشرف."
-    
+
     def get_conduct_appreciation(self, score, max_s=20):
         ratio = 20 / max_s
         n = score * ratio
@@ -383,6 +390,8 @@ class GradeCalculator:
         return "Insuffisant / غير مقبول"
 
 # --- 2. شهادة التفوق (Certificate PDF) ---
+
+
 class CertificatePDF(FPDF):
     def __init__(self, school_info, year_label):
         super().__init__(orientation='L')
@@ -435,7 +444,6 @@ class CertificatePDF(FPDF):
         self.line(10, self.get_y(), self.w - 10, self.get_y())
         self.ln(5)
 
-
     def footer(self):
         self.set_y(-10)
         self.set_font(self.font_name, 'I', 9)
@@ -450,19 +458,19 @@ class CertificatePDF(FPDF):
         self.set_draw_color(0, 0, 0)
 
         self._draw_official_header()
-        
+
         self.set_font(self.font_name, 'B', 40)
         self.set_text_color(25, 25, 112)
         self.cell(0, 20, self.sanitize("TABLEAU D'HONNEUR / لوحة الشرف"), 0, 1, 'C')
         self.set_text_color(0, 0, 0)
         self.ln(10)
-        
+
         self.set_font(self.font_name, '', 18)
         self.cell(0, 15, self.sanitize("Decerne a l'eleve / يمنح للتلميذ:"), 0, 1, 'C')
-        
+
         self.set_font(self.font_name, 'BI', 28)
         self.cell(0, 20, self.sanitize(student_name), 0, 1, 'C')
-        
+
         self.set_font(self.font_name, '', 16)
         self.cell(0, 15, self.sanitize(f"De la classe de / القسم: {class_name}"), 0, 1, 'C')
         period_text = period_name.strip() if isinstance(period_name, str) else ""
@@ -479,12 +487,12 @@ class CertificatePDF(FPDF):
         self.set_font(self.font_name, '', 13)
         self.cell(260, 8, self.sanitize(line_fr), 0, 1, 'C')
         self.cell(260, 8, self.sanitize(line_ar), 0, 1, 'C')
-        
+
         self.ln(5)
         self.set_font(self.font_name, 'B', 14)
         stats_txt = f"Moyenne: {avg:.2f}   |   Rang: {rank}   |   Mention: {mention}"
         self.cell(0, 15, self.sanitize(stats_txt), 1, 1, 'C')
-        
+
         self.ln(5)
         self.set_font(self.font_name, 'I', 12)
         self.cell(90, 10, "", 0, 0, 'C')
@@ -492,6 +500,8 @@ class CertificatePDF(FPDF):
         self.cell(90, 10, "Le Directeur", 0, 1, 'C')
 
 # --- 3. كلاس PDF للكشف (Bulletin) ---
+
+
 class BulletinPDF(FPDF):
     def __init__(self, school_info, period_name, year_label):
         super().__init__()
@@ -513,7 +523,7 @@ class BulletinPDF(FPDF):
         left_x, left_y = 10, 5
         self.set_xy(left_x, left_y)
         self.set_font(self.font_name, '', 8)
-        
+
         if self.school_info:
             republic = self.sanitize(self.school_info[1])
             self.cell(80, 3, republic, 0, 1, 'L')
@@ -532,7 +542,7 @@ class BulletinPDF(FPDF):
 
         right_x = 175
         logo_path = self.school_info[8] if self.school_info and len(self.school_info) > 8 else None
-        
+
         if logo_path and os.path.exists(logo_path):
             try:
                 self.image(logo_path, x=right_x, y=left_y, w=20, h=22)
@@ -564,7 +574,7 @@ class BulletinPDF(FPDF):
         self.cell(120, 7, self.sanitize(title_fr), 0, 0, 'R', True)
         self.cell(70, 7, self.sanitize(title_ar), 0, 1, 'L', True)
         self.ln(2)
-        
+
         self.set_font(self.font_name, '', 9)
         full_name = f"{data['info'][0]} {data['info'][1]}".upper()
         full_name_ar = f"{data['info'][2]} {data['info'][3]}".strip()
@@ -599,7 +609,7 @@ class BulletinPDF(FPDF):
         self.cell(3, 6, self.sanitize(f""), 0, 0, 'L', True)
         self.cell(47, 6, self.sanitize(f"ABSENCES: {data['attendance']['abs']}"), 0, 0, 'L', True)
         self.cell(47, 6, self.sanitize(f"غياب: {data['attendance']['abs']}"), 0, 1, 'R', True)
-        
+
         if 'discipline' in data:
             disc = data['discipline']
             self.cell(47, 6, self.sanitize(f"CONDUITE: {disc['conduct_score']:.2f}/{int(disc['base_score'])}"), 0, 0, 'L', True)
@@ -607,16 +617,16 @@ class BulletinPDF(FPDF):
             self.cell(3, 6, self.sanitize(f""), 0, 0, 'L', True)
             self.cell(47, 6, self.sanitize(f"Pts deduits: {disc['total_deducted']:.1f}"), 0, 0, 'L', True)
             self.cell(47, 6, self.sanitize(f"نقاط محذوفة: {disc['total_deducted']:.1f}"), 0, 1, 'R', True)
-        
+
         self.ln(2)
-        
+
         is_primary = data.get('is_primary', False)
         max_s = int(data.get('max_score', 20))
-        
+
         self.set_fill_color(52, 73, 94)
         self.set_text_color(255, 255, 255)
         self.set_font(self.font_name, 'B', 9)
-        
+
         if not is_primary:
             cols = [50, 25, 20, 20, 20, 20, 35]
             headers = ["Matière / المادة", "Moy Dev / فروض", "Compo / اختبار", f"Moy/{max_s}", "Coef / معامل", "Total", "Appreciation / تقدير"]
@@ -625,12 +635,12 @@ class BulletinPDF(FPDF):
             headers = ["Matière / المادة", "Composition / اختبار", "Coef / معامل", "Total", "Appreciation / تقدير"]
 
         for i, h in enumerate(headers):
-            ln_val = 1 if i == len(headers)-1 else 0
+            ln_val = 1 if i == len(headers) - 1 else 0
             self.cell(cols[i], 6, self.sanitize(h), 1, ln_val, 'C', True)
 
         self.set_text_color(0, 0, 0)
         self.set_font(self.font_name, '', 9)
-        
+
         for item in data['transcript']:
             h = 7
             if not is_primary:
@@ -653,12 +663,12 @@ class BulletinPDF(FPDF):
                 self.cell(cols[4], h, self.sanitize(item['appreciation']), 1, 1, 'C')
 
             self.set_font(self.font_name, 'B', 9)
-        
+
         if 'discipline' in data:
             disc = data['discipline']
-            discipline_coef = 1 
+            discipline_coef = 1
             discipline_points = (disc['conduct_score'] / disc['base_score']) * max_s * discipline_coef
-            
+
             if not is_primary:
                 self.set_font(self.font_name, '', 9)
                 self.cell(cols[0], h, self.sanitize("Conduite / السلوك"), 1)
@@ -677,10 +687,10 @@ class BulletinPDF(FPDF):
                 self.cell(cols[2], h, str(discipline_coef), 1, 0, 'C')
                 self.cell(cols[3], h, f"{discipline_points:.1f}", 1, 0, 'C')
                 self.cell(cols[4], h, self.sanitize(disc['appreciation']), 1, 1, 'C')
-        
+
         self.set_fill_color(200, 200, 200)
         self.set_font(self.font_name, 'B', 9)
-        
+
         if not is_primary:
             self.cell(cols[0], h, "TOTAL", 1)
             self.cell(cols[1], h, "", 1, 0, 'C')
@@ -698,65 +708,66 @@ class BulletinPDF(FPDF):
 
         self.ln(3)
         y_start_footer = self.get_y()
-        
+
         self.set_x(140)
         self.set_fill_color(220, 220, 220)
         self.set_font(self.font_name, 'B', 9)
         stats = data['stats']
         w_lbl, w_val, h_row = 25, 35, 6
-        
-        self.cell(w_lbl+w_val, h_row, self.sanitize("RESUME PERIODE / ملخص"), 1, 1, 'C', True)
+
+        self.cell(w_lbl + w_val, h_row, self.sanitize("RESUME PERIODE / ملخص"), 1, 1, 'C', True)
         self.set_x(140); self.cell(w_lbl, h_row, self.sanitize("Moyenne / معدل:"), 1); self.cell(w_val, h_row, f"{stats['average']:.2f}/{int(max_s)}", 1, 1, 'R')
         self.set_x(140); self.cell(w_lbl, h_row, self.sanitize("Rang / ترتيب:"), 1); self.cell(w_val, h_row, f"{stats['rank']}/{stats.get('class_size', '-')}", 1, 1, 'R')
         self.set_x(140); self.cell(w_lbl, h_row, self.sanitize("Mention / تقدير:"), 1); self.cell(w_val, h_row, self.sanitize(stats['mention']), 1, 1, 'R')
-        
+
         self.set_xy(10, y_start_footer)
         self.cell(125, h_row, self.sanitize("OBSERVATION / ملاحظة:"), 1, 1, 'L', True)
         self.set_font(self.font_name, 'I', 9)
-        self.cell(125, h_row*3, self.sanitize(stats['observation']), 1, 1, 'C')
+        self.cell(125, h_row * 3, self.sanitize(stats['observation']), 1, 1, 'C')
 
-        
         if data['annual']:
-            self.set_xy(10, y_start_footer + (h_row*4) + 2)
+            self.set_xy(10, y_start_footer + (h_row * 4) + 2)
             self.set_fill_color(220, 220, 220)
             period_count = len(data['annual']['periods'])
             self.set_font(self.font_name, 'B', 7 if period_count >= 4 else 8)
-            
+
             periods = data['annual']['periods']
             col_w = 190 / (len(periods) + 3)
-            
+
             self.cell(190, h_row, self.sanitize("RESUME ANNUEL / ملخص السنة"), 1, 1, 'C', True)
             for pname, _ in periods:
                 self.cell(col_w, 6, self.sanitize(pname).replace("Trimestre", "T").replace("Semestre", "S"), 1, 0, 'C', True)
             self.cell(col_w, 6, self.sanitize("MOY ANN"), 1, 0, 'C', True)
             self.cell(col_w, 6, self.sanitize("RANG / ترتيب"), 1, 0, 'C', True)
             self.cell(col_w, 6, self.sanitize("DECISION / قرار"), 1, 1, 'C', True)
-            
+
             self.set_y(self.get_y())
             self.set_x(10)
             self.set_font(self.font_name, '', 7 if period_count >= 4 else 8)
             for _, avg in periods:
                 self.cell(col_w, 6, f"{avg:.2f}", 1, 0, 'C')
-            
+
             self.set_font(self.font_name, 'B', 7 if period_count >= 4 else 8)
             self.cell(col_w, 6, f"{data['annual']['annual_average']:.2f}", 1, 0, 'C')
             self.cell(col_w, 6, f"{data['annual']['annual_rank']}/{data['annual'].get('class_size', '-')}", 1, 0, 'C')
             self.cell(col_w, 6, data['annual']['verdict'], 1, 1, 'C')
 
-        self.set_y(y_start_footer + (h_row*8) + 2)
+        self.set_y(y_start_footer + (h_row * 8) + 2)
         self.set_font(self.font_name, 'I', 9)
         self.cell(50, 8, self.sanitize("Cachet du Parent / توقيع الولي"), 0, 0, 'C')
         self.cell(50, 8, "", 0, 0, 'C')
         self.cell(90, 8, self.sanitize("Cachet & Signature du Directeur / توقيع المدير"), 0, 1, 'C')
 
 # --- 3. الواجهة الرسومية (UI) ---
+
+
 class BulletinGenerationWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Génération des Bulletins / إصدار الكشوف")
         self.setMinimumSize(1100, 700)
         self._arabic_font_warned = False
-        
+
         # تطبيق المظهر (Dark Mode أو Light Mode)
         if THEME_AVAILABLE:
             ThemeManager.apply_theme(self)
@@ -771,7 +782,7 @@ class BulletinGenerationWindow(QMainWindow):
                 }}
                 QGroupBox::title {{ subcontrol-origin: margin; subcontrol-position: top left; padding: 0 5px; left: 10px; }}
             """)
-        
+
         self.init_ui()
         self.load_filters()
         self.batch_results = []
@@ -797,7 +808,7 @@ class BulletinGenerationWindow(QMainWindow):
         header_frame = QFrame()
         header_frame.setStyleSheet(f"QFrame {{ background-color: {colors.BG_HEADER}; border-radius: 10px; }}")
         header_frame.setMaximumHeight(80)
-        
+
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(15)
         shadow.setColor(QColor(15, 23, 42, 40))
@@ -806,27 +817,27 @@ class BulletinGenerationWindow(QMainWindow):
 
         hl = QHBoxLayout(header_frame)
         hl.setContentsMargins(20, 15, 20, 15)
-        
+
         icon_lbl = QLabel("🖨️")
         icon_lbl.setStyleSheet("font-size: 32px; background: transparent;")
-        
+
         title_layout = QVBoxLayout()
         header_lbl = QLabel("BULLETINS & RÉSULTATS")
         header_lbl.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
         header_lbl.setStyleSheet(f"color: {colors.HEADER_TEXT}; background: transparent;")
-        
+
         sub_lbl = QLabel("توليد الكشوف، لوحات الشرف، والنتائج السنوية")
         sub_lbl.setFont(QFont("Cairo", 11))
         sub_lbl.setStyleSheet(f"color: {colors.TEXT_SECONDARY}; background: transparent;")
-        
+
         title_layout.addWidget(header_lbl)
         title_layout.addWidget(sub_lbl)
-        
+
         hl.addWidget(icon_lbl)
         hl.addSpacing(15)
         hl.addLayout(title_layout)
         hl.addStretch()
-        
+
         self.layout.addWidget(header_frame)
 
         # Tabs
@@ -840,7 +851,7 @@ class BulletinGenerationWindow(QMainWindow):
                 QTabBar::tab:selected {{ background: {colors.BG_HEADER}; color: {colors.HEADER_TEXT}; }}
                 QTabBar::tab:hover {{ background: {colors.BORDER}; }}
             """)
-        
+
         self.setup_batch_tab()
         self.setup_individual_tab()
         self.setup_honor_roll_tab()
@@ -899,7 +910,7 @@ class BulletinGenerationWindow(QMainWindow):
         layout = QVBoxLayout(tab)
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(15)
-        
+
         filter_card = self.create_card()
         hlay = QHBoxLayout(filter_card)
         hlay.setContentsMargins(15, 15, 15, 15)
@@ -907,20 +918,20 @@ class BulletinGenerationWindow(QMainWindow):
 
         self.combo_class_batch = self.styled_combo()
         self.combo_period_batch = self.styled_combo()
-        
+
         btn_calc_batch = QPushButton("1. Calculer & Aperçu")
         btn_calc_batch.setCursor(Qt.CursorShape.PointingHandCursor)
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
         btn_calc_batch.setStyleSheet(f"QPushButton {{ background-color: {colors.PRIMARY}; color: white; font-weight: bold; padding: 10px; border-radius: 6px; border: none; }} QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}")
         btn_calc_batch.clicked.connect(self.calculate_batch_results)
-        
+
         hlay.addWidget(QLabel("Classe:"))
         hlay.addWidget(self.combo_class_batch, 1)
         hlay.addWidget(QLabel("Période:"))
         hlay.addWidget(self.combo_period_batch, 1)
         hlay.addWidget(btn_calc_batch)
         layout.addWidget(filter_card)
-        
+
         layout.addWidget(QLabel("Aperçu Rapide / معاينة النتائج:"))
         self.table_batch = QTableWidget()
         self.style_table(self.table_batch)
@@ -939,12 +950,12 @@ class BulletinGenerationWindow(QMainWindow):
         btn_print_all.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_print_all.setStyleSheet(f"QPushButton {{ background-color: {colors.SUCCESS}; color: white; padding: 12px; font-weight: bold; border-radius: 8px; border: none; }} QPushButton:hover {{ background-color: {colors.SUCCESS_HOVER}; }}")
         btn_print_all.clicked.connect(self.print_all_bulletins)
-        
+
         btn_layout.addWidget(btn_print_list)
         btn_layout.addStretch()
         btn_layout.addWidget(btn_print_all)
         layout.addLayout(btn_layout)
-        
+
         self.tabs.addTab(tab, "  👥 Classe Complète / فصل كامل  ")
 
     def setup_individual_tab(self):
@@ -952,23 +963,23 @@ class BulletinGenerationWindow(QMainWindow):
         layout = QVBoxLayout(tab)
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(15)
-        
+
         filter_card = self.create_card()
         glay = QGridLayout(filter_card)
         glay.setContentsMargins(15, 15, 15, 15)
         glay.setSpacing(15)
-        
+
         self.combo_class_indiv = self.styled_combo()
         self.combo_class_indiv.currentIndexChanged.connect(self.load_students_indiv)
         self.combo_student_indiv = self.styled_combo()
         self.combo_period_indiv = self.styled_combo()
-        
+
         btn_view = QPushButton("👁️ Afficher")
         btn_view.setCursor(Qt.CursorShape.PointingHandCursor)
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
         btn_view.setStyleSheet(f"QPushButton {{ background-color: {colors.PRIMARY}; color: white; font-weight: bold; padding: 10px; border-radius: 6px; border: none; }} QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}")
         btn_view.clicked.connect(self.view_individual)
-        
+
         btn_print = QPushButton("🖨️ Imprimer")
         btn_print.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_print.setStyleSheet(f"QPushButton {{ background-color: {colors.SUCCESS}; color: white; font-weight: bold; padding: 10px; border-radius: 6px; border: none; }} QPushButton:hover {{ background-color: {colors.SUCCESS_HOVER}; }}")
@@ -982,23 +993,23 @@ class BulletinGenerationWindow(QMainWindow):
         glay.addWidget(self.combo_period_indiv, 1, 1)
         glay.addWidget(btn_view, 1, 2)
         glay.addWidget(btn_print, 1, 3)
-        
+
         layout.addWidget(filter_card)
 
         info_frame = QFrame()
         info_frame.setStyleSheet(f"QFrame {{ background-color: {colors.BG_MAIN}; border-radius: 8px; border: 1px dashed {colors.BORDER}; }} QLabel {{ font-weight: bold; font-size: 13px; color: {colors.TEXT_PRIMARY}; }}")
         ilayout = QHBoxLayout(info_frame)
-        
+
         self.lbl_attendance = QLabel("Absences: -- | Retards: --")
         self.lbl_attendance.setStyleSheet(f"color: {colors.DANGER};")
-        
+
         self.lbl_final_stats = QLabel("Moyenne: -- | Rang: -- | Mention: --")
         self.lbl_final_stats.setStyleSheet(f"color: {colors.SUCCESS};")
-        
+
         ilayout.addWidget(self.lbl_attendance)
         ilayout.addStretch()
         ilayout.addWidget(self.lbl_final_stats)
-        
+
         layout.addWidget(info_frame)
 
         layout.addWidget(QLabel("Détails des Notes / تفاصيل الدرجات:"))
@@ -1009,7 +1020,7 @@ class BulletinGenerationWindow(QMainWindow):
         self.table_preview.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.table_preview.setColumnWidth(1, 220)
         layout.addWidget(self.table_preview)
-        
+
         self.tabs.addTab(tab, "  👤 Bulletin Individuel / كشف فردي  ")
 
     def setup_honor_roll_tab(self):
@@ -1017,41 +1028,41 @@ class BulletinGenerationWindow(QMainWindow):
         layout = QVBoxLayout(tab)
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(15)
-        
+
         grp_card = self.create_card()
         hlay = QHBoxLayout(grp_card)
         hlay.setContentsMargins(15, 15, 15, 15)
         hlay.setSpacing(15)
-        
+
         self.combo_class_honor = self.styled_combo()
         self.combo_period_honor = self.styled_combo()
         self.spin_threshold = self.styled_spinbox(prefix="Top: ", min_val=1, max_val=50)
         self.spin_threshold.setValue(3)
-        
+
         btn_calc = QPushButton("Afficher Liste")
         btn_calc.setCursor(Qt.CursorShape.PointingHandCursor)
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
         btn_calc.setStyleSheet(f"QPushButton {{ background-color: {colors.SECONDARY}; color: white; font-weight: bold; padding: 10px; border-radius: 6px; border: none; }} QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}")
         btn_calc.clicked.connect(self.calculate_honor_roll)
-        
+
         hlay.addWidget(QLabel("Classe:")); hlay.addWidget(self.combo_class_honor, 1)
         hlay.addWidget(QLabel("Période:")); hlay.addWidget(self.combo_period_honor, 1)
         hlay.addWidget(self.spin_threshold)
         hlay.addWidget(btn_calc)
         layout.addWidget(grp_card)
-        
+
         self.table_honor = QTableWidget(0, 4)
         self.style_table(self.table_honor)
         self.table_honor.setHorizontalHeaderLabels(["Rang", "Élève", "Moyenne", "Mention"])
         self.table_honor.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         layout.addWidget(self.table_honor)
-        
+
         btn_cert = QPushButton("🏆 Imprimer Attestations d'Excellence")
         btn_cert.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_cert.setStyleSheet(f"QPushButton {{ background-color: {colors.WARNING}; color: white; padding: 12px; font-weight: bold; border-radius: 8px; border: none; }} QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}")
         btn_cert.clicked.connect(self.print_certificates)
         layout.addWidget(btn_cert)
-        
+
         self.tabs.addTab(tab, "  🏆 Excellence / التميز  ")
 
     def load_filters(self):
@@ -1081,7 +1092,7 @@ class BulletinGenerationWindow(QMainWindow):
                 self.combo_class_batch.addItem(class_label, c[0])
                 self.combo_class_indiv.addItem(class_label, c[0])
                 self.combo_class_honor.addItem(class_label, c[0])
-                
+
             seen_periods = set()
             for p in periods:
                 if p[1] not in seen_periods:
@@ -1098,7 +1109,7 @@ class BulletinGenerationWindow(QMainWindow):
         class_id = self.combo_class_indiv.currentData()
         self.combo_student_indiv.clear()
         if not class_id: return
-        
+
         active_year = self.get_active_year_id()
         if active_year == -1: return
 
@@ -1146,7 +1157,7 @@ class BulletinGenerationWindow(QMainWindow):
         class_id = self.combo_class_batch.currentData()
         p_name = self.combo_period_batch.currentText()
         real_period_id = self.get_real_period_id(class_id, p_name)
-        
+
         if not real_period_id:
             QMessageBox.warning(self, "Erreur", "Période invalide pour cette classe.")
             return
@@ -1156,7 +1167,7 @@ class BulletinGenerationWindow(QMainWindow):
             self.batch_results = calc.get_student_averages(class_id, real_period_id, include_conduct=True)
             is_primary, max_score = calc.get_class_context(class_id)
             class_size = len(self.batch_results)
-            
+
             self.table_batch.setRowCount(0)
             for row_data in self.batch_results:
                 idx = self.table_batch.rowCount()
@@ -1238,10 +1249,10 @@ class BulletinGenerationWindow(QMainWindow):
             title_style = '' if font_name == "ArabicFont" else 'B'
             pdf.set_font(font_name, title_style, 12)
             pdf.set_text_color(15, 23, 42)
-            
+
             title = f"Liste Récapitulative des Résultats - {self.combo_period_batch.currentText()} - {self.combo_class_batch.currentText()}"
             pdf.cell(0, 10, _prepare_pdf_text(title) if font_name == "ArabicFont" else _sanitize_latin(title), 0, 1, 'C')
-            
+
             pdf.set_font(font_name, title_style, 9)
             pdf.set_fill_color(30, 58, 95)
             pdf.set_text_color(255, 255, 255)
@@ -1251,14 +1262,14 @@ class BulletinGenerationWindow(QMainWindow):
             pdf.cell(25, 8, _prepare_pdf_text("Moyenne") if font_name == "ArabicFont" else _sanitize_latin("Moyenne"), 1, 0, 'C', True)
             pdf.cell(40, 8, _prepare_pdf_text("Mention") if font_name == "ArabicFont" else _sanitize_latin("Mention"), 1, 0, 'C', True)
             pdf.cell(25, 8, _prepare_pdf_text("Décision") if font_name == "ArabicFont" else _sanitize_latin("Décision"), 1, 1, 'C', True)
-            
+
             pdf.set_font(font_name, '', 9)
             pdf.set_text_color(15, 23, 42)
             calc = GradeCalculator()
             class_id = self.combo_class_batch.currentData()
             is_primary, max_score = calc.get_class_context(class_id)
             class_size = len(self.batch_results)
-            
+
             for idx, res in enumerate(self.batch_results):
                 name_fr = _sanitize_latin(res['name'])
                 name_ar = res.get('name_ar', '') or ""
@@ -1273,7 +1284,7 @@ class BulletinGenerationWindow(QMainWindow):
                     pdf.set_fill_color(241, 245, 249)
                 else:
                     pdf.set_fill_color(255, 255, 255)
-                
+
                 pdf.cell(20, 8, f"{res['rank']}/{class_size}", 1, 0, 'C', True)
                 pdf.cell(12, 8, class_number, 1, 0, 'C', True)
                 pdf.cell(68, 8, name_out, 1, 0, 'L', True)
@@ -1309,7 +1320,7 @@ class BulletinGenerationWindow(QMainWindow):
         class_id = self.combo_class_indiv.currentData()
         student_id = self.combo_student_indiv.currentData()
         p_name = self.combo_period_indiv.currentText()
-        
+
         real_period_id = self.get_real_period_id(class_id, p_name)
         if not real_period_id:
             QMessageBox.warning(self, "Erreur", "Période invalide.")
@@ -1322,7 +1333,7 @@ class BulletinGenerationWindow(QMainWindow):
         try:
             calc = GradeCalculator()
             is_primary, max_score = calc.get_class_context(class_id)
-            
+
             batch_results = calc.get_student_averages(class_id, real_period_id, include_conduct=True)
             rank = "--"
             mention = "--"
@@ -1331,24 +1342,24 @@ class BulletinGenerationWindow(QMainWindow):
                     rank = res['rank']
                     mention = calc.get_mention(res['general_average'], max_score)
                     break
-            
+
             data = calc.get_student_bulletin_data(student_id, class_id, real_period_id)
-            
+
             if data:
                 absences = data['attendance']['abs']
                 retards = data['attendance']['ret']
                 avg = data['stats']['average']
-                
+
                 self.lbl_attendance.setText(f"Absences / غياب: {absences} | Retards / تأخر: {retards}")
                 class_size = len(batch_results)
                 self.lbl_final_stats.setText(f"Moyenne / معدل: {avg:.2f} | Rang / ترتيب: {rank}/{class_size} | Mention / تقدير: {mention}")
-                
+
                 self.table_preview.setRowCount(0)
                 for sub in data['transcript']:
                     idx = self.table_preview.rowCount()
                     self.table_preview.insertRow(idx)
                     self.table_preview.setItem(idx, 0, QTableWidgetItem(sub['subject']))
-                    
+
                     details = ""
                     if not data['is_primary']:
                         if sub['moy_devoir'] is not None:
@@ -1357,7 +1368,7 @@ class BulletinGenerationWindow(QMainWindow):
                             details = f"Compo / اختبار: {sub['note_compo']:.2f}"
                     else:
                         details = f"Composition / اختبار: {sub['note_compo']:.2f}"
-                    
+
                     self.table_preview.setItem(idx, 1, QTableWidgetItem(details))
                     self.table_preview.setItem(idx, 2, QTableWidgetItem(str(sub['coef'])))
                     self.table_preview.setItem(idx, 3, QTableWidgetItem(f"{sub['avg']:.2f}"))
@@ -1373,7 +1384,7 @@ class BulletinGenerationWindow(QMainWindow):
             QMessageBox.warning(self, "خط عربي غير موجود", "ضع خط عربي (TTF) داخل مجلد Fonts حتى تظهر العربية في التقارير.")
             self._arabic_font_warned = True
         real_period_id = self.get_real_period_id(class_id, period_name)
-        if not real_period_id: 
+        if not real_period_id:
             QMessageBox.warning(self, "Erreur", "Période invalide.")
             return
 
@@ -1388,9 +1399,9 @@ class BulletinGenerationWindow(QMainWindow):
                 cursor = conn.cursor()
                 year_id = GradeCalculator()._get_period_year_id(cursor, real_period_id)
                 year_label = (
-                    repo.get_year_label(year_id)
-                    or repo.get_last_year_label()
-                    or "202X-202X"
+                    repo.get_year_label(year_id) or
+                    repo.get_last_year_label() or
+                    "202X-202X"
                 )
                 class_res = repo.get_class_names(class_id)
                 class_name = (
@@ -1404,21 +1415,21 @@ class BulletinGenerationWindow(QMainWindow):
             period_slug = self._filename_safe_slug(period_name, "Periode")
             year_slug = self._filename_safe_slug(year_label, "Annee")
             batch_stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            
+
             count = 0
             for std_rank_data in all_ranks:
                 if specific_ids and std_rank_data['id'] not in specific_ids:
                     continue
-                    
+
                 full_data = calc.get_student_bulletin_data(std_rank_data['id'], class_id, real_period_id)
-                
+
                 if not full_data: continue
-                
+
                 full_data['stats']['rank'] = std_rank_data['rank']
-                
+
                 pdf = BulletinPDF(school_info, period_name, year_label)
                 pdf.draw_bulletin(full_data, class_name)
-                
+
                 student_name = full_data['info'][0] if full_data and full_data.get('info') else std_rank_data.get('name', 'Eleve')
                 student_slug = self._filename_safe_slug(student_name, f"Eleve_{std_rank_data.get('id', 'NA')}")
                 bulletin_name = (
@@ -1437,16 +1448,16 @@ class BulletinGenerationWindow(QMainWindow):
         pname = self.combo_period_honor.currentText()
         pid = self.get_real_period_id(cid, pname)
         threshold_rank = self.spin_threshold.value()
-        
+
         if not pid: return
-        
+
         try:
             calc = GradeCalculator()
             all_results = calc.get_student_averages(cid, pid, include_conduct=True)
             _, max_s = calc.get_class_context(cid)
-            
+
             self.honor_list = [s for s in all_results if s['rank'] <= threshold_rank]
-            
+
             self.table_honor.setRowCount(0)
             for s in self.honor_list:
                 idx = self.table_honor.rowCount()
@@ -1469,7 +1480,7 @@ class BulletinGenerationWindow(QMainWindow):
         if not hasattr(self, 'honor_list') or not self.honor_list: return
         folder = QFileDialog.getExistingDirectory(self, "Sauvegarder Certificats")
         if not folder: return
-        
+
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
@@ -1487,7 +1498,7 @@ class BulletinGenerationWindow(QMainWindow):
                     year_label = repo.get_year_label(year_id) or "202X-202X"
                 else:
                     year_label = "202X-202X"
-        
+
             class_name = self.combo_class_honor.currentText()
             period_name = self.combo_period_honor.currentText()
             calc = GradeCalculator()
@@ -1496,7 +1507,7 @@ class BulletinGenerationWindow(QMainWindow):
             period_slug = self._filename_safe_slug(period_name, "Periode")
             year_slug = self._filename_safe_slug(year_label, "Annee")
             batch_stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            
+
             count = 0
             for s in self.honor_list:
                 cert = CertificatePDF(school_info, year_label)
@@ -1512,14 +1523,14 @@ class BulletinGenerationWindow(QMainWindow):
                 )
                 cert.output(os.path.join(folder, cert_name))
                 count += 1
-                
+
             QMessageBox.information(self, "Succès", f"{count} certificats générés.")
         except Exception as e:
             QMessageBox.critical(self, "Erreur", f"Erreur de génération des certificats: {e}")
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
     window = BulletinGenerationWindow()
     window.show()
     sys.exit(app.exec())
-

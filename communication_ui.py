@@ -7,11 +7,11 @@ from fpdf import FPDF
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.application import MIMEApplication
-from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
-                             QHBoxLayout, QPushButton, QLabel, QLineEdit, 
-                             QTextEdit, QComboBox, QMessageBox, QHeaderView, 
-                             QGroupBox, QTableWidget, QTableWidgetItem, QFileDialog, 
-                             QTabWidget, QProgressBar, QFrame, QGridLayout, 
+from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
+                             QHBoxLayout, QPushButton, QLabel, QLineEdit,
+                             QTextEdit, QComboBox, QMessageBox, QHeaderView,
+                             QGroupBox, QTableWidget, QTableWidgetItem, QFileDialog,
+                             QTabWidget, QProgressBar, QFrame, QGridLayout,
                              QGraphicsDropShadowEffect, QCheckBox, QDateEdit)
 from PyQt6.QtCore import Qt, QThread, pyqtSignal, QDate
 from PyQt6.QtGui import QFont, QColor
@@ -27,15 +27,17 @@ THEME_AVAILABLE = True
 COMMUNICATION_REPORT_OUTPUT_MODE = get_report_output_mode("communication_report_mode", "save")
 
 # --- Thread for Sending Emails (يمنع تجمد البرنامج) ---
+
+
 class EmailWorker(QThread):
     progress = pyqtSignal(int)
-    log_signal = pyqtSignal(str, str, str) # email, status, error
+    log_signal = pyqtSignal(str, str, str)  # email, status, error
     finished = pyqtSignal()
 
     def __init__(self, smtp_config, recipients, subject, body, attachment):
         super().__init__()
         self.smtp_config = smtp_config
-        self.recipients = recipients # list of (id, name, email)
+        self.recipients = recipients  # list of (id, name, email)
         self.subject = subject
         self.body = body
         self.attachment = attachment
@@ -45,19 +47,19 @@ class EmailWorker(QThread):
             server = smtplib.SMTP(self.smtp_config['host'], int(self.smtp_config['port']))
             server.starttls()
             server.login(self.smtp_config['email'], self.smtp_config['password'])
-            
+
             total = len(self.recipients)
             for i, (rid, rname, remail) in enumerate(self.recipients):
                 if not remail or "@" not in remail:
                     self.log_signal.emit(rname, "Échec", "Email invalide")
                     continue
-                
+
                 try:
                     msg = MIMEMultipart()
                     msg['From'] = self.smtp_config['email']
                     msg['To'] = remail
                     msg['Subject'] = self.subject
-                    
+
                     # تخصيص نص الرسالة
                     personalized_body = self.body.replace("{NOM}", rname)
                     msg.attach(MIMEText(personalized_body, 'plain'))
@@ -72,14 +74,15 @@ class EmailWorker(QThread):
                     self.log_signal.emit(remail, "Envoyé", "")
                 except Exception as e:
                     self.log_signal.emit(remail, "Échec", str(e))
-                
+
                 self.progress.emit(int((i + 1) / total * 100))
-            
+
             server.quit()
         except Exception as e:
             self.log_signal.emit("Connection", "Erreur SMTP", str(e))
-        
+
         self.finished.emit()
+
 
 class CommunicationWindow(QMainWindow):
     def __init__(self):
@@ -89,7 +92,7 @@ class CommunicationWindow(QMainWindow):
         self.current_comm_report_rows = []
         self.current_comm_report_headers = []
         self.current_comm_report_title = ""
-        
+
         # تطبيق المظهر
         if THEME_AVAILABLE:
             ThemeManager.apply_theme(self)
@@ -103,7 +106,7 @@ class CommunicationWindow(QMainWindow):
                     background-color: {colors.BG_CARD}; font-weight: bold; color: {colors.TEXT_SECONDARY};
                 }}
             """)
-        
+
         self.attachment_path = None
         self.init_ui()
         self.load_settings()
@@ -129,7 +132,7 @@ class CommunicationWindow(QMainWindow):
         header_frame = QFrame()
         header_frame.setStyleSheet(f"QFrame {{ background-color: {colors.BG_HEADER}; border-radius: 10px; }}")
         header_frame.setMaximumHeight(80)
-        
+
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(15)
         shadow.setColor(QColor(15, 23, 42, 40))
@@ -138,27 +141,27 @@ class CommunicationWindow(QMainWindow):
 
         hl = QHBoxLayout(header_frame)
         hl.setContentsMargins(20, 15, 20, 15)
-        
+
         icon_lbl = QLabel("📧")
         icon_lbl.setStyleSheet("font-size: 32px; background: transparent;")
-        
+
         title_layout = QVBoxLayout()
         header_lbl = QLabel("CENTRE DE MESSAGERIE")
         header_lbl.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
         header_lbl.setStyleSheet(f"color: {colors.HEADER_TEXT}; background: transparent;")
-        
+
         sub_lbl = QLabel("إرسال الإشعارات والبريد الإلكتروني")
         sub_lbl.setFont(QFont("Cairo", 11))
         sub_lbl.setStyleSheet(f"color: {colors.TEXT_SECONDARY}; background: transparent;")
-        
+
         title_layout.addWidget(header_lbl)
         title_layout.addWidget(sub_lbl)
-        
+
         hl.addWidget(icon_lbl)
         hl.addSpacing(15)
         hl.addLayout(title_layout)
         hl.addStretch()
-        
+
         self.layout.addWidget(header_frame)
 
         self.tabs = QTabWidget()
@@ -171,12 +174,12 @@ class CommunicationWindow(QMainWindow):
                 QTabBar::tab:selected {{ background: {colors.BG_HEADER}; color: {colors.HEADER_TEXT}; }}
                 QTabBar::tab:hover {{ background: {colors.BORDER}; }}
             """)
-        
+
         self.setup_compose_tab()
         self.setup_settings_tab()
         self.setup_history_tab()
         self.setup_reports_tab()
-        
+
         self.layout.addWidget(self.tabs)
 
     def create_card(self):
@@ -243,42 +246,42 @@ class CommunicationWindow(QMainWindow):
         layout = QVBoxLayout(tab)
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(15)
-        
+
         target_card = self.create_card()
         tlay = QHBoxLayout(target_card)
         tlay.setContentsMargins(15, 15, 15, 15)
-        
+
         self.combo_target_type = self.styled_combo()
         self.combo_target_type.addItems(["Parents d'une Classe / أولياء فصل", "Tout le Personnel / كل الموظفين", "Profs Seulement / الأساتذة"])
         self.combo_target_type.currentIndexChanged.connect(self.toggle_class_combo)
-        
+
         self.combo_class = self.styled_combo()
         self.load_classes()
-        
+
         tlay.addWidget(QLabel("Cible:"))
         tlay.addWidget(self.combo_target_type, 1)
         tlay.addWidget(QLabel("Classe:"))
         tlay.addWidget(self.combo_class, 1)
-        
+
         layout.addWidget(target_card)
 
         msg_card = self.create_card()
         mlay = QVBoxLayout(msg_card)
         mlay.setContentsMargins(15, 15, 15, 15)
-        
+
         self.txt_subject = self.styled_input("Objet / الموضوع")
         self.txt_body = self.styled_text_edit("Message... (Utilisez {NOM} pour insérer le nom du destinataire)")
-        
+
         att_layout = QHBoxLayout()
         self.lbl_attachment = QLabel("Aucun fichier joint")
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
         self.lbl_attachment.setStyleSheet(f"color: {colors.TEXT_SECONDARY}; font-style: italic;")
-        
+
         btn_att = QPushButton("📎 Joindre un fichier")
         btn_att.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_att.setStyleSheet(f"background-color: {colors.PRIMARY}; color: white; border-radius: 6px; padding: 8px; font-weight: bold;")
         btn_att.clicked.connect(self.attach_file)
-        
+
         att_layout.addWidget(btn_att)
         att_layout.addWidget(self.lbl_attachment)
         att_layout.addStretch()
@@ -288,7 +291,7 @@ class CommunicationWindow(QMainWindow):
         mlay.addWidget(QLabel("Message:"))
         mlay.addWidget(self.txt_body)
         mlay.addLayout(att_layout)
-        
+
         layout.addWidget(msg_card)
 
         btn_send = QPushButton("🚀 ENVOYER / إرسال")
@@ -296,41 +299,41 @@ class CommunicationWindow(QMainWindow):
         btn_send.setMinimumHeight(45)
         btn_send.setStyleSheet(f"QPushButton {{ background-color: {colors.SUCCESS}; color: white; font-weight: bold; border-radius: 8px; font-size: 14px; border: none; }} QPushButton:hover {{ background-color: {colors.SUCCESS_HOVER}; }}")
         btn_send.clicked.connect(self.send_email)
-        
+
         self.progress = QProgressBar()
         self.progress.setVisible(False)
         self.progress.setStyleSheet(f"QProgressBar {{ border: 1px solid {colors.BORDER}; border-radius: 6px; text-align: center; color: {colors.TEXT_PRIMARY}; background: {colors.BG_MAIN}; }} QProgressBar::chunk {{ background-color: {colors.SUCCESS}; }}")
-        
+
         layout.addWidget(self.progress)
         layout.addWidget(btn_send)
-        
+
         self.tabs.addTab(tab, "  📝 Nouveau Message  ")
 
     def setup_settings_tab(self):
         tab = QWidget()
         layout = QVBoxLayout(tab)
         layout.setContentsMargins(20, 20, 20, 20)
-        
+
         grp_card = self.create_card()
         form = QVBoxLayout(grp_card)
         form.setContentsMargins(20, 20, 20, 20)
-        
+
         form.addWidget(QLabel("Configuration SMTP (Gmail, Outlook...)"))
-        
+
         self.txt_smtp_host = self.styled_input("smtp.gmail.com")
         self.txt_smtp_port = self.styled_input("587")
         self.txt_email = self.styled_input("votre_email@gmail.com")
         self.txt_password = self.styled_input("Mot de passe d'application")
         self.txt_password.setEchoMode(QLineEdit.EchoMode.Password)
         self.chk_save_password = QCheckBox("Enregistrer le mot de passe (non recommande)")
-        
+
         btn_save = QPushButton("Sauvegarder Configuration")
         btn_save.setMinimumHeight(40)
         btn_save.setCursor(Qt.CursorShape.PointingHandCursor)
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
         btn_save.setStyleSheet(f"background-color: {colors.WARNING}; color: white; font-weight: bold; border-radius: 6px; border: none;")
         btn_save.clicked.connect(self.save_settings)
-        
+
         form.addWidget(QLabel("Serveur SMTP:"))
         form.addWidget(self.txt_smtp_host)
         form.addWidget(QLabel("Port:"))
@@ -342,7 +345,7 @@ class CommunicationWindow(QMainWindow):
         form.addWidget(self.chk_save_password)
         form.addSpacing(10)
         form.addWidget(btn_save)
-        
+
         layout.addWidget(grp_card)
         layout.addStretch()
         self.tabs.addTab(tab, "  ⚙️ Paramètres SMTP  ")
@@ -351,18 +354,18 @@ class CommunicationWindow(QMainWindow):
         tab = QWidget()
         layout = QVBoxLayout(tab)
         layout.setContentsMargins(20, 20, 20, 20)
-        
+
         self.table_logs = QTableWidget(0, 4)
         self.style_table(self.table_logs)
         self.table_logs.setHorizontalHeaderLabels(["Date", "Destinataire", "Sujet", "Statut"])
         self.table_logs.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        
+
         btn_refresh = QPushButton("Actualiser")
         btn_refresh.setCursor(Qt.CursorShape.PointingHandCursor)
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
         btn_refresh.setStyleSheet(f"QPushButton {{ background-color: {colors.PRIMARY}; color: white; font-weight: bold; border-radius: 6px; padding: 8px; border: none; }} QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}")
         btn_refresh.clicked.connect(self.load_logs)
-        
+
         layout.addWidget(btn_refresh)
         layout.addWidget(self.table_logs)
         self.tabs.addTab(tab, "  📜 Historique  ")
@@ -384,14 +387,14 @@ class CommunicationWindow(QMainWindow):
 
         self.input_comm_from = self.styled_date()
         self.input_comm_from.setDate(QDate.currentDate().addMonths(-1))
-        
+
         self.input_comm_to = self.styled_date()
         self.input_comm_to.setDate(QDate.currentDate())
 
         btn_generate = QPushButton("Générer")
         btn_generate.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_generate.setMinimumHeight(38)
-        
+
         btn_export = QPushButton("Exporter PDF")
         btn_export.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_export.setMinimumHeight(38)
@@ -574,13 +577,13 @@ class CommunicationWindow(QMainWindow):
     def get_recipients(self):
         target_idx = self.combo_target_type.currentIndex()
         recipients = []
-        
+
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
                 repo = CommunicationRepository(conn)
 
-                if target_idx == 0: # Parents of Class
+                if target_idx == 0:  # Parents of Class
                     cid = self.combo_class.currentData()
                     if not cid: return []
 
@@ -589,18 +592,18 @@ class CommunicationWindow(QMainWindow):
                     for r in repo.get_recipients_parents_of_class(cid, active_year):
                         recipients.append((r[0], str(r[1] or "[Parent]"), str(r[2] or "")))
 
-                elif target_idx == 1: # All Staff
+                elif target_idx == 1:  # All Staff
                     for r in repo.get_recipients_all_staff():
                         display_name = (str(r[1] or "").strip() or "[Staff]")
                         recipients.append((r[0], display_name, str(r[2] or "")))
 
-                elif target_idx == 2: # Teachers Only
+                elif target_idx == 2:  # Teachers Only
                     for r in repo.get_recipients_teachers():
                         display_name = (str(r[1] or "").strip() or "[Prof]")
                         recipients.append((r[0], display_name, str(r[2] or "")))
         except Exception as e:
             AppLogger.error("CommunicationUI", f"Error fetching recipients: {e}")
-            
+
         return recipients
 
     def send_email(self):
@@ -631,7 +634,7 @@ class CommunicationWindow(QMainWindow):
 
         self.progress.setVisible(True)
         self.progress.setValue(0)
-        
+
         self.worker = EmailWorker(smtp_conf, recipients, self.txt_subject.text(), self.txt_body.toPlainText(), self.attachment_path)
         self.worker.progress.connect(self.progress.setValue)
         self.worker.log_signal.connect(self.log_result)
@@ -674,6 +677,7 @@ class CommunicationWindow(QMainWindow):
                     self.table_logs.setItem(idx, c, item)
         except Exception as e:
             AppLogger.error("CommunicationUI", f"Error loading logs: {e}")
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

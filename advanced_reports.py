@@ -2,9 +2,9 @@ import sys
 import os
 import psycopg2
 from datetime import datetime, timedelta
-from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
-                             QHBoxLayout, QPushButton, QLabel, QComboBox, 
-                             QMessageBox, QGroupBox, QTabWidget, QFrame, 
+from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
+                             QHBoxLayout, QPushButton, QLabel, QComboBox,
+                             QMessageBox, QGroupBox, QTabWidget, QFrame,
                              QGridLayout, QGraphicsDropShadowEffect, QDateEdit,
                              QFileDialog, QProgressBar)
 from PyQt6.QtCore import Qt, QDate, QThread, pyqtSignal
@@ -28,6 +28,8 @@ THEME_AVAILABLE = True
 ADVANCED_COMPREHENSIVE_PDF_MODE = get_report_output_mode("advanced_comprehensive_pdf_mode", "save")
 
 # --- Worker Thread for Heavy Report Generation ---
+
+
 class ReportWorker(QThread):
     progress = pyqtSignal(int)
     finished = pyqtSignal(str)  # Success message or file path
@@ -66,7 +68,7 @@ class ReportWorker(QThread):
                 result = self.generate_grades_excel()
             else:
                 result = "Type de rapport inconnu"
-            
+
             self.finished.emit(result)
         except Exception as e:
             AppLogger.error("ReportWorker", f"Erreur lors de la génération du rapport {self.report_type}", e)
@@ -78,31 +80,31 @@ class ReportWorker(QThread):
         ws = wb.active
         ws.title = "Rapport Financier"
         selected_period = self.params.get("period", "12 derniers mois") if self.params else "12 derniers mois"
-        
+
         header_fill = PatternFill(start_color="1E293B", end_color="1E293B", fill_type="solid")
         header_font = Font(color="FFFFFF", bold=True, size=12)
-        
+
         ws['A1'] = "RAPPORT FINANCIER COMPLET"
         ws['A1'].font = Font(bold=True, size=16, color="1E293B")
         ws.merge_cells('A1:F1')
-        
+
         ws['A2'] = f"Généré le: {datetime.now().strftime('%d/%m/%Y %H:%M')}"
         ws.merge_cells('A2:F2')
         ws['A3'] = f"Période: {selected_period}"
         ws.merge_cells('A3:F3')
-        
+
         self.progress.emit(20)
-        
+
         ws['A4'] = "RECETTES (Paiements Étudiants)"
         ws['A4'].font = Font(bold=True, size=14)
-        
+
         ws['A5'] = "Mois"
         ws['B5'] = "Nb Paiements"
         ws['C5'] = "Montant Total"
         for cell in ['A5', 'B5', 'C5']:
             ws[cell].fill = header_fill
             ws[cell].font = header_font
-        
+
         db = DatabaseManager()
         with db.get_connection() as conn:
             repo = AnalyticsRepository(conn)
@@ -117,17 +119,17 @@ class ReportWorker(QThread):
                 ws[f'C{row}'] = f"{total:,.0f} FCFA"
                 total_income += total if total else 0
                 row += 1
-            
+
             ws[f'A{row}'] = "TOTAL RECETTES"
             ws[f'A{row}'].font = Font(bold=True)
             ws[f'C{row}'] = f"{total_income:,.0f} FCFA"
             ws[f'C{row}'].font = Font(bold=True, color="10B981")
-            
+
             self.progress.emit(50)
-            
-            ws[f'A{row+2}'] = "DÉPENSES"
-            ws[f'A{row+2}'].font = Font(bold=True, size=14)
-            
+
+            ws[f'A{row + 2}'] = "DÉPENSES"
+            ws[f'A{row + 2}'].font = Font(bold=True, size=14)
+
             header_row = row + 3
             ws[f'A{header_row}'] = "Mois"
             ws[f'B{header_row}'] = "Nb Dépenses"
@@ -135,7 +137,7 @@ class ReportWorker(QThread):
             for cell in [f'A{header_row}', f'B{header_row}', f'C{header_row}']:
                 ws[cell].fill = header_fill
                 ws[cell].font = header_font
-            
+
             exp_row = header_row + 1
             total_expenses = 0
             for month, count, total in expense_data:
@@ -153,15 +155,15 @@ class ReportWorker(QThread):
             self.progress.emit(80)
 
             balance = total_income - total_expenses
-            ws[f'A{exp_row+2}'] = "SOLDE NET"
-            ws[f'A{exp_row+2}'].font = Font(bold=True, size=14)
-            ws[f'C{exp_row+2}'] = f"{balance:,.0f} FCFA"
-            ws[f'C{exp_row+2}'].font = Font(bold=True, size=14, color="10B981" if balance >= 0 else "EF4444")
-            
+            ws[f'A{exp_row + 2}'] = "SOLDE NET"
+            ws[f'A{exp_row + 2}'].font = Font(bold=True, size=14)
+            ws[f'C{exp_row + 2}'] = f"{balance:,.0f} FCFA"
+            ws[f'C{exp_row + 2}'].font = Font(bold=True, size=14, color="10B981" if balance >= 0 else "EF4444")
+
             ws.column_dimensions['A'].width = 15
             ws.column_dimensions['B'].width = 15
             ws.column_dimensions['C'].width = 20
-        
+
         safe_period = selected_period.encode('ascii', 'ignore').decode('ascii')
         safe_period = safe_period.replace(" ", "_").replace("'", "").replace("/", "-")
         if not safe_period: safe_period = "periode"
@@ -170,7 +172,7 @@ class ReportWorker(QThread):
         if not filepath:
             filepath = os.path.join(os.getcwd(), filename)
         wb.save(filepath)
-        
+
         self.progress.emit(100)
         return filepath
 
@@ -178,10 +180,10 @@ class ReportWorker(QThread):
         wb = Workbook()
         ws = wb.active
         ws.title = "Liste Étudiants"
-        
+
         header_fill = PatternFill(start_color="1E293B", end_color="1E293B", fill_type="solid")
         header_font = Font(color="FFFFFF", bold=True)
-        
+
         db = DatabaseManager()
         with db.get_connection() as conn:
             repo = AnalyticsRepository(conn)
@@ -204,7 +206,7 @@ class ReportWorker(QThread):
             cell = ws.cell(row=4, column=col, value=header)
             cell.fill = header_fill
             cell.font = header_font
-        
+
         self.progress.emit(30)
 
         birth_place_expr = "s.birth_place" if "birth_place" in student_cols else "''"
@@ -212,7 +214,7 @@ class ReportWorker(QThread):
         phone_expr = "s.phone" if "phone" in student_cols else "''"
         address_expr = "s.address" if "address" in student_cols else "''"
         enroll_expr = "s.registration_date" if "registration_date" in student_cols else "''"
-        
+
         with db.get_connection() as conn:
             cursor = conn.cursor()
             if active_year_id:
@@ -254,14 +256,14 @@ class ReportWorker(QThread):
                     ORDER BY name
                 """)
             rows = cursor.fetchall()
-            
+
         for row, student in enumerate(rows, 5):
             for col, value in enumerate(student, 1):
                 ws.cell(row=row, column=col, value=value)
-            
+
             if row % 20 == 0:
                 self.progress.emit(30 + (row * 60 // max(1, len(rows))))
-        
+
         ws.column_dimensions['A'].width = 8
         ws.column_dimensions['B'].width = 10
         ws.column_dimensions['C'].width = 28
@@ -274,13 +276,13 @@ class ReportWorker(QThread):
         ws.column_dimensions['J'].width = 24
         ws.column_dimensions['K'].width = 16
         ws.column_dimensions['L'].width = 12
-        
+
         filename = f"Liste_Etudiants_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.xlsx"
         filepath = self.params.get("output_path") if self.params else None
         if not filepath:
             filepath = os.path.join(os.getcwd(), filename)
         wb.save(filepath)
-        
+
         self.progress.emit(100)
         return filepath
 
@@ -407,12 +409,13 @@ class ReportWorker(QThread):
         self.progress.emit(100)
         return filepath
 
+
 class AdvancedReportsWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Rapports Avancés / التقارير المتقدمة")
         self.setMinimumSize(1100, 700)
-        
+
         if THEME_AVAILABLE:
             ThemeManager.apply_theme(self)
         else:
@@ -425,7 +428,7 @@ class AdvancedReportsWindow(QMainWindow):
                     background-color: {colors.BG_CARD}; font-weight: bold; color: {colors.TEXT_SECONDARY};
                 }}
             """)
-        
+
         self.worker = None
         self.init_ui()
 
@@ -518,43 +521,43 @@ class AdvancedReportsWindow(QMainWindow):
             QFrame {{ background-color: {colors.BG_HEADER}; border-radius: 12px; }}
         """)
         header_frame.setFixedHeight(80)
-        
+
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(15); shadow.setColor(QColor(15, 23, 42, 40)); shadow.setOffset(0, 4)
         header_frame.setGraphicsEffect(shadow)
-        
+
         header_layout = QHBoxLayout(header_frame)
         header_layout.setContentsMargins(20, 10, 20, 10)
-        
+
         icon_lbl = QLabel("📊")
         icon_lbl.setStyleSheet("font-size: 32px; background: transparent;")
-        
+
         title_box = QVBoxLayout()
         title = QLabel("RAPPORTS AVANCÉS & ANALYSES")
         title.setStyleSheet(f"color: {colors.HEADER_TEXT}; font-size: 20px; font-weight: bold; background: transparent;")
-        
+
         subtitle = QLabel("Visualisations, Graphiques & Export Excel")
         subtitle.setStyleSheet(f"color: {colors.TEXT_SECONDARY}; font-size: 14px; background: transparent;")
-        
+
         title_box.addWidget(title)
         title_box.addWidget(subtitle)
-        
+
         header_layout.addWidget(icon_lbl)
         header_layout.addSpacing(15)
         header_layout.addLayout(title_box)
         header_layout.addStretch()
-        
+
         layout.addWidget(header_frame)
 
         # Tabs
         tabs = QTabWidget()
         if THEME_AVAILABLE:
             tabs.setStyleSheet(get_tabs_style())
-        
+
         tabs.addTab(self.create_financial_charts_tab(), "📊 Graphiques Financiers")
         tabs.addTab(self.create_student_reports_tab(), "📈 Performance Étudiants")
         tabs.addTab(self.create_excel_exports_tab(), "📑 Export Excel")
-        
+
         layout.addWidget(tabs)
 
     def create_card(self):
@@ -566,7 +569,7 @@ class AdvancedReportsWindow(QMainWindow):
             colors = Colors()
             frame.setStyleSheet(f"QFrame {{ background-color: {colors.BG_CARD}; border-radius: 12px; border: 1px solid {colors.BORDER}; }}")
         return frame
-        
+
     def styled_combo(self):
         combo = QComboBox()
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
@@ -582,16 +585,16 @@ class AdvancedReportsWindow(QMainWindow):
         layout = QVBoxLayout(widget)
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(15)
-        
+
         control_card = self.create_card()
         controls_layout = QHBoxLayout(control_card)
         controls_layout.setContentsMargins(15, 15, 15, 15)
-        
+
         controls_layout.addWidget(QLabel("Période:"))
         self.period_combo = self.styled_combo()
         self.period_combo.addItems(["6 derniers mois", "12 derniers mois", "Année en cours"])
         controls_layout.addWidget(self.period_combo)
-        
+
         btn_generate = QPushButton("🔄 Actualiser Graphique")
         btn_generate.setCursor(Qt.CursorShape.PointingHandCursor)
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
@@ -602,20 +605,20 @@ class AdvancedReportsWindow(QMainWindow):
         btn_generate.clicked.connect(self.generate_financial_chart)
         controls_layout.addWidget(btn_generate)
         controls_layout.addStretch()
-        
+
         layout.addWidget(control_card)
-        
+
         chart_card = self.create_card()
         c_layout = QVBoxLayout(chart_card)
-        
+
         self.financial_figure = Figure(figsize=(10, 6))
         self.financial_figure.patch.set_facecolor(colors.BG_CARD)
         self.financial_canvas = FigureCanvas(self.financial_figure)
         c_layout.addWidget(self.financial_canvas)
-        
+
         layout.addWidget(chart_card)
         self.generate_financial_chart()
-        
+
         return widget
 
     def generate_financial_chart(self):
@@ -628,15 +631,15 @@ class AdvancedReportsWindow(QMainWindow):
             repo = AnalyticsRepository(conn)
             income_data = repo.get_monthly_income_totals(selected_period)
             expense_data = repo.get_monthly_expense_totals(selected_period)
-        
+
         income_dict = {item[0]: item[1] if item[1] else 0 for item in income_data}
         expense_dict = {item[0]: item[1] if item[1] else 0 for item in expense_data}
         months = sorted(set(income_dict.keys()) | set(expense_dict.keys()))
         income = [income_dict.get(month, 0) for month in months]
         expenses = [expense_dict.get(month, 0) for month in months]
-        
+
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-        
+
         if not months:
             ax.text(0.5, 0.5, 'Aucune donnée disponible', ha='center', va='center', fontsize=14, color=colors.TEXT_SECONDARY)
             ax.axis('off')
@@ -644,10 +647,10 @@ class AdvancedReportsWindow(QMainWindow):
             ax.set_facecolor(colors.BG_CARD)
             x = range(len(months))
             width = 0.35
-            
-            ax.bar([i - width/2 for i in x], income, width, label='Recettes', color=colors.SUCCESS)
-            ax.bar([i + width/2 for i in x], expenses, width, label='Dépenses', color=colors.DANGER)
-            
+
+            ax.bar([i - width / 2 for i in x], income, width, label='Recettes', color=colors.SUCCESS)
+            ax.bar([i + width / 2 for i in x], expenses, width, label='Dépenses', color=colors.DANGER)
+
             ax.set_xlabel('Mois', fontsize=10, fontweight='bold', color=colors.TEXT_SECONDARY)
             ax.set_ylabel('Montant (FCFA)', fontsize=10, fontweight='bold', color=colors.TEXT_SECONDARY)
             ax.set_title('Évolution Financière Mensuelle', fontsize=12, fontweight='bold', pad=15, color=colors.TEXT_PRIMARY)
@@ -662,7 +665,7 @@ class AdvancedReportsWindow(QMainWindow):
                 for text in legend.get_texts(): text.set_color(colors.TEXT_SECONDARY)
             ax.spines['top'].set_visible(False)
             ax.spines['right'].set_visible(False)
-        
+
         self.financial_figure.tight_layout()
         self.financial_canvas.draw()
 
@@ -671,16 +674,16 @@ class AdvancedReportsWindow(QMainWindow):
         layout = QVBoxLayout(widget)
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(15)
-        
+
         control_card = self.create_card()
         controls_layout = QHBoxLayout(control_card)
         controls_layout.setContentsMargins(15, 15, 15, 15)
-        
+
         controls_layout.addWidget(QLabel("Classe:"))
         self.class_combo = self.styled_combo()
         self.load_classes_combo()
         controls_layout.addWidget(self.class_combo)
-        
+
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
         btn_analyze = QPushButton("📈 Analyser Performance")
         btn_analyze.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -692,7 +695,7 @@ class AdvancedReportsWindow(QMainWindow):
         controls_layout.addWidget(btn_analyze)
         controls_layout.addStretch()
         layout.addWidget(control_card)
-        
+
         chart_card = self.create_card()
         c_layout = QVBoxLayout(chart_card)
         self.student_figure = Figure(figsize=(10, 6))
@@ -700,21 +703,21 @@ class AdvancedReportsWindow(QMainWindow):
         self.student_canvas = FigureCanvas(self.student_figure)
         c_layout.addWidget(self.student_canvas)
         layout.addWidget(chart_card)
-        
+
         return widget
 
     def generate_student_chart(self):
         self.student_figure.clear()
         ax = self.student_figure.add_subplot(111)
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-        
+
         class_id = self.class_combo.currentData()
         if not class_id:
             ax.text(0.5, 0.5, 'Veuillez sélectionner une classe', ha='center', va='center', fontsize=14, color=colors.TEXT_SECONDARY)
             ax.axis('off')
             self.student_canvas.draw()
             return
-        
+
         db = DatabaseManager()
         grades = []
         max_score = 20
@@ -726,7 +729,7 @@ class AdvancedReportsWindow(QMainWindow):
 
             if active_year_id:
                 grades = repo.get_grades_for_class(class_id, active_year_id)
-        
+
         if not grades:
             ax.text(0.5, 0.5, 'Aucune note disponible pour cette classe', ha='center', va='center', fontsize=14, color=colors.TEXT_SECONDARY)
             ax.axis('off')
@@ -742,7 +745,7 @@ class AdvancedReportsWindow(QMainWindow):
             ax.set_title(f'Distribution des Notes sur {int(max_score)} - {self.class_combo.currentText()}', fontsize=12, fontweight='bold', pad=20, color=colors.TEXT_PRIMARY)
             ax.text(0.5, 1.01, f"Année scolaire: {active_year_label}", transform=ax.transAxes, ha='center', va='bottom', fontsize=9, color=colors.TEXT_SECONDARY)
             ax.grid(axis='y', alpha=0.3, linestyle='--')
-            
+
             avg = sum(grades) / len(grades)
             ax.axvline(avg, color=colors.DANGER, linestyle='--', linewidth=2, label=f'Moyenne Classe: {avg:.1f}/{int(max_score)}')
             legend = ax.legend()
@@ -753,7 +756,7 @@ class AdvancedReportsWindow(QMainWindow):
                 for text in legend.get_texts(): text.set_color(colors.TEXT_SECONDARY)
             ax.spines['top'].set_visible(False)
             ax.spines['right'].set_visible(False)
-        
+
         self.student_figure.tight_layout()
         self.student_canvas.draw()
 
@@ -762,24 +765,24 @@ class AdvancedReportsWindow(QMainWindow):
         layout = QVBoxLayout(widget)
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(15)
-        
+
         grid = QGridLayout()
         grid.setSpacing(20)
-        
+
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-        
+
         btn_financial = self.create_export_button("💰 Rapport Financier", "Export complet des recettes et dépenses", colors.SUCCESS)
         btn_financial.clicked.connect(lambda: self.export_excel("financial"))
         grid.addWidget(btn_financial, 0, 0)
-        
+
         btn_students = self.create_export_button("👨‍🎓 Liste des Étudiants", "Export de tous les élèves inscrits", colors.PRIMARY)
         btn_students.clicked.connect(lambda: self.export_excel("students"))
         grid.addWidget(btn_students, 0, 1)
-        
+
         btn_attendance = self.create_export_button("📅 Rapport d'Assiduité", "Statistiques de présence par classe", colors.WARNING)
         btn_attendance.clicked.connect(lambda: self.export_excel("attendance"))
         grid.addWidget(btn_attendance, 1, 0)
-        
+
         secondary_color = colors.SECONDARY if hasattr(colors, "SECONDARY") else colors.PRIMARY
         btn_grades = self.create_export_button("📝 Relevé de Notes", "Tableau global des notes et moyennes", secondary_color)
         btn_grades.clicked.connect(lambda: self.export_excel("grades"))
@@ -788,9 +791,9 @@ class AdvancedReportsWindow(QMainWindow):
         btn_comprehensive_pdf = self.create_export_button("📄 Rapport PDF Global", "Résumé financier et académique avec en-tête officiel", colors.PRIMARY)
         btn_comprehensive_pdf.clicked.connect(self.export_comprehensive_pdf)
         grid.addWidget(btn_comprehensive_pdf, 2, 0, 1, 2)
-        
+
         layout.addLayout(grid)
-        
+
         self.progress_bar = QProgressBar()
         self.progress_bar.setFixedHeight(20)
         self.progress_bar.setStyleSheet(f"""
@@ -799,12 +802,12 @@ class AdvancedReportsWindow(QMainWindow):
         """)
         self.progress_bar.hide()
         layout.addWidget(self.progress_bar)
-        
+
         self.status_label = QLabel("")
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.status_label.setStyleSheet(f"font-size: 13px; color: {colors.TEXT_SECONDARY}; font-weight: bold;")
         layout.addWidget(self.status_label)
-        
+
         layout.addStretch()
         return widget
 
@@ -817,24 +820,24 @@ class AdvancedReportsWindow(QMainWindow):
             QPushButton {{ background-color: {colors.BG_CARD}; border: 1px solid {colors.BORDER}; border-radius: 12px; text-align: left; padding: 15px; border-left: 6px solid {color}; }}
             QPushButton:hover {{ background-color: {colors.BG_MAIN}; border: 1px solid {color}; border-left: 6px solid {color}; }}
         """)
-        
+
         layout = QVBoxLayout(btn)
         layout.setContentsMargins(15, 10, 15, 10)
-        
+
         title_label = QLabel(title)
         title_label.setStyleSheet(f"font-size: 16px; font-weight: bold; color: {color}; border: none; background: transparent;")
-        
+
         desc_label = QLabel(description)
         desc_label.setStyleSheet(f"font-size: 12px; color: {colors.TEXT_SECONDARY}; border: none; background: transparent;")
-        
+
         layout.addWidget(title_label)
         layout.addWidget(desc_label)
         layout.addStretch()
-        
+
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(15); shadow.setColor(QColor(0, 0, 0, 10)); shadow.setOffset(0, 4)
         btn.setGraphicsEffect(shadow)
-        
+
         return btn
 
     def export_excel(self, report_type):
@@ -861,7 +864,7 @@ class AdvancedReportsWindow(QMainWindow):
         self.progress_bar.show()
         self.progress_bar.setValue(0)
         self.status_label.setText("⏳ Génération du rapport en cours...")
-        
+
         AppLogger.info("AdvancedReports", f"Début de l'export Excel: {report_type}")
 
         if report_type in ["financial", "students", "attendance", "grades"]:
@@ -871,7 +874,7 @@ class AdvancedReportsWindow(QMainWindow):
             self.progress_bar.hide()
             self.status_label.setText("")
             return
-        
+
         self.worker.progress.connect(self.progress_bar.setValue)
         self.worker.finished.connect(self.on_export_finished)
         self.worker.error.connect(self.on_export_error)
@@ -902,7 +905,7 @@ class AdvancedReportsWindow(QMainWindow):
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
         self.status_label.setText(f"✅ Export réussi: {os.path.basename(filepath)}")
         self.status_label.setStyleSheet(f"color: {colors.SUCCESS}; font-weight: bold;")
-        
+
         AppLogger.info("AdvancedReports", f"Export Excel terminé: {filepath}")
 
         reply = QMessageBox.question(
@@ -910,7 +913,7 @@ class AdvancedReportsWindow(QMainWindow):
             f"Le fichier a été généré avec succès!\n\n{filepath}\n\nVoulez-vous l'ouvrir?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
         )
-        
+
         if reply == QMessageBox.StandardButton.Yes:
             try:
                 if os.name == 'nt': os.startfile(filepath)
@@ -937,6 +940,7 @@ class AdvancedReportsWindow(QMainWindow):
                     self.class_combo.addItem(str(class_name or "-"), class_id)
         except Exception as e:
             AppLogger.error("AdvancedReports", "Erreur lors du chargement des classes", e)
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

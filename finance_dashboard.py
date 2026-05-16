@@ -2,8 +2,8 @@ import sys
 import psycopg2
 from datetime import datetime
 from fpdf import FPDF
-from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
-                             QHBoxLayout, QLabel, QFrame, QTableWidget, 
+from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
+                             QHBoxLayout, QLabel, QFrame, QTableWidget,
                              QTableWidgetItem, QHeaderView, QGraphicsDropShadowEffect,
                              QPushButton)
 from PyQt6.QtCore import Qt, QTimer
@@ -20,6 +20,7 @@ from app_logger import AppLogger
 
 THEME_AVAILABLE = True
 FINANCE_DASHBOARD_REPORT_MODE = get_report_output_mode("finance_dashboard_report_mode", "save")
+
 
 class ModernFinanceDashboard(QMainWindow):
     def __init__(self):
@@ -189,7 +190,7 @@ class ModernFinanceDashboard(QMainWindow):
                 border-left: 6px solid {color};
             }}
         """)
-        
+
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(20)
         shadow.setColor(QColor(15, 23, 42, 15))
@@ -198,7 +199,7 @@ class ModernFinanceDashboard(QMainWindow):
 
         layout = QVBoxLayout(card)
         layout.setContentsMargins(20, 20, 20, 20)
-        
+
         # Top row: Title and Icon
         top_layout = QHBoxLayout()
         lbl_title = QLabel(title)
@@ -206,20 +207,20 @@ class ModernFinanceDashboard(QMainWindow):
             lbl_title.setStyleSheet(f"color: {ThemeManager.get_colors().TEXT_SECONDARY}; font-weight: bold; font-size: 12px; text-transform: uppercase;")
         else:
             lbl_title.setStyleSheet(f"color: {colors.TEXT_SECONDARY}; font-weight: bold; font-size: 12px; text-transform: uppercase;")
-        
+
         lbl_icon = QLabel(icon)
         lbl_icon.setStyleSheet(
             f"color: {color}; font-size: 20px; background-color: {rgba(color, 32)}; border-radius: 15px; padding: 5px;"
         )
         lbl_icon.setFixedSize(40, 40)
         lbl_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        
+
         top_layout.addWidget(lbl_title)
         top_layout.addStretch()
         top_layout.addWidget(lbl_icon)
-        
+
         layout.addLayout(top_layout)
-        
+
         # Value
         lbl_value = QLabel(value)
         lbl_value.setObjectName("val_label")
@@ -227,7 +228,7 @@ class ModernFinanceDashboard(QMainWindow):
             lbl_value.setStyleSheet(f"color: {ThemeManager.get_colors().TEXT_PRIMARY}; font-size: 28px; font-weight: 800; border: none; background: transparent;")
         else:
             lbl_value.setStyleSheet(f"color: {colors.TEXT_PRIMARY}; font-size: 28px; font-weight: 800; border: none; background: transparent;")
-        
+
         layout.addWidget(lbl_value)
         return card
 
@@ -236,8 +237,8 @@ class ModernFinanceDashboard(QMainWindow):
         frame = QFrame()
         frame.setStyleSheet("""
             QFrame {
-                background-color: %(bg)s; 
-                border-radius: 12px; 
+                background-color: %(bg)s;
+                border-radius: 12px;
                 border: 1px solid %(border)s;
             }
         """ % {
@@ -249,17 +250,17 @@ class ModernFinanceDashboard(QMainWindow):
         shadow.setColor(QColor(15, 23, 42, 15))
         shadow.setOffset(0, 4)
         frame.setGraphicsEffect(shadow)
-        
+
         layout = QVBoxLayout(frame)
         layout.setContentsMargins(20, 20, 20, 20)
-        
+
         title = QLabel(title_text)
         title.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
         if THEME_AVAILABLE:
             title.setStyleSheet(f"color: {ThemeManager.get_colors().TEXT_PRIMARY}; margin-bottom: 10px; border: none;")
         else:
             title.setStyleSheet(f"color: {colors.TEXT_PRIMARY}; margin-bottom: 10px; border: none;")
-        
+
         layout.addWidget(title)
         return frame
 
@@ -451,6 +452,7 @@ class ModernFinanceDashboard(QMainWindow):
             success_save_message="Rapport exécutif exporté.",
             success_print_message="Rapport exécutif envoyé à l'imprimante.",
         )
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

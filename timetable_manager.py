@@ -65,9 +65,9 @@ class SlotCell(QFrame):
 
         subject = slot_data.get("subject_name_fr", "—")
         teacher = slot_data.get("teacher_name", "")
-        room    = slot_data.get("room", "")
-        start   = slot_data.get("start_time", "")
-        end     = slot_data.get("end_time", "")
+        room = slot_data.get("room", "")
+        start = slot_data.get("start_time", "")
+        end = slot_data.get("end_time", "")
 
         lbl_subject = QLabel(subject)
         lbl_subject.setFont(QFont("Cairo", 10, QFont.Weight.Bold))
@@ -204,11 +204,11 @@ class SlotDialog(QDialog):
     def get_values(self) -> dict:
         return {
             "day_of_week": self.cmb_day.currentData(),
-            "start_time":  self.time_start.time().toString("HH:mm"),
-            "end_time":    self.time_end.time().toString("HH:mm"),
-            "subject_id":  self.cmb_subject.currentData(),
-            "teacher_id":  self.cmb_teacher.currentData(),
-            "room":        self.txt_room.text().strip(),
+            "start_time": self.time_start.time().toString("HH:mm"),
+            "end_time": self.time_end.time().toString("HH:mm"),
+            "subject_id": self.cmb_subject.currentData(),
+            "teacher_id": self.cmb_teacher.currentData(),
+            "room": self.txt_room.text().strip(),
         }
 
 
@@ -220,8 +220,8 @@ class TimetableGrid(QScrollArea):
 
     def __init__(self, on_add_slot, on_edit_slot, on_delete_slot, parent=None):
         super().__init__(parent)
-        self.on_add    = on_add_slot
-        self.on_edit   = on_edit_slot
+        self.on_add = on_add_slot
+        self.on_edit = on_edit_slot
         self.on_delete = on_delete_slot
 
         self.setWidgetResizable(True)
@@ -404,15 +404,15 @@ class TimetableWindow(QMainWindow):
 
             slots = [
                 {
-                    "id":             r[0],
-                    "day_of_week":    r[1],
-                    "start_time":     r[2],
-                    "end_time":       r[3],
-                    "subject_id":     r[4],
-                    "teacher_id":     r[5],
-                    "room":           r[6] or "",
+                    "id": r[0],
+                    "day_of_week": r[1],
+                    "start_time": r[2],
+                    "end_time": r[3],
+                    "subject_id": r[4],
+                    "teacher_id": r[5],
+                    "room": r[6] or "",
                     "subject_name_fr": r[7],
-                    "teacher_name":   r[8] or "",
+                    "teacher_name": r[8] or "",
                 }
                 for r in rows
             ]
@@ -445,7 +445,7 @@ class TimetableWindow(QMainWindow):
 
     def _confirm_delete_slot(self, slot_data: dict):
         subject = slot_data.get("subject_name_fr", "cette heure")
-        day     = slot_data.get("day_of_week", "")
+        day = slot_data.get("day_of_week", "")
         reply = QMessageBox.question(
             self, "Confirmation",
             f"Supprimer la séance de « {subject} » ({day}) ?",

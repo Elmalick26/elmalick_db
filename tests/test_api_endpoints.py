@@ -400,6 +400,7 @@ class TestParentPortal:
             r = client.get("/api/parent/dues", headers={"Authorization": f"Bearer {token}"})
 
         assert r.status_code == 200
+
     def test_admin_token_cannot_use_parent_me(self):
         """Admin token doesn't have student_id → should fail parent endpoint."""
         admin_token = _make_admin_token()

@@ -33,7 +33,7 @@ class AutoBackupSystem:
 
         self.is_running = False
         self.backup_thread = None
-    
+
     def _log(self, level, message):
         """تسجيل الرسائل عبر نظام AppLogger الموحد بدلاً من ملف منفصل"""
         if level == "info":
@@ -42,7 +42,7 @@ class AutoBackupSystem:
             AppLogger.warning("AutoBackup", message)
         elif level == "error":
             AppLogger.error("AutoBackup", message)
-    
+
     def create_backup(self, compress=True):
         """
         إنشاء نسخة احتياطية من قاعدة PostgreSQL باستخدام pg_dump.
@@ -88,7 +88,7 @@ class AutoBackupSystem:
         except Exception as e:
             self._log("error", f"فشل إنشاء النسخة الاحتياطية: {str(e)}")
             return None
-    
+
     def cleanup_old_backups(self, keep_days=30):
         """حذف النسخ الاحتياطية التلقائية القديمة"""
         try:
@@ -109,7 +109,7 @@ class AutoBackupSystem:
                 return f.read(5) == b"PGDMP"
         except Exception:
             return False
-    
+
     def restore_backup(self, backup_file):
         """
         استعادة قاعدة PostgreSQL من نسخة احتياطية.
@@ -165,7 +165,7 @@ class AutoBackupSystem:
         except Exception as e:
             self._log("error", f"فشلت الاستعادة: {str(e)}")
             return False
-    
+
     def list_backups(self):
         """عرض قائمة النسخ الاحتياطية (PostgreSQL)"""
         backups = []
@@ -191,42 +191,42 @@ class AutoBackupSystem:
                 continue
 
         return backups
-    
+
     def schedule_auto_backup(self, interval_hours=24):
         """جدولة النسخ الاحتياطي التلقائي"""
         schedule.every(interval_hours).hours.do(self.create_backup)
         self._log("info", f"تم جدولة النسخ الاحتياطي التلقائي كل {interval_hours} ساعة")
-    
+
     def start_auto_backup(self, interval_hours=24):
         """بدء النسخ الاحتياطي التلقائي في خيط منفصل (Background Thread)"""
         if self.is_running:
             self._log("warning", "نظام النسخ الاحتياطي التلقائي يعمل بالفعل")
             return
-        
+
         self.is_running = True
         self.schedule_auto_backup(interval_hours)
-        
+
         def run_scheduler():
             while self.is_running:
                 schedule.run_pending()
                 time.sleep(60)  # تحقق كل دقيقة لتخفيف الحمل على المعالج
-        
+
         self.backup_thread = Thread(target=run_scheduler, daemon=True)
         self.backup_thread.start()
-        
+
         self._log("info", "تم بدء خدمة النسخ الاحتياطي التلقائي في الخلفية")
-    
+
     def stop_auto_backup(self):
         """إيقاف النسخ الاحتياطي التلقائي"""
         self.is_running = False
         schedule.clear()
         self._log("info", "تم إيقاف خدمة النسخ الاحتياطي التلقائي")
-    
+
     def backup_on_startup(self):
         """إنشاء نسخة احتياطية فورية عند بدء البرنامج (يُنصح بربطها بتشغيل النظام)"""
         self._log("info", "بدء إنشاء نسخة احتياطية أولية عند تشغيل النظام...")
         return self.create_backup(compress=True)
-    
+
     def get_backup_stats(self):
         """إحصائيات النسخ الاحتياطية"""
         backups = self.list_backups()
@@ -235,7 +235,7 @@ class AutoBackupSystem:
             total_mb = total_size / (1024 * 1024)
         except Exception:
             total_mb = 0.0
-            
+
         return {
             'total_backups': len(backups),
             'total_size_mb': total_mb,
@@ -243,21 +243,22 @@ class AutoBackupSystem:
             'newest_backup': backups[0]['date'] if backups else 'لا توجد'
         }
 
+
 # مثال على الاستخدام
 if __name__ == "__main__":
     # تشغيل وهمي لاختبار النظام
     backup_system = AutoBackupSystem()
     print("=== نظام النسخ الاحتياطي التلقائي ===\n")
-    
+
     # إنشاء نسخة احتياطية
     backup_file = backup_system.create_backup(compress=True)
-    
+
     # عرض قائمة النسخ
     print("\n=== قائمة النسخ الاحتياطية ===")
     backups = backup_system.list_backups()
     for i, backup in enumerate(backups[:5], 1):
         print(f"{i}. {backup['name']} - {backup['date']} - {backup['size']}")
-    
+
     # عرض الإحصائيات
     print("\n=== الإحصائيات ===")
     stats = backup_system.get_backup_stats()
@@ -265,5 +266,5 @@ if __name__ == "__main__":
     print(f"الحجم الكلي: {stats['total_size_mb']:.2f} MB")
     print(f"أحدث نسخة: {stats['newest_backup']}")
     print(f"أقدم نسخة: {stats['oldest_backup']}")
-    
+
     print("\n✅ نظام النسخ الاحتياطي يعمل بشكل صحيح")

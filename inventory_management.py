@@ -6,10 +6,10 @@ from fpdf import FPDF
 from database_setup import DatabaseManager
 from app_logger import AppLogger
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
-                             QHBoxLayout, QTableWidget, QTableWidgetItem, 
-                             QPushButton, QLabel, QLineEdit, QComboBox, 
-                             QMessageBox, QHeaderView, QGroupBox, QSpinBox, 
-                             QDoubleSpinBox, QTabWidget, QFrame, QDateEdit, 
+                             QHBoxLayout, QTableWidget, QTableWidgetItem,
+                             QPushButton, QLabel, QLineEdit, QComboBox,
+                             QMessageBox, QHeaderView, QGroupBox, QSpinBox,
+                             QDoubleSpinBox, QTabWidget, QFrame, QDateEdit,
                              QGridLayout, QGraphicsDropShadowEffect, QScrollArea)
 from PyQt6.QtCore import Qt, QDate
 from PyQt6.QtGui import QFont, QColor, QIcon
@@ -21,6 +21,7 @@ from repositories.inventory_repo import InventoryRepository
 
 THEME_AVAILABLE = True
 
+
 class InventoryWindow(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -29,7 +30,7 @@ class InventoryWindow(QMainWindow):
         self.current_inventory_report_rows = []
         self.current_inventory_report_headers = []
         self.current_inventory_report_title = ""
-        
+
         # تطبيق المظهر
         if THEME_AVAILABLE:
             ThemeManager.apply_theme(self)
@@ -39,7 +40,7 @@ class InventoryWindow(QMainWindow):
                 QMainWindow {{ background-color: {colors.BG_MAIN}; }}
                 QLabel {{ font-family: 'Segoe UI', 'Cairo', sans-serif; color: {colors.TEXT_PRIMARY}; }}
             """)
-        
+
         self.init_ui()
         self.load_inventory()
         self.load_history()
@@ -59,7 +60,7 @@ class InventoryWindow(QMainWindow):
             QFrame {{ background-color: {colors.BG_HEADER}; border-radius: 10px; }}
         """)
         header_frame.setMaximumHeight(80)
-        
+
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(15)
         shadow.setColor(QColor(15, 23, 42, 40))
@@ -68,27 +69,27 @@ class InventoryWindow(QMainWindow):
 
         hl = QHBoxLayout(header_frame)
         hl.setContentsMargins(20, 10, 20, 10)
-        
+
         icon_lbl = QLabel("📦")
         icon_lbl.setStyleSheet("font-size: 32px; background: transparent;")
-        
+
         title_layout = QVBoxLayout()
         header_lbl = QLabel("GESTION DE STOCK")
         header_lbl.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
         header_lbl.setStyleSheet(f"color: {colors.HEADER_TEXT}; background: transparent;")
-        
+
         sub_lbl = QLabel("متابعة المخزون، المشتريات، والاستهلاك")
         sub_lbl.setFont(QFont("Cairo", 11))
         sub_lbl.setStyleSheet(f"color: {colors.TEXT_SECONDARY}; background: transparent;")
-        
+
         title_layout.addWidget(header_lbl)
         title_layout.addWidget(sub_lbl)
-        
+
         hl.addWidget(icon_lbl)
         hl.addSpacing(15)
         hl.addLayout(title_layout)
         hl.addStretch()
-        
+
         self.main_layout.addWidget(header_frame)
 
         # 2. Tabs
@@ -102,12 +103,12 @@ class InventoryWindow(QMainWindow):
                 QTabBar::tab:selected {{ background: {colors.BG_HEADER}; color: {colors.HEADER_TEXT}; }}
                 QTabBar::tab:hover {{ background: {colors.BORDER}; }}
             """)
-        
+
         self.setup_stock_tab()
         self.setup_movement_tab()
         self.setup_history_tab()
         self.setup_reports_tab()
-        
+
         self.main_layout.addWidget(self.tabs)
 
     # --- Helper Methods ---
@@ -199,31 +200,31 @@ class InventoryWindow(QMainWindow):
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(20)
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-        
+
         # --- Form Card (Left) ---
         form_card = self.create_card()
         form_card.setMinimumWidth(360)
         flay = QVBoxLayout(form_card)
         flay.setContentsMargins(20, 20, 20, 20)
         flay.setSpacing(15)
-        
+
         lbl_title = QLabel("Nouveau Article / مادة جديدة")
         lbl_title.setStyleSheet(f"font-weight: bold; color: {colors.TEXT_PRIMARY}; font-size: 14px;")
         flay.addWidget(lbl_title)
-        
+
         self.txt_name_fr = self.styled_input("Nom (FR)")
         self.txt_name_ar = self.styled_input("الاسم (عربي)")
-        
+
         self.combo_cat = self.styled_combo()
         self.combo_cat.addItems(["Fournitures (قرطاسية)", "Mobilier (أثاث)", "Électronique (إلكترونيات)", "Hygiène (نظافة)", "Autre"])
-        
+
         self.spin_qty = self.styled_spinbox()
         self.spin_min = self.styled_spinbox()
         self.spin_min.setValue(5)
-        
+
         self.spin_price = self.styled_double_spin("FCFA ")
         self.txt_loc = self.styled_input("Emplacement / المكان")
-        
+
         btn_add = QPushButton("Ajouter Article")
         btn_add.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_add.setMinimumHeight(45)
@@ -239,14 +240,14 @@ class InventoryWindow(QMainWindow):
         flay.addWidget(self.txt_name_ar)
         flay.addWidget(QLabel("Catégorie:"))
         flay.addWidget(self.combo_cat)
-        
+
         row_qty = QHBoxLayout()
         row_qty.addWidget(QLabel("Qté Init:"))
         row_qty.addWidget(self.spin_qty)
         row_qty.addWidget(QLabel("Min:"))
         row_qty.addWidget(self.spin_min)
         flay.addLayout(row_qty)
-        
+
         flay.addWidget(QLabel("Prix Unitaire:"))
         flay.addWidget(self.spin_price)
         flay.addWidget(QLabel("Emplacement:"))
@@ -265,7 +266,7 @@ class InventoryWindow(QMainWindow):
 
         # --- Table (Right) ---
         table_layout = QVBoxLayout()
-        
+
         self.lbl_stats = QLabel("Valeur: 0.00 FCFA | Rupture: 0")
         self.lbl_stats.setStyleSheet(f"background-color: {colors.BG_MAIN}; padding: 12px; border-radius: 8px; color: {colors.TEXT_PRIMARY}; font-weight: bold; border: 1px solid {colors.BORDER};")
         self.lbl_stats.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -277,7 +278,7 @@ class InventoryWindow(QMainWindow):
         self.table_stock.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.table_stock.setColumnWidth(0, 50)
         table_layout.addWidget(self.table_stock)
-        
+
         layout.addLayout(table_layout)
         self.tabs.addTab(tab, "  📦 État du Stock / المخزون  ")
 
@@ -295,32 +296,32 @@ class InventoryWindow(QMainWindow):
         vlay = QVBoxLayout(move_card)
         vlay.setContentsMargins(20, 20, 20, 20)
         vlay.setSpacing(15)
-        
+
         lbl_title = QLabel("Enregistrer un Mouvement / تسجيل حركة")
         lbl_title.setStyleSheet(f"font-weight: bold; color: {colors.TEXT_PRIMARY}; font-size: 14px;")
         vlay.addWidget(lbl_title)
-        
+
         row1 = QHBoxLayout()
         self.combo_items = self.styled_combo()
         self.combo_type = self.styled_combo()
         self.combo_type.addItems(["ENTRÉE (Achat/Retour)", "SORTIE (Consommation/Perte)"])
-        
+
         self.spin_move_qty = self.styled_spinbox()
         self.spin_move_qty.setRange(1, 1000)
-        
+
         row1.addWidget(QLabel("Article:"))
         row1.addWidget(self.combo_items, 2)
         row1.addWidget(QLabel("Type:"))
         row1.addWidget(self.combo_type, 1)
         row1.addWidget(QLabel("Quantité:"))
         row1.addWidget(self.spin_move_qty, 1)
-        
+
         row2 = QHBoxLayout()
         self.date_move = self.styled_date()
         self.date_move.setDate(QDate.currentDate())
-        
+
         self.txt_notes = self.styled_input("Motif / Bénéficiaire...")
-        
+
         btn_exec = QPushButton("Valider Mouvement")
         btn_exec.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_exec.setMinimumHeight(40)
@@ -329,24 +330,24 @@ class InventoryWindow(QMainWindow):
             QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}
         """)
         btn_exec.clicked.connect(self.execute_movement)
-        
+
         row2.addWidget(QLabel("Date:"))
         row2.addWidget(self.date_move)
         row2.addWidget(QLabel("Notes:"))
         row2.addWidget(self.txt_notes, 2)
         row2.addWidget(btn_exec)
-        
+
         vlay.addLayout(row1)
         vlay.addLayout(row2)
         layout.addWidget(move_card)
         layout.addStretch()
-        
+
         info_frame = QFrame()
         info_frame.setStyleSheet(f"background-color: {colors.BG_MAIN}; border-radius: 8px; border: 1px dashed {colors.WARNING}; padding: 10px;")
         ilay = QHBoxLayout(info_frame)
         ilay.addWidget(QLabel("💡 Astuce: Les 'Sorties' diminuent le stock, les 'Entrées' l'augmentent."))
         layout.addWidget(info_frame)
-        
+
         self.tabs.addTab(tab, "  🔄 Mouvements / الحركات  ")
 
     # ---------------------------------------------------------
@@ -357,7 +358,7 @@ class InventoryWindow(QMainWindow):
         layout = QVBoxLayout(tab)
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(15)
-        
+
         toolbar = QHBoxLayout()
         btn_refresh = QPushButton("Actualiser")
         btn_refresh.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -367,19 +368,19 @@ class InventoryWindow(QMainWindow):
             QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}
         """)
         btn_refresh.clicked.connect(self.load_history)
-        
+
         toolbar.addWidget(QLabel("Historique des Demandes / سجل الطلبات"))
         toolbar.addStretch()
         toolbar.addWidget(btn_refresh)
         layout.addLayout(toolbar)
-        
+
         self.table_log = QTableWidget(0, 5)
         self.style_table(self.table_log)
         self.table_log.setHorizontalHeaderLabels(["Date", "Type", "Article", "Qté", "Notes / Motif"])
         self.table_log.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        
+
         layout.addWidget(self.table_log)
-        
+
         self.tabs.addTab(tab, "  📜 Historique / السجل  ")
 
     # ---------------------------------------------------------
@@ -449,7 +450,7 @@ class InventoryWindow(QMainWindow):
         report_type = self.combo_report_type.currentText()
         date_from = self.report_date_from.date().toString("yyyy-MM-dd")
         date_to = self.report_date_to.date().toString("yyyy-MM-dd")
-        
+
         # إضافة نهاية اليوم لضمان شمولية حركات اليوم الأخير
         date_to_full = f"{date_to} 23:59:59"
 
@@ -556,16 +557,16 @@ class InventoryWindow(QMainWindow):
         min_q = self.spin_min.value()
         price = self.spin_price.value()
         loc = self.txt_loc.text()
-        
+
         if not fr: return
-        
+
         try:
             with DatabaseManager() as db:
                 conn = db.get_connection()
                 repo = InventoryRepository(conn)
                 item_id = repo.insert_item(fr, ar, cat, qty, min_q, price, loc)
                 conn.commit()
-            
+
             # ===== استخدام IN بدلاً من ENTRÉE =====
             if qty > 0:
                 self.log_movement_db(item_id, "IN", qty, "Stock Initial")
@@ -589,15 +590,15 @@ class InventoryWindow(QMainWindow):
     def load_inventory(self):
         self.table_stock.setRowCount(0)
         self.combo_items.clear()
-        
+
         try:
             with DatabaseManager() as db:
                 conn = db.get_connection()
                 rows = InventoryRepository(conn).list_all_items()
-            
+
             total_val = 0
             alert_count = 0
-            
+
             for r in rows:
                 item_id = r[0]
                 name_fr = str(r[1] or "-")
@@ -609,19 +610,19 @@ class InventoryWindow(QMainWindow):
 
                 idx = self.table_stock.rowCount()
                 self.table_stock.insertRow(idx)
-                
+
                 self.combo_items.addItem(f"{name_fr} (Stock: {qty})", item_id)
-                
+
                 row_total = qty * unit_price
                 total_val += row_total
-                
+
                 self.table_stock.setItem(idx, 0, QTableWidgetItem(str(item_id)))
                 self.table_stock.setItem(idx, 1, QTableWidgetItem(name_fr))
                 self.table_stock.setItem(idx, 2, QTableWidgetItem(name_ar))
                 self.table_stock.setItem(idx, 3, QTableWidgetItem(category))
-                
+
                 qty_item = QTableWidgetItem(str(qty))
-                if qty <= min_qty: # Low Stock Alert
+                if qty <= min_qty:  # Low Stock Alert
                     if THEME_AVAILABLE:
                         colors = ThemeManager.get_colors()
                         qty_item.setForeground(QColor(colors.DANGER))
@@ -633,7 +634,7 @@ class InventoryWindow(QMainWindow):
                 else:
                     if THEME_AVAILABLE:
                         qty_item.setForeground(QColor(ThemeManager.get_colors().SUCCESS))
-                
+
                 self.table_stock.setItem(idx, 4, qty_item)
                 self.table_stock.setItem(idx, 5, QTableWidgetItem(str(min_qty)))
                 self.table_stock.setItem(idx, 6, QTableWidgetItem(f"{unit_price:.2f}"))
@@ -649,13 +650,13 @@ class InventoryWindow(QMainWindow):
         qty = self.spin_move_qty.value()
         notes = self.txt_notes.text()
         date_str = self.date_move.date().toString("yyyy-MM-dd") + datetime.now().strftime(" %H:%M:%S")
-        
+
         if not item_id:
             return
         if qty <= 0:
             QMessageBox.warning(self, "Erreur", "La quantité doit être supérieure à zéro.")
             return
-        
+
         try:
             with DatabaseManager() as db:
                 conn = db.get_connection()
@@ -675,7 +676,7 @@ class InventoryWindow(QMainWindow):
                 repo.insert_movement_log(item_id, move_type, qty, date_str, notes)
 
                 conn.commit()
-            
+
             self.load_inventory()
             self.load_history()
             self.txt_notes.clear()
@@ -693,28 +694,29 @@ class InventoryWindow(QMainWindow):
             for r in rows:
                 idx = self.table_log.rowCount()
                 self.table_log.insertRow(idx)
-                
+
                 # عرض التاريخ بدون الثواني للشكل الجمالي
                 display_date = str(r[0] or "").split(".")[0]
                 self.table_log.setItem(idx, 0, QTableWidgetItem(display_date))
-                
+
                 movement_type = str(r[1] or "")
                 type_item = QTableWidgetItem(movement_type)
-                if movement_type == "IN": 
+                if movement_type == "IN":
                     if THEME_AVAILABLE:
                         type_item.setForeground(QColor(ThemeManager.get_colors().SUCCESS))
                     type_item.setText("ENTRÉE")
-                else: 
+                else:
                     if THEME_AVAILABLE:
                         type_item.setForeground(QColor(ThemeManager.get_colors().DANGER))
                     type_item.setText("SORTIE")
-                    
+
                 self.table_log.setItem(idx, 1, type_item)
                 self.table_log.setItem(idx, 2, QTableWidgetItem(str(r[2] or "-")))
                 self.table_log.setItem(idx, 3, QTableWidgetItem(str(r[3] or 0)))
                 self.table_log.setItem(idx, 4, QTableWidgetItem(str(r[4] or "")))
         except Exception as e:
             AppLogger.error("InventoryManagement", f"Error loading history: {e}")
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

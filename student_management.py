@@ -7,9 +7,9 @@ from database_setup import DatabaseManager
 from app_logger import AppLogger
 from repositories.student_repo import StudentRepository
 from repositories.finance_repo import FinanceRepository
-from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
-                             QHBoxLayout, QTableWidget, QTableWidgetItem, 
-                             QPushButton, QLabel, QLineEdit, QComboBox, 
+from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
+                             QHBoxLayout, QTableWidget, QTableWidgetItem,
+                             QPushButton, QLabel, QLineEdit, QComboBox,
                              QMessageBox, QHeaderView, QFrame, QDateEdit,
                              QTabWidget, QGraphicsDropShadowEffect, QGridLayout, QFileDialog, QScrollArea)
 from PyQt6.QtCore import Qt, QDate, QSize
@@ -30,6 +30,8 @@ except ModuleNotFoundError:
     ARABIC_SUPPORT = False
 
 # --- فئة توليد PDF (كما هي) ---
+
+
 class StudentListPDF(FPDF):
     def __init__(self, school_info=None, title_doc="LISTE DES ETUDIANTS", orientation='P'):
         super().__init__(orientation=orientation, unit='mm', format='A4')
@@ -96,12 +98,13 @@ class StudentListPDF(FPDF):
         self.cell(page_w / 2, 4, f"Imprimé le {date_str}", 0, 0, 'L')
         self.cell(page_w / 2, 4, f"Page {self.page_no()}", 0, 0, 'R')
 
+
 class ModernStudentManagement(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Gestion des Élèves / إدارة الطلاب")
         self.setMinimumSize(1100, 700)
-        
+
         # تطبيق المظهر (Dark Mode أو Light Mode)
         if THEME_AVAILABLE:
             ThemeManager.apply_theme(self)
@@ -112,7 +115,7 @@ class ModernStudentManagement(QMainWindow):
                 QLabel {{ font-family: 'Segoe UI', 'Cairo', sans-serif; color: {colors.TEXT_PRIMARY}; }}
                 QScrollArea {{ border: none; background: transparent; }}
             """)
-        
+
         self.current_photo_path = None
         self.selected_student_id = None
         self.init_ui()
@@ -134,7 +137,7 @@ class ModernStudentManagement(QMainWindow):
             QFrame {{ background-color: {colors.BG_HEADER}; border-radius: 10px; }}
         """)
         header_frame.setMaximumHeight(80)
-        
+
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(15)
         shadow.setColor(QColor(15, 23, 42, 40))
@@ -143,27 +146,27 @@ class ModernStudentManagement(QMainWindow):
 
         hl = QHBoxLayout(header_frame)
         hl.setContentsMargins(20, 15, 20, 15)
-        
+
         icon_lbl = QLabel("👨‍🎓")
         icon_lbl.setStyleSheet("font-size: 32px; background: transparent;")
-        
+
         title_layout = QVBoxLayout()
         header_lbl = QLabel("GESTION DES ÉLÈVES")
         header_lbl.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
         header_lbl.setStyleSheet(f"color: {colors.HEADER_TEXT}; background: transparent;")
-        
+
         sub_lbl = QLabel("إدارة ملفات الطلاب والتسجيل")
         sub_lbl.setFont(QFont("Cairo", 12))
         sub_lbl.setStyleSheet(f"color: {colors.TEXT_SECONDARY}; background: transparent;")
-        
+
         title_layout.addWidget(header_lbl)
         title_layout.addWidget(sub_lbl)
-        
+
         hl.addWidget(icon_lbl)
         hl.addSpacing(15)
         hl.addLayout(title_layout)
         hl.addStretch()
-        
+
         self.main_layout.addWidget(header_frame)
 
         # 2. Tabs
@@ -174,10 +177,10 @@ class ModernStudentManagement(QMainWindow):
             QTabBar::tab:selected {{ background: {colors.BG_CARD}; color: {colors.PRIMARY}; border-bottom: 2px solid {colors.PRIMARY}; }}
             QTabBar::tab:hover {{ background: {colors.BORDER}; color: {colors.TEXT_PRIMARY}; }}
         """)
-        
+
         self.setup_student_tab()
         self.setup_list_tab()
-        
+
         self.main_layout.addWidget(self.tabs)
 
     def create_card(self):
@@ -188,7 +191,7 @@ class ModernStudentManagement(QMainWindow):
         """)
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(20)
-        shadow.setColor(QColor(15, 23, 42, 15)) 
+        shadow.setColor(QColor(15, 23, 42, 15))
         shadow.setOffset(0, 4)
         frame.setGraphicsEffect(shadow)
         return frame
@@ -198,12 +201,12 @@ class ModernStudentManagement(QMainWindow):
         le.setPlaceholderText(placeholder)
         le.setMinimumHeight(40)
         return le
-    
+
     def styled_combo(self):
         combo = QComboBox()
         combo.setMinimumHeight(40)
         return combo
-        
+
     def styled_date(self):
         de = QDateEdit()
         de.setCalendarPopup(True)
@@ -217,17 +220,17 @@ class ModernStudentManagement(QMainWindow):
         layout.setSpacing(12)
         layout.setContentsMargins(20, 20, 20, 20)
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-        
+
         # ===== العمود الأيمن: نموذج الإدخال (Scrollable) =====
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFixedWidth(600)
-        
+
         form_container = self.create_card()
         form_layout = QVBoxLayout(form_container)
         form_layout.setSpacing(15)
         form_layout.setContentsMargins(20, 20, 20, 20)
-        
+
         lbl_new = QLabel("📝 NOUVEAU PROFIL / ملف جديد")
         lbl_new.setAlignment(Qt.AlignmentFlag.AlignCenter)
         lbl_new.setStyleSheet(f"""
@@ -244,7 +247,7 @@ class ModernStudentManagement(QMainWindow):
         """)
         self.lbl_photo.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.lbl_photo.setText("Photo\nصورة")
-        
+
         btn_upload = QPushButton("📷")
         btn_upload.setFixedSize(36, 36)
         btn_upload.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -253,18 +256,18 @@ class ModernStudentManagement(QMainWindow):
             QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}
         """)
         btn_upload.clicked.connect(self.upload_student_photo)
-        
+
         photo_wrapper = QWidget()
         photo_wrapper.setStyleSheet("background: transparent; border: none;")
         pw_layout = QVBoxLayout(photo_wrapper)
         pw_layout.addWidget(self.lbl_photo)
-        
+
         photo_layout.addStretch()
         photo_layout.addWidget(photo_wrapper)
-        photo_layout.addWidget(btn_upload, 0, Qt.AlignmentFlag.AlignBottom) 
+        photo_layout.addWidget(btn_upload, 0, Qt.AlignmentFlag.AlignBottom)
         photo_layout.addStretch()
         form_layout.addLayout(photo_layout)
-        
+
         def add_section_header(text, icon):
             lbl = QLabel(f"{icon} {text}")
             lbl.setStyleSheet(f"""
@@ -276,7 +279,7 @@ class ModernStudentManagement(QMainWindow):
         add_section_header("Informations Personnelles / بيانات الطالب", "👤")
         grid = QGridLayout()
         grid.setSpacing(10)
-        
+
         grid.addWidget(QLabel("Prénom (FR):"), 0, 0)
         self.txt_fname_fr = self.styled_input("Prénom")
         grid.addWidget(self.txt_fname_fr, 0, 1)
@@ -292,37 +295,37 @@ class ModernStudentManagement(QMainWindow):
         grid.addWidget(QLabel("اللقب (AR):"), 1, 2)
         self.txt_lname_ar = self.styled_input("اللقب")
         grid.addWidget(self.txt_lname_ar, 1, 3)
-        
+
         grid.addWidget(QLabel("Naissance (Date):"), 2, 0)
         self.date_birth = self.styled_date()
         self.date_birth.setDate(QDate.currentDate().addYears(-6))
         grid.addWidget(self.date_birth, 2, 1)
-        
+
         grid.addWidget(QLabel("Lieu (Lieu):"), 2, 2)
         self.txt_birth_place = self.styled_input("Lieu de naissance / مكان الولادة")
         grid.addWidget(self.txt_birth_place, 2, 3)
-        
+
         grid.addWidget(QLabel("Sexe:"), 3, 0)
         self.combo_gender = self.styled_combo()
         self.combo_gender.addItems(["Masculin", "Féminin"])
         grid.addWidget(self.combo_gender, 3, 1)
-        
+
         grid.addWidget(QLabel("Adresse:"), 3, 2)
         self.txt_address = self.styled_input("Adresse complète")
         grid.addWidget(self.txt_address, 3, 3)
-        
+
         form_layout.addLayout(grid)
-        
+
         # 2. التنسيب
         add_section_header("Affectation / التنسيب", "🎓")
         grid2 = QGridLayout()
         grid2.setSpacing(10)
-        
+
         grid2.addWidget(QLabel("Cycle:"), 0, 0)
         self.combo_cycle_reg = self.styled_combo()
         self.combo_cycle_reg.currentIndexChanged.connect(self.load_classes_for_reg)
         grid2.addWidget(self.combo_cycle_reg, 0, 1)
-        
+
         grid2.addWidget(QLabel("Classe:"), 0, 2)
         self.combo_class_reg = self.styled_combo()
         self.combo_class_reg.currentIndexChanged.connect(self.update_class_number_preview)
@@ -336,20 +339,20 @@ class ModernStudentManagement(QMainWindow):
         """)
         grid2.addWidget(self.txt_class_number, 0, 5)
         form_layout.addLayout(grid2)
-        
+
         # 3. الولي
         add_section_header("Tuteur / الولي", "👨‍👩‍👧")
         grid3 = QGridLayout()
         grid3.setSpacing(10)
-        
+
         grid3.addWidget(QLabel("Nom:"), 0, 0)
         self.txt_parent_name = self.styled_input("Nom du tuteur")
         grid3.addWidget(self.txt_parent_name, 0, 1)
-        
+
         grid3.addWidget(QLabel("Tél:"), 0, 2)
         self.txt_parent_phone = self.styled_input("Téléphone")
         grid3.addWidget(self.txt_parent_phone, 0, 3)
-        
+
         grid3.addWidget(QLabel("Email:"), 1, 0)
         self.txt_parent_email = self.styled_input("Email Tuteur")
         grid3.addWidget(self.txt_parent_email, 1, 1)
@@ -358,25 +361,25 @@ class ModernStudentManagement(QMainWindow):
         self.txt_parent_addr = self.styled_input("Adresse du tuteur")
         grid3.addWidget(self.txt_parent_addr, 1, 3)
         form_layout.addLayout(grid3)
-        
+
         # 4. الحالة
         add_section_header("Statut / الحالة", "📋")
         grid4 = QGridLayout()
         grid4.setSpacing(10)
-        
+
         grid4.addWidget(QLabel("Date Inscr.:"), 0, 0)
         self.date_registration = self.styled_date()
         self.date_registration.setDate(QDate.currentDate())
         grid4.addWidget(self.date_registration, 0, 1)
-        
+
         grid4.addWidget(QLabel("Statut:"), 0, 2)
         self.combo_status = self.styled_combo()
         self.combo_status.addItems(["Active", "Inactive", "Suspendu", "Diplômé"])
         grid4.addWidget(self.combo_status, 0, 3)
         form_layout.addLayout(grid4)
-        
+
         form_layout.addSpacing(10)
-        
+
         # أزرار العمل
         btn_layout = QHBoxLayout()
         self.btn_save = QPushButton("💾 Enregistrer / حفظ")
@@ -396,22 +399,22 @@ class ModernStudentManagement(QMainWindow):
             QPushButton:hover {{ background-color: {colors.BG_MAIN}; }}
         """)
         self.btn_reset.clicked.connect(self.clear_student_form)
-        
+
         btn_layout.addWidget(self.btn_save, 2)
         btn_layout.addWidget(self.btn_reset, 1)
         form_layout.addLayout(btn_layout)
-        
+
         form_layout.addStretch()
         scroll.setWidget(form_container)
         layout.addWidget(scroll)
-        
+
         # ===== العمود الأيسر: الجدول المختصر =====
         list_container = QWidget()
         list_container.setMaximumWidth(400)
         list_layout = QVBoxLayout(list_container)
         list_layout.setSpacing(15)
         list_layout.setContentsMargins(0, 0, 0, 0)
-        
+
         toolbar = self.create_card()
         tlay = QVBoxLayout(toolbar)
         tlay.setContentsMargins(10, 10, 10, 10)
@@ -420,7 +423,7 @@ class ModernStudentManagement(QMainWindow):
         self.combo_filter_class_reg = self.styled_combo()
         self.combo_filter_class_reg.addItem("Toutes les Classes", None)
         self.combo_filter_class_reg.currentIndexChanged.connect(self.refresh_student_list)
-        
+
         self.combo_name_lang_reg = self.styled_combo()
         self.combo_name_lang_reg.addItem("Nom FR", "fr")
         self.combo_name_lang_reg.addItem("الاسم AR", "ar")
@@ -453,11 +456,11 @@ class ModernStudentManagement(QMainWindow):
         row_filters.addWidget(self.combo_name_lang_reg)
         row_filters.addWidget(btn_print_filtered)
         row_filters.addWidget(btn_import_excel)
-        
+
         tlay.addLayout(row_search)
         tlay.addLayout(row_filters)
         list_layout.addWidget(toolbar)
-        
+
         self.table_students_reg = QTableWidget()
         self.style_table(self.table_students_reg)
         self.table_students_reg.setColumnCount(4)
@@ -467,7 +470,7 @@ class ModernStudentManagement(QMainWindow):
         self.table_students_reg.setColumnWidth(1, 90)
         self.table_students_reg.setColumnWidth(3, 120)
         self.table_students_reg.itemSelectionChanged.connect(self.on_student_selected_reg)
-        
+
         list_layout.addWidget(self.table_students_reg)
         layout.addWidget(list_container, 1)
         self.tabs.addTab(tab, "  Inscription & Gestion / التسجيل والإدارة  ")
@@ -487,7 +490,7 @@ class ModernStudentManagement(QMainWindow):
         self.combo_filter_cycle.addItem("Cycles (Tous)", None)
         self.combo_filter_cycle.currentIndexChanged.connect(self.load_classes_for_filter)
         self.combo_filter_cycle.setFixedWidth(120)
-        
+
         self.combo_filter_class = self.styled_combo()
         self.combo_filter_class.addItem("Classes (Toutes)", None)
         self.combo_filter_class.currentIndexChanged.connect(self.refresh_student_list)
@@ -502,7 +505,7 @@ class ModernStudentManagement(QMainWindow):
         self.date_filter_to.setDate(QDate.currentDate())
         self.date_filter_to.setFixedWidth(110)
         self.date_filter_to.dateChanged.connect(self.refresh_student_list)
-        
+
         self.txt_search = self.styled_input("🔍 Recherche globale...")
         self.txt_search.textChanged.connect(self.refresh_student_list)
 
@@ -534,7 +537,7 @@ class ModernStudentManagement(QMainWindow):
         self.table_students.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.table_students.setColumnWidth(0, 50)
         self.table_students.setColumnWidth(3, 60)
-        
+
         layout.addWidget(self.table_students)
         self.tabs.addTab(tab, "  Liste Complète / القائمة الشاملة  ")
 
@@ -554,7 +557,7 @@ class ModernStudentManagement(QMainWindow):
         """)
 
     # ===== Logic Methods =====
-    
+
     def upload_student_photo(self):
         file_path, _ = QFileDialog.getOpenFileName(self, "Image", "", "Images (*.png *.jpg *.jpeg)")
         if file_path:
@@ -569,10 +572,10 @@ class ModernStudentManagement(QMainWindow):
         self.txt_lname_fr.clear()
         self.txt_fname_fr.clear()
         self.txt_address.clear()
-        self.txt_birth_place.clear() 
+        self.txt_birth_place.clear()
         self.txt_parent_name.clear()
         self.txt_parent_phone.clear()
-        self.txt_parent_email.clear() 
+        self.txt_parent_email.clear()
         self.txt_parent_addr.clear()
         self.date_birth.setDate(QDate.currentDate().addYears(-6))
         self.date_registration.setDate(QDate.currentDate())
@@ -665,7 +668,7 @@ class ModernStudentManagement(QMainWindow):
         ln_fr = self.txt_lname_fr.text().strip()
         fn_fr = self.txt_fname_fr.text().strip()
         class_id = self.combo_class_reg.currentData()
-        
+
         if not class_id:
             QMessageBox.warning(self, "Attention", "Veuillez inscrire l'élève dans une classe avant l'enregistrement.")
             return
@@ -714,11 +717,11 @@ class ModernStudentManagement(QMainWindow):
                 QMessageBox.warning(self, "Attention", "Aucune année scolaire active pour attribuer رقم الفصل.")
             else:
                 self.txt_class_number.setText(str(class_number))
-            
+
             QMessageBox.information(self, "Succès", "Étudiant ajouté avec succès.")
             self.clear_student_form()
             self.refresh_student_list()
-            
+
         except Exception as e:
             QMessageBox.critical(self, "Erreur", str(e))
 
@@ -780,16 +783,16 @@ class ModernStudentManagement(QMainWindow):
                 QMessageBox.warning(self, "Attention", "Aucune année scolaire active pour attribuer رقم الفصل.")
             else:
                 self.txt_class_number.setText(str(class_number))
-            
+
             QMessageBox.information(self, "Succès", "Mise à jour réussie.")
             self.clear_student_form()
             self.refresh_student_list()
-            
+
         except Exception as e:
             QMessageBox.critical(self, "Erreur", str(e))
 
     def delete_student(self, student_id):
-        reply = QMessageBox.question(self, "Confirmation", "Supprimer cet étudiant ?", 
+        reply = QMessageBox.question(self, "Confirmation", "Supprimer cet étudiant ?",
                                      QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
         if reply == QMessageBox.StandardButton.Yes:
             try:
@@ -834,18 +837,18 @@ class ModernStudentManagement(QMainWindow):
                 self.txt_parent_phone.setText(data[9] or "")
                 self.txt_parent_email.setText(data[10] or "")
                 self.txt_parent_addr.setText(data[11] or "")
-                
+
                 # إعداد الـ Class
-                class_id = data[15] # Index 15 is class_id from JOIN
+                class_id = data[15]  # Index 15 is class_id from JOIN
                 if class_id:
                     idx = self.combo_class_reg.findData(class_id)
                     if idx >= 0: self.combo_class_reg.setCurrentIndex(idx)
                 self.update_class_number_preview()
-                
+
                 if data[12]:
                     self.date_registration.setDate(QDate.fromString(str(data[12]), "yyyy-MM-dd"))
                 self.combo_status.setCurrentText(data[13] or "Active")
-                
+
                 if data[14] and os.path.exists(data[14]):
                     self.current_photo_path = data[14]
                     pixmap = QPixmap(data[14]).scaledToWidth(110, Qt.TransformationMode.SmoothTransformation)
@@ -860,7 +863,7 @@ class ModernStudentManagement(QMainWindow):
                     QPushButton {{ background-color: {colors.WARNING}; color: white; border-radius: 8px; font-weight: bold; border: none; }}
                     QPushButton:hover {{ background-color: {colors.WARNING}; }}
                 """)
-                self.tabs.setCurrentIndex(0) 
+                self.tabs.setCurrentIndex(0)
         except Exception as e:
             AppLogger.error("StudentManagement", f"Error loading student: {e}")
 
@@ -869,7 +872,7 @@ class ModernStudentManagement(QMainWindow):
         try:
             self._load_classes_into(self.combo_filter_class_reg, None, "Toutes les Classes")
         except Exception: pass
-    
+
     def load_cycles_filter(self):
         self._load_cycles_into(self.combo_filter_cycle, "Tous les cycles")
 
@@ -911,7 +914,7 @@ class ModernStudentManagement(QMainWindow):
             date_from = self.date_filter_from.date().toString("yyyy-MM-dd") if hasattr(self, "date_filter_from") else None
             date_to = self.date_filter_to.date().toString("yyyy-MM-dd") if hasattr(self, "date_filter_to") else None
         else:
-            cycle_id = None 
+            cycle_id = None
             class_id = self.combo_filter_class_reg.currentData()
             search = self.txt_search_reg.text().strip()
             date_from = None
@@ -939,7 +942,7 @@ class ModernStudentManagement(QMainWindow):
             full_name_ar = f"{r[3]} {r[4]}"
             gender_str = self.gender_to_label(r[5])
             class_no = str(r[10]) if r[10] else "-"
-            
+
             if table == self.table_students_reg:
                 name_lang = self.combo_name_lang_reg.currentData() if hasattr(self, "combo_name_lang_reg") else "fr"
                 if name_lang == "ar":
@@ -954,28 +957,28 @@ class ModernStudentManagement(QMainWindow):
                 name_item = QTableWidgetItem(name_value)
                 if name_lang == "ar": name_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                 table.setItem(row_idx, 2, name_item)
-                
+
                 container = QWidget()
                 layout = QHBoxLayout(container)
                 layout.setContentsMargins(2, 2, 2, 2)
                 layout.setSpacing(5)
-                
+
                 btn_edit = QPushButton("✎")
                 btn_edit.setFixedSize(28, 28)
                 btn_edit.setStyleSheet(f"background: {Colors().PRIMARY}; color: white; border-radius: 4px; border: none;")
                 btn_edit.clicked.connect(lambda ch, sid=r[0]: self.load_student_for_edit(sid))
-                
+
                 btn_del = QPushButton("✕")
                 btn_del.setFixedSize(28, 28)
                 btn_del.setStyleSheet(f"background: {Colors().DANGER}; color: white; border-radius: 4px; border: none;")
                 btn_del.clicked.connect(lambda ch, sid=r[0]: self.delete_student(sid))
-                
+
                 layout.addWidget(btn_edit)
                 layout.addWidget(btn_del)
                 layout.addStretch()
                 table.setCellWidget(row_idx, 3, container)
-                
-            else: # Full Table
+
+            else:  # Full Table
                 table.setItem(row_idx, 0, QTableWidgetItem(str(r[0])))
                 full_fr = f"{r[1]} {r[2]}".strip()
                 full_ar = f"{r[3]} {r[4]}".strip()
@@ -988,7 +991,7 @@ class ModernStudentManagement(QMainWindow):
                 table.setItem(row_idx, 7, QTableWidgetItem(r[7] or ""))
                 table.setItem(row_idx, 8, QTableWidgetItem(r[8] or ""))
                 table.setItem(row_idx, 9, QTableWidgetItem(str(r[9]) if r[9] else ""))
-                
+
                 container = QWidget()
                 layout = QHBoxLayout(container)
                 layout.setContentsMargins(2, 2, 2, 2)
@@ -1057,7 +1060,7 @@ class ModernStudentManagement(QMainWindow):
                 date_from=date_from,
                 date_to=date_to,
             )
-            
+
         result = []
         for r in rows:
             gender_str = self.gender_to_label(r[7])
@@ -1097,16 +1100,16 @@ class ModernStudentManagement(QMainWindow):
             col_widths = [9, 18, 14, 16, 12, 16, 14, 9, 22, 12, 12, 22, 15, 35, 20, 14, 12]
         w = page_w / max(1, col_count)
 
-        pdf.set_draw_color(203, 213, 225)  
-        pdf.set_fill_color(30, 41, 59) 
-        pdf.set_text_color(248, 250, 252)  
+        pdf.set_draw_color(203, 213, 225)
+        pdf.set_fill_color(30, 41, 59)
+        pdf.set_text_color(248, 250, 252)
         for i, h in enumerate(headers):
             txt = self._prepare_pdf_text(h)
             cell_w = col_widths[i] if col_widths else w
             pdf.cell(cell_w, 9, txt, 1, 0, 'C', fill=True)
         pdf.ln()
 
-        pdf.set_text_color(51, 65, 85)  
+        pdf.set_text_color(51, 65, 85)
         row_fill = False
 
         for row in rows:
@@ -1129,13 +1132,13 @@ class ModernStudentManagement(QMainWindow):
         self._setup_pdf_fonts(pdf)
         pdf.add_page()
         pdf.set_font(self._get_pdf_font_name(), size=10)
-        
+
         col_count = table.columnCount()
         w = 190 / max(1, col_count)
-        pdf.set_draw_color(203, 213, 225) 
-        pdf.set_text_color(51, 65, 85)  
+        pdf.set_draw_color(203, 213, 225)
+        pdf.set_text_color(51, 65, 85)
         row_fill = False
-        
+
         for row in range(table.rowCount()):
             pdf.set_fill_color(241, 245, 249) if row_fill else pdf.set_fill_color(255, 255, 255)
             for col in range(col_count):
@@ -1197,6 +1200,7 @@ class ModernStudentManagement(QMainWindow):
         if text is None: return False
         if not isinstance(text, str): text = str(text)
         return any("\u0600" <= ch <= "\u06FF" or "\u0750" <= ch <= "\u077F" or "\u08A0" <= ch <= "\u08FF" for ch in text)
+
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
