@@ -1,12 +1,14 @@
 """Tests for services/finance_service.py"""
 
-import sys
 import os
+import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-import pytest
 from datetime import date
+
+import pytest
+
 from services.finance_service import FinanceService
 
 
@@ -236,3 +238,11 @@ class TestValidatePaymentAmount:
 
     def test_exact_debt_is_valid(self, svc):
         assert svc.validate_payment_amount(10_000, 10_000) == []
+
+    def test_amount_at_rounding_tolerance_boundary_is_valid(self, svc):
+        # Mutation guard: Gt→GtE would reject amount == remaining_debt * 1.005.
+        # The original `>` means equality is within tolerance and must NOT produce an error.
+        remaining_debt = 10_000
+        amount_at_boundary = remaining_debt * 1.005  # exactly 10 050.0
+        errors = svc.validate_payment_amount(amount_at_boundary, remaining_debt)
+        assert errors == []

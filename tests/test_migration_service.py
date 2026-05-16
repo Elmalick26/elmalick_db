@@ -5,15 +5,16 @@ use a raw sqlite3 connection.  Instead we mock the connection/cursor and verify
 the business logic (branching, call counts, etc.) without a real database.
 """
 
-import sys
 import os
+import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 from unittest.mock import MagicMock
-import pytest
-from services.migration_service import MigrationService
 
+import pytest
+
+from services.migration_service import MigrationService
 
 # ──────────────────────────────────────────────
 # Helpers
@@ -126,3 +127,16 @@ class TestExecuteMigration:
 
         sql_calls = [str(c.args[0]) for c in cursor.execute.call_args_list]
         assert any("AcademicYears" in s for s in sql_calls)
+
+    def test_admis_next_number_increments_from_existing_max(self, svc):
+        """Mutation guard: Or→And in (max_number_result[0] or 0) + 1.
+        When max_number = 5, next class_number must be 6 (not 1 as the And
+        mutation would produce via `5 and 0 + 1`)."""
+        conn, cursor = _make_conn(fetchone_sequence=[(5,), None])
+        rows = [_row(1, "Admis", current_class_id=10, next_class_id=20)]
+
+        svc.execute_migration(conn, rows, target_year_id=2024)
+
+        all_params = [c.args[1] for c in cursor.execute.call_args_list if len(c.args) > 1]
+        flat = [p for params in all_params for p in params]
+        assert 6 in flat, "next class_number should be max+1 = 6"

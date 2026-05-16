@@ -3,8 +3,10 @@ tests/test_attendance_service.py
 تغطية كاملة لـ AttendanceService (خدمة الحضور).
 """
 
-import pytest
 from datetime import date
+
+import pytest
+
 from services.attendance_service import AttendanceService
 
 
@@ -169,6 +171,30 @@ class TestGetAbsencePeriods:
         ]
         periods = svc.get_absence_periods(records)
         assert periods == []
+
+    def test_uppercase_absent_status_not_treated_as_absent(self, svc):
+        # Mutation guard: "ABSENT" <= "Absent" is True in Python (uppercase < lowercase)
+        # but "ABSENT" != "Absent", so it must NOT create an absence period.
+        records = [
+            {"date": date(2026, 1, 1), "status": "ABSENT"},
+            {"date": date(2026, 1, 2), "status": "Present"},
+        ]
+        periods = svc.get_absence_periods(records)
+        assert periods == []
+
+    def test_two_non_consecutive_absence_periods(self, svc):
+        # Mutation guard: If_Statement→If_False at else-branch would prevent periods from
+        # being closed when a Present record is encountered, collapsing two periods into one.
+        records = [
+            {"date": date(2026, 1, 1), "status": "Absent"},
+            {"date": date(2026, 1, 2), "status": "Present"},
+            {"date": date(2026, 1, 3), "status": "Absent"},
+            {"date": date(2026, 1, 4), "status": "Present"},
+        ]
+        periods = svc.get_absence_periods(records)
+        assert len(periods) == 2
+        assert periods[0]["days"] == 1
+        assert periods[1]["days"] == 1
 
 
 # ─────────────────────────────────────────────────────────────

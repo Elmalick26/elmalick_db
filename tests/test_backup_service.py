@@ -1,15 +1,15 @@
 """Tests for services/backup_service.py — uses mocking (no pg_dump required)."""
 
-import sys
 import os
+import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-import pytest
 from datetime import datetime, timedelta
 from pathlib import Path
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, PropertyMock, patch
 
+import pytest
 
 # ──────────────────────────────────────────────
 # Helpers
@@ -196,3 +196,35 @@ class TestGetBackupSummary:
         mock_abs.backup_dir.glob.return_value = []
         summary = service.get_backup_summary()
         assert summary == {"count": 0, "total_mb": 0.0, "latest_at": None, "latest_name": None}
+
+
+# ──────────────────────────────────────────────
+# Mutation guards
+# ──────────────────────────────────────────────
+
+
+class TestMutationGuards:
+    def test_default_backup_dir_is_none(self):
+        """Mutation guard: None→True in default arg.
+        BackupService() must pass backup_dir=None to AutoBackupSystem."""
+        with patch("services.backup_service.AutoBackupSystem") as mock_abs_class:
+            from services.backup_service import BackupService
+
+            BackupService()
+            mock_abs_class.assert_called_once_with(backup_dir=None)
+
+    def test_failure_logs_error_not_info(self):
+        """Mutation guard: if path:→if True — when path is None, error must be
+        logged, NOT info."""
+        with patch("services.backup_service.AutoBackupSystem"):
+            from services.backup_service import BackupService
+
+            service = BackupService.__new__(BackupService)
+            mock_abs = MagicMock()
+            mock_abs.create_backup.return_value = None
+            service._system = mock_abs
+
+            with patch("services.backup_service.AppLogger") as mock_logger:
+                service.create_backup()
+                mock_logger.error.assert_called_once()
+                mock_logger.info.assert_not_called()

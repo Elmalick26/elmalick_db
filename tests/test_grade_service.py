@@ -1,11 +1,12 @@
 """Tests for services/grade_service.py"""
 
-import sys
 import os
+import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 import pytest
+
 from services.grade_service import GradeService
 
 
@@ -147,3 +148,13 @@ class TestGetNextClass:
         class_id, name = svc.get_next_class(class_map, 99, 10, "Admis")
         assert class_id == 1
         assert name == "6e"
+
+    def test_no_class_at_exact_next_order_returns_end_of_cycle(self, svc):
+        # Mutation guard: Eq→GtE would pick a class with order >= current+1 (e.g. order+2)
+        # instead of requiring the EXACT next sequential class.
+        class_map = {
+            1: {"name": "6e", "order": 1, "cycle": 10},
+            3: {"name": "4e", "order": 3, "cycle": 10},  # order 2 is missing
+        }
+        class_id, name = svc.get_next_class(class_map, 1, 10, "Admis")
+        assert class_id is None  # no exact order=2 exists → end of cycle
