@@ -122,7 +122,7 @@
 
 ## المرحلة 4 — رفع تغطية الاختبارات ✅
 
-**التغطية: 7% → 19% (374 اختبار) | الهدف الأصلي: 60%**
+**التغطية: 7% → 63% (570 اختبار) | الهدف: 60%+ ✅ محقق**
 
 ### 4.1 اختبارات الـ API (أسرع كسب) ✅
 
@@ -130,13 +130,14 @@
   - `api/auth.py` → 79% | `api/routes_students.py` → 84% | `api/routes_parent.py` → 76%
 - [x] استخدام `TestClient` من FastAPI (لا server حقيقي مطلوب)
 
-### 4.2 اختبارات الـ Repositories ✅ (جزئي)
+### 4.2 اختبارات الـ Repositories ✅
 
 - [x] `tests/test_small_repos.py` — UserRepository (100%) + GlobalSearchRepository (83%)
 - [x] `tests/test_security_utils.py` — security_utils.py (69%)
-- [ ] `tests/test_student_repo.py`
-- [ ] `tests/test_finance_repo.py`
-- [ ] `tests/test_attendance_repo.py`
+- [x] `tests/test_student_repo.py` — StudentRepository (93%)
+- [x] `tests/test_repos_phase4b.py` — LoginRepository, AttendanceRepository, GradesRepository, StaffRepository (89 اختبار)
+  - `repositories/login_repo.py` → 98% | `repositories/attendance_repo.py` → 95%
+  - `repositories/grades_repo.py` → 92% | `repositories/staff_repo.py` → 94%
 
 ### 4.3 اختبارات الـ UI (pytest-qt)
 
