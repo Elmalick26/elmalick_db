@@ -17,7 +17,7 @@ line_length = 120
 known_first_party = [
     "database_setup", "config_manager", "app_logger", "db_path",
     "ui_styles", "security_utils", "validators",
-    "repositories", "services", "api",
+    "repositories", "services", "api", "src",
 ]
 skip_glob = [".venv/*", "dist_release/*", "Origine/*"]
 
@@ -33,7 +33,7 @@ check_untyped_defs = false
 files = ["services"]
 
 [[tool.mypy.overrides]]
-module = ["services.*"]
+module = ["services.*", "src.data.*"]
 disallow_untyped_defs = true
 check_untyped_defs = true
 

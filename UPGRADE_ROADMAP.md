@@ -156,7 +156,7 @@
 
 ## المرحلة 5 — إعادة هيكلة المشروع ✅ (جزئي)
 
-**المنجز: 5.1 + 5.3 | المتبقي: 5.2 (تنظيم المجلدات)**
+**المنجز: 5.1 + 5.2 (جزئي) + 5.3 | المتبقي: 5.2 نقل UI files**
 
 ### 5.1 تفكيك الملفات الضخمة ✅
 
@@ -168,11 +168,12 @@
 | `bulletin_generation.py` | 1525 | — | ⏸ مؤجل (UI/PyInstaller) |
 | `student_management.py` | 1205 | — | ⏸ مؤجل (UI/PyInstaller) |
 
-### 5.2 تنظيم هيكل المجلدات
+### 5.2 تنظيم هيكل المجلدات ✅ (جزئي)
 
-- [ ] نقل UI files إلى `src/ui/`
-- [ ] نقل repositories إلى `src/data/`
-- [ ] تحديث جميع الـ imports
+- [x] نقل repositories إلى `src/data/` (موقع canonical جديد)
+- [x] `repositories/` تحوّلت إلى compatibility shim (re-exports من `src/data/`)
+- [x] إضافة type annotations كاملة لجميع دوال `src/data/` (27 source files نظيفة)
+- [ ] نقل UI files إلى `src/ui/` — ⏸ مؤجل (PyInstaller)
 
 ### 5.3 API Versioning ✅
 
@@ -249,6 +250,7 @@
 | 2026-05-15 | 6.1–6.2 | JSON Logging + Request Middleware | ✅ |
 | 2026-05-15 | 4.1–4.3 | رفع التغطية 16%→63% (577 اختبار) | ✅ |
 | 2026-05-15 | 4.4 | Mutation testing — 7/7 mutations killed | ✅ commit `6345fb8` |
+| 2026-05-16 | 5.2 | نقل repositories إلى src/data/ + shim + توفير type hints كاملة | ✅ |
 | 2026-05-16 | 2.4 | Type hints لجميع repositories + database_setup + config_manager | ✅ commit `25a0f67` |
 | 2026-05-16 | 3.3 | Health check محسّن (latency, table_count, db_size, last_backup, /v1/health) | ✅ |
 
