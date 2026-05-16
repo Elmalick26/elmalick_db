@@ -35,8 +35,7 @@ class TimetableRepository:
         """Return (id, full_name_fr) for non-archived staff, ordered by last name."""
         cursor = self.conn.cursor()
         cursor.execute(
-            "SELECT id, CONCAT(first_name_fr, ' ', last_name_fr) FROM Staff "
-            "WHERE status != 'Archived' ORDER BY last_name_fr"
+            "SELECT id, CONCAT(first_name, ' ', last_name) FROM Staff " "WHERE status != 'Archived' ORDER BY last_name"
         )
         return cursor.fetchall()
 
@@ -56,7 +55,7 @@ class TimetableRepository:
                 T.teacher_id,
                 T.room,
                 SB.subject_name_fr,
-                CONCAT(ST.first_name_fr, ' ', ST.last_name_fr) AS teacher_name
+                CONCAT(ST.first_name, ' ', ST.last_name) AS teacher_name
             FROM Timetable T
             JOIN Subjects SB ON T.subject_id = SB.id
             LEFT JOIN Staff ST ON T.teacher_id = ST.id
@@ -74,7 +73,7 @@ class TimetableRepository:
             """
             SELECT T.day_of_week, T.start_time, T.end_time,
                    SB.subject_name_fr,
-                   COALESCE(CONCAT(ST.first_name_fr, ' ', ST.last_name_fr), '—') AS teacher,
+                   COALESCE(CONCAT(ST.first_name, ' ', ST.last_name), '—') AS teacher,
                    COALESCE(T.room, '—') AS room
             FROM Timetable T
             JOIN Subjects SB ON T.subject_id = SB.id
