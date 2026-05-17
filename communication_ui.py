@@ -612,10 +612,13 @@ class CommunicationWindow(QMainWindow):
     def save_settings(self):
         password_value = self.txt_password.text() if self.chk_save_password.isChecked() else ""
         try:
+            import security_utils
+
+            encrypted_pwd = security_utils.encrypt_value(password_value) if password_value else ""
             db = DatabaseManager()
             with db.get_connection() as conn:
                 CommunicationRepository(conn).upsert_email_settings(
-                    self.txt_smtp_host.text(), self.txt_smtp_port.text(), self.txt_email.text(), password_value
+                    self.txt_smtp_host.text(), self.txt_smtp_port.text(), self.txt_email.text(), encrypted_pwd
                 )
                 conn.commit()
             QMessageBox.information(self, "Succès", "Paramètres sauvegardés.")
@@ -629,11 +632,18 @@ class CommunicationWindow(QMainWindow):
                 res = CommunicationRepository(conn).get_email_settings()
 
             if res:
+                import security_utils
+
                 self.txt_smtp_host.setText(str(res[1] or ""))
                 self.txt_smtp_port.setText(str(res[2] or ""))
                 self.txt_email.setText(str(res[3] or ""))
-                self.chk_save_password.setChecked(bool(res[4]))
-                self.txt_password.clear()
+                stored_pwd = str(res[4] or "")
+                if stored_pwd:
+                    self.chk_save_password.setChecked(True)
+                    self.txt_password.setText(security_utils.decrypt_value(stored_pwd))
+                else:
+                    self.chk_save_password.setChecked(False)
+                    self.txt_password.clear()
         except Exception:
             pass
 

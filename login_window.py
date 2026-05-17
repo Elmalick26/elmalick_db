@@ -1,6 +1,5 @@
 import os
 import sys
-import time
 
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QFont, QIcon
@@ -47,8 +46,6 @@ class LoginWindow(QDialog):
         if icon_path:
             self.setWindowIcon(QIcon(icon_path))
         self.user_role = None
-        self.failed_attempts = 0
-        self.lockout_until = 0.0
         self.ensure_admin_exists()
         self.init_ui()
 
@@ -291,23 +288,28 @@ class LoginWindow(QDialog):
         if not user or not pwd:
             return
 
-        if time.time() < self.lockout_until:
-            msg = QMessageBox(self)
-            msg.setWindowTitle("Erreur / خطأ")
-            msg.setText("Trop de tentatives. Réessayez plus tard.\nمحاولات كثيرة. حاول لاحقاً")
-            msg.setIcon(QMessageBox.Icon.Warning)
-            colors = Colors()
-            msg.setStyleSheet(f"background-color: {colors.BG_CARD}; color: {colors.TEXT_PRIMARY};")
-            msg.exec()
-            AppLogger.warning(
-                "LoginWindow", f"Tentative de connexion bloquée pour l'utilisateur '{user}' (Verrouillage actif)"
-            )
-            return
-
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                result = LoginRepository(conn).get_user_for_login(user)
+                repo = LoginRepository(conn)
+
+                # 1. Vérification du verrouillage persistant (DB)
+                _, is_locked = repo.get_lockout_status(user)
+                if is_locked:
+                    msg = QMessageBox(self)
+                    msg.setWindowTitle("Erreur / خطأ")
+                    msg.setText("Trop de tentatives. Réessayez plus tard.\nمحاولات كثيرة. حاول لاحقاً")
+                    msg.setIcon(QMessageBox.Icon.Warning)
+                    colors = Colors()
+                    msg.setStyleSheet(f"background-color: {colors.BG_CARD}; color: {colors.TEXT_PRIMARY};")
+                    msg.exec()
+                    AppLogger.warning(
+                        "LoginWindow",
+                        f"Tentative de connexion bloquée pour l'utilisateur '{user}' (Verrouillage actif)",
+                    )
+                    return
+
+                result = repo.get_user_for_login(user)
                 if result:
                     user_id, role, stored_hash, status = result
 
@@ -321,10 +323,8 @@ class LoginWindow(QDialog):
 
                     if security_utils.verify_password(pwd, stored_hash):
                         self.user_role = role
-                        self.failed_attempts = 0
-                        self.lockout_until = 0.0
+                        repo.clear_attempts(user)
 
-                        # تسجيل نجاح الدخول في Audit Log
                         from database_setup import log_audit
 
                         log_audit(conn, user, "LOGIN", user)
@@ -335,7 +335,6 @@ class LoginWindow(QDialog):
                             and pwd == "admin"
                             and not self._force_change_default_password(conn, user_id)
                         ):
-                            # المستخدم ألغى أو فشل — لا يسمح بالدخول
                             return
 
                         # تحديث التجزئة إذا كانت ضعيفة (Auto-upgrade legacy hashes)
@@ -350,35 +349,31 @@ class LoginWindow(QDialog):
                         self.accept()
                         return
 
-                # إذا وصل الكود هنا، فهذا يعني أن اسم المستخدم أو كلمة المرور غير صحيحة
+                # Échec d'authentification — enregistrement et verrouillage éventuel
                 from database_setup import log_audit
 
                 log_audit(conn, user, "LOGIN_FAILED", user)
-
-            self.failed_attempts += 1
-            AppLogger.warning(
-                "LoginWindow", f"Échec de connexion pour l'utilisateur '{user}' (Tentative {self.failed_attempts}/5)"
-            )
-
-            if self.failed_attempts >= 5:
-                self.lockout_until = time.time() + (5 * 60)  # قفل لمدة 5 دقائق
-                self.failed_attempts = 0
-                AppLogger.warning("LoginWindow", "Verrouillage déclenché après 5 échecs consécutifs.")
-
-            msg = QMessageBox(self)
-            msg.setWindowTitle("Erreur / خطأ")
-            msg.setText("Nom d'utilisateur ou mot de passe incorrect.\nاسم المستخدم أو كلمة المرور غير صحيحة")
-            msg.setIcon(QMessageBox.Icon.Warning)
-            colors = Colors()
-            msg.setStyleSheet(f"background-color: {colors.BG_CARD}; color: {colors.TEXT_PRIMARY};")
-            msg.exec()
-
-            # مسح حقل كلمة المرور فقط لمزيد من الأمان
-            self.txt_pass.clear()
+                now_locked = repo.record_failed_attempt(user)
+                if now_locked:
+                    AppLogger.warning("LoginWindow", "Verrouillage déclenché après 5 échecs consécutifs.")
+                else:
+                    AppLogger.warning("LoginWindow", f"Échec de connexion pour l'utilisateur '{user}'")
 
         except Exception as e:
             QMessageBox.critical(self, "Erreur Critique", f"Erreur de base de données: {str(e)}")
             AppLogger.error("LoginWindow", f"Erreur critique lors de la connexion: {str(e)}")
+            return
+
+        msg = QMessageBox(self)
+        msg.setWindowTitle("Erreur / خطأ")
+        msg.setText("Nom d'utilisateur ou mot de passe incorrect.\nاسم المستخدم أو كلمة المرور غير صحيحة")
+        msg.setIcon(QMessageBox.Icon.Warning)
+        colors = Colors()
+        msg.setStyleSheet(f"background-color: {colors.BG_CARD}; color: {colors.TEXT_PRIMARY};")
+        msg.exec()
+
+        # مسح حقل كلمة المرور فقط لمزيد من الأمان
+        self.txt_pass.clear()
 
 
 if __name__ == "__main__":

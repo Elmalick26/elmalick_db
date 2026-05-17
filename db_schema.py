@@ -1,11 +1,13 @@
 """Database schema initialization -- extracted from database_setup.py."""
+
 import logging
+
 from psycopg2 import Error  # noqa: F401
 
 _logger = logging.getLogger("DatabaseManager")
 
 
-def initialize_schema(db_manager) -> None:
+def initialize_schema(db_manager) -> None:  # noqa: C901
     """Create / migrate all database tables. Call once at startup."""
     """إنشاء جميع الجداول المطلوبة للنظام دفعة واحدة"""
     _logger.info("🔄 جاري تهيئة قاعدة البيانات والتحقق من الهيكلة (PostgreSQL)...")
@@ -69,6 +71,17 @@ def initialize_schema(db_manager) -> None:
                 action TEXT,
                 target TEXT,
                 timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """
+        )
+
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS LoginAttempts (
+                username TEXT PRIMARY KEY,
+                attempt_count INTEGER DEFAULT 0,
+                lockout_until TIMESTAMP DEFAULT NULL,
+                last_attempt TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
         """
         )
@@ -815,6 +828,10 @@ def initialize_schema(db_manager) -> None:
             "CREATE INDEX IF NOT EXISTS idx_expenses_date ON Expenses(expense_date)",
             "CREATE INDEX IF NOT EXISTS idx_student_dues_student_year ON StudentDues(student_id, year_id)",
             "CREATE INDEX IF NOT EXISTS idx_monthly_payments_due_id ON MonthlyPaymentsStatus(due_id)",
+            # Critical composite indexes for analytics queries
+            "CREATE INDEX IF NOT EXISTS idx_grades_student_year ON Grades(student_id, year_id)",
+            "CREATE INDEX IF NOT EXISTS idx_attendance_student_date ON StudentAttendance(student_id, date)",
+            "CREATE INDEX IF NOT EXISTS idx_scn_class_year ON StudentClassNumbers(class_id, year_id)",
         ]
         for stmt in reporting_index_statements:
             try:
@@ -843,9 +860,7 @@ def initialize_schema(db_manager) -> None:
         students_without_code = cursor.fetchall()
         for (sid,) in students_without_code:
             code = f"EMG-{sid:04d}"
-            cursor.execute(
-                "UPDATE Students SET student_code = %s WHERE id = %s AND student_code IS NULL", (code, sid)
-            )
+            cursor.execute("UPDATE Students SET student_code = %s WHERE id = %s AND student_code IS NULL", (code, sid))
         if students_without_code:
             _logger.info(f"🔑 Migration: student_code généré pour {len(students_without_code)} élève(s).")
 

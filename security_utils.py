@@ -3,8 +3,9 @@
 Security & Cryptography Utilities
 """
 
-import bcrypt
 import hashlib
+
+import bcrypt
 
 
 def hash_password(password: str) -> str:
@@ -76,3 +77,55 @@ def validate_password(password: str, min_length: int = 8) -> tuple[bool, str]:
         )
 
     return True, ""
+
+
+# ─── Fernet symmetric encryption (SMTP password at rest) ──────────────────────
+
+
+def _get_fernet_key() -> bytes:
+    """Retrieve or auto-generate a Fernet key stored in config.ini [SECURITY] fernet_key."""
+    try:
+        from config_manager import ConfigManager
+
+        cfg = ConfigManager()
+        key = (cfg.get("SECURITY", "fernet_key", fallback="") or "").strip()
+        if not key:
+            from cryptography.fernet import Fernet
+
+            key = Fernet.generate_key().decode()
+            cfg.set("SECURITY", "fernet_key", key)
+        return key.encode()
+    except Exception:
+        # Fallback: derive a fixed key from a constant (should not happen in practice)
+        import base64
+
+        return base64.urlsafe_b64encode(b"ElMalickGest_FallbackKey_32bytes")
+
+
+def encrypt_value(plain_text: str) -> str:
+    """Encrypt a string using Fernet symmetric encryption.
+    Returns the ciphertext as a UTF-8 string. Returns '' for empty input.
+    """
+    if not plain_text:
+        return ""
+    try:
+        from cryptography.fernet import Fernet
+
+        return Fernet(_get_fernet_key()).encrypt(plain_text.encode("utf-8")).decode("utf-8")
+    except Exception:
+        return plain_text  # fallback: store as-is if encryption fails
+
+
+def decrypt_value(token: str) -> str:
+    """Decrypt a Fernet-encrypted token back to plain text.
+    Returns '' for empty input. Returns the original token if decryption fails
+    (handles legacy unencrypted values gracefully).
+    """
+    if not token:
+        return ""
+    try:
+        from cryptography.fernet import Fernet, InvalidToken
+
+        return Fernet(_get_fernet_key()).decrypt(token.encode("utf-8")).decode("utf-8")
+    except (Exception,):  # InvalidToken or key mismatch → treat as plain text legacy value
+        return token

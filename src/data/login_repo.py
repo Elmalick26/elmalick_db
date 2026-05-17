@@ -54,3 +54,64 @@ class LoginRepository:
                 "UPDATE Users SET password_hash=%s, username=%s WHERE username='admin' OR id=1",
                 (new_hash, new_username),
             )
+
+    # ─── Lockout persistant (DB-based) ────────────────────────────────────────
+
+    def get_lockout_status(self, username: str) -> tuple[int, bool]:
+        """Retourne (attempt_count, is_locked). is_locked = lockout_until > NOW()."""
+        try:
+            with self.conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT attempt_count,
+                           lockout_until IS NOT NULL AND lockout_until > NOW()
+                    FROM LoginAttempts WHERE username = %s
+                    """,
+                    (username,),
+                )
+                row = cur.fetchone()
+                if row:
+                    return int(row[0]), bool(row[1])
+        except Exception:
+            pass
+        return 0, False
+
+    def record_failed_attempt(self, username: str) -> bool:
+        """Incrémente les tentatives. Retourne True si le compte est maintenant verrouillé."""
+        try:
+            with self.conn.cursor() as cur:
+                cur.execute(
+                    """
+                    INSERT INTO LoginAttempts (username, attempt_count, last_attempt)
+                    VALUES (%s, 1, NOW())
+                    ON CONFLICT (username) DO UPDATE
+                        SET attempt_count = LoginAttempts.attempt_count + 1,
+                            last_attempt = NOW()
+                    RETURNING attempt_count
+                    """,
+                    (username,),
+                )
+                row = cur.fetchone()
+                count = row[0] if row else 1
+                if count >= 5:
+                    cur.execute(
+                        """
+                        UPDATE LoginAttempts
+                        SET lockout_until = NOW() + INTERVAL '5 minutes',
+                            attempt_count = 0
+                        WHERE username = %s
+                        """,
+                        (username,),
+                    )
+                    return True
+        except Exception:
+            pass
+        return False
+
+    def clear_attempts(self, username: str) -> None:
+        """Supprime le compteur après une connexion réussie."""
+        try:
+            with self.conn.cursor() as cur:
+                cur.execute("DELETE FROM LoginAttempts WHERE username = %s", (username,))
+        except Exception:
+            pass
