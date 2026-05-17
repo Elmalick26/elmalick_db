@@ -10,21 +10,37 @@ timetable_manager.py — Phase 6.2
 
 from __future__ import annotations
 
+from PyQt6.QtCore import QSize, Qt, QTime
+from PyQt6.QtGui import QAction, QBrush, QColor, QFont
 from PyQt6.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout,
-    QLabel, QComboBox, QPushButton, QTableWidget,
-    QTableWidgetItem, QHeaderView, QDialog, QFormLayout,
-    QTimeEdit, QLineEdit, QDialogButtonBox, QMessageBox,
-    QFrame, QSizePolicy, QToolButton, QMenu, QScrollArea,
     QApplication,
+    QComboBox,
+    QDialog,
+    QDialogButtonBox,
+    QFormLayout,
+    QFrame,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QLineEdit,
+    QMainWindow,
+    QMenu,
+    QMessageBox,
+    QPushButton,
+    QScrollArea,
+    QSizePolicy,
+    QTableWidget,
+    QTableWidgetItem,
+    QTimeEdit,
+    QToolButton,
+    QVBoxLayout,
+    QWidget,
 )
-from PyQt6.QtCore import Qt, QTime, QSize
-from PyQt6.QtGui import QFont, QColor, QBrush, QAction
 
-from database_setup import DatabaseManager
 from app_logger import AppLogger
+from database_setup import DatabaseManager
 from repositories.timetable_repo import TimetableRepository
-from ui_styles import ThemeManager, Colors
+from ui_styles import Colors, ThemeManager
 
 # ──────────────────────────────────────────────────────────────
 DAYS_FR = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"]
@@ -33,8 +49,18 @@ DAY_COLORS = ["#1a3a5c", "#1a4a3c", "#3c2a1a", "#3c1a2a", "#2a1a4a", "#1a3a3c"]
 
 # خلفيات الحصص حسب المادة
 SLOT_PALETTE = [
-    "#1e3a5f", "#1e5f3a", "#5f3a1e", "#5f1e3a", "#3a1e5f", "#1e5f5f",
-    "#4a2a00", "#004a2a", "#2a004a", "#4a4a00", "#004a4a", "#4a0000",
+    "#1e3a5f",
+    "#1e5f3a",
+    "#5f3a1e",
+    "#5f1e3a",
+    "#3a1e5f",
+    "#1e5f5f",
+    "#4a2a00",
+    "#004a2a",
+    "#2a004a",
+    "#4a4a00",
+    "#004a4a",
+    "#4a0000",
 ]
 
 
@@ -48,14 +74,16 @@ class SlotCell(QFrame):
         super().__init__(parent)
         self.slot_id = slot_data.get("id")
         self.setFrameShape(QFrame.Shape.StyledPanel)
-        self.setStyleSheet(f"""
+        self.setStyleSheet(
+            f"""
             QFrame {{
                 background: {color}; border-radius: 6px;
                 border: 1px solid rgba(255,255,255,0.15);
                 margin: 2px;
             }}
             QFrame:hover {{ border: 1px solid #4fc3f7; }}
-        """)
+        """
+        )
         self.setMinimumHeight(70)
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
@@ -118,19 +146,20 @@ class SlotCell(QFrame):
 # Add/Edit Dialog
 # ──────────────────────────────────────────────────────────────
 class SlotDialog(QDialog):
-    def __init__(self, classes: list, subjects: list, staff: list,
-                 slot_data: dict | None = None, parent=None):
+    def __init__(self, classes: list, subjects: list, staff: list, slot_data: dict | None = None, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Ajouter une Heure" if slot_data is None else "Modifier l'Heure")
         self.setMinimumWidth(420)
-        self.setStyleSheet("""
+        self.setStyleSheet(
+            """
             QDialog { background: #1e2433; color: #e0e0e0; }
             QLabel  { color: #ccc; }
             QComboBox, QTimeEdit, QLineEdit {
                 background: #252b3b; color: white; border: 1px solid #444;
                 border-radius: 4px; padding: 5px 8px;
             }
-        """)
+        """
+        )
 
         form = QFormLayout(self)
         form.setSpacing(10)
@@ -171,9 +200,7 @@ class SlotDialog(QDialog):
         form.addRow("Salle:", self.txt_room)
 
         # Buttons
-        buttons = QDialogButtonBox(
-            QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel
-        )
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
         buttons.accepted.connect(self._validate_and_accept)
         buttons.rejected.connect(self.reject)
         form.addRow(buttons)
@@ -256,10 +283,12 @@ class TimetableGrid(QScrollArea):
 
         for day_idx, day in enumerate(DAYS_FR):
             day_frame = QFrame()
-            day_frame.setStyleSheet(f"""
+            day_frame.setStyleSheet(
+                f"""
                 QFrame {{ background: #1a1f30; border-radius: 8px;
                           border-left: 4px solid {DAY_COLORS[day_idx]}; margin-bottom: 4px; }}
-            """)
+            """
+            )
             day_layout = QVBoxLayout(day_frame)
             day_layout.setContentsMargins(8, 6, 8, 6)
             day_layout.setSpacing(4)
@@ -437,8 +466,7 @@ class TimetableWindow(QMainWindow):
             self._save_slot(values)
 
     def _edit_slot(self, slot_data: dict):
-        dlg = SlotDialog(self._classes, self._subjects, self._staff,
-                         slot_data=slot_data, parent=self)
+        dlg = SlotDialog(self._classes, self._subjects, self._staff, slot_data=slot_data, parent=self)
         if dlg.exec():
             values = dlg.get_values()
             self._update_slot(slot_data["id"], values)
@@ -447,7 +475,8 @@ class TimetableWindow(QMainWindow):
         subject = slot_data.get("subject_name_fr", "cette heure")
         day = slot_data.get("day_of_week", "")
         reply = QMessageBox.question(
-            self, "Confirmation",
+            self,
+            "Confirmation",
             f"Supprimer la séance de « {subject} » ({day}) ?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
@@ -529,9 +558,17 @@ class TimetableWindow(QMainWindow):
 
         pdf = FPDF(orientation="L", format="A4")
         pdf.add_page()
-        pdf.set_font("Helvetica", "B", 14)
-        pdf.cell(0, 10, f"Emploi du Temps — {class_name}", ln=True, align="C")
-        pdf.set_font("Helvetica", "", 10)
+
+        # Polices Unicode (Cairo) pour supporter Arabe + Latin/accents
+        import os as _os
+
+        _font_dir = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "Fonts", "Cairo", "static")
+        pdf.add_font("Cairo", "", _os.path.join(_font_dir, "Cairo-Regular.ttf"))
+        pdf.add_font("Cairo", "B", _os.path.join(_font_dir, "Cairo-Bold.ttf"))
+
+        pdf.set_font("Cairo", "B", 14)
+        pdf.cell(0, 10, f"Emploi du Temps \u2014 {class_name}", new_x="LMARGIN", new_y="NEXT", align="C")
+        pdf.set_font("Cairo", "", 10)
         pdf.ln(4)
 
         col_w = [30, 22, 22, 60, 60, 30]
@@ -551,11 +588,12 @@ class TimetableWindow(QMainWindow):
             pdf.ln()
             fill = not fill
 
-        import tempfile, os
+        import tempfile
+
         tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
         pdf.output(tmp.name)
         tmp.close()
-        os.startfile(tmp.name)
+        _os.startfile(tmp.name)
         AppLogger.info("Timetable", f"Emploi du temps imprimé: {tmp.name}")
 
     # Called by main_dashbord refresh system
