@@ -1,23 +1,41 @@
-import sys
-import psycopg2
 import os
 import shutil
+import sys
 from datetime import datetime
-from database_setup import DatabaseManager
-from app_logger import AppLogger
-from repositories.student_repo import StudentRepository
-from repositories.finance_repo import FinanceRepository
-from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
-                             QHBoxLayout, QTableWidget, QTableWidgetItem,
-                             QPushButton, QLabel, QLineEdit, QComboBox,
-                             QMessageBox, QHeaderView, QFrame, QDateEdit,
-                             QTabWidget, QGraphicsDropShadowEffect, QGridLayout, QFileDialog, QScrollArea)
-from PyQt6.QtCore import Qt, QDate, QSize
-from PyQt6.QtGui import QFont, QColor, QIcon, QPixmap
-from fpdf import FPDF
 
-from ui_styles import ThemeManager, Colors, get_table_style, get_tabs_style
-from print_export_service import output_pdf, get_report_output_mode
+import psycopg2
+from fpdf import FPDF
+from PyQt6.QtCore import QDate, QSize, Qt
+from PyQt6.QtGui import QColor, QFont, QIcon, QPixmap
+from PyQt6.QtWidgets import (
+    QApplication,
+    QComboBox,
+    QDateEdit,
+    QFileDialog,
+    QFrame,
+    QGraphicsDropShadowEffect,
+    QGridLayout,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QLineEdit,
+    QMainWindow,
+    QMessageBox,
+    QPushButton,
+    QScrollArea,
+    QTableWidget,
+    QTableWidgetItem,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
+)
+
+from app_logger import AppLogger
+from database_setup import DatabaseManager
+from print_export_service import get_report_output_mode, output_pdf
+from repositories.finance_repo import FinanceRepository
+from repositories.student_repo import StudentRepository
+from ui_styles import Colors, ThemeManager, get_table_style, get_tabs_style
 
 THEME_AVAILABLE = True
 STUDENT_LIST_OUTPUT_MODE = get_report_output_mode("student_list_mode", "save")
@@ -25,6 +43,7 @@ STUDENT_LIST_OUTPUT_MODE = get_report_output_mode("student_list_mode", "save")
 try:
     import arabic_reshaper
     from bidi.algorithm import get_display
+
     ARABIC_SUPPORT = True
 except ModuleNotFoundError:
     ARABIC_SUPPORT = False
@@ -110,11 +129,13 @@ class ModernStudentManagement(QMainWindow):
             ThemeManager.apply_theme(self)
         else:
             colors = Colors()
-            self.setStyleSheet(f"""
+            self.setStyleSheet(
+                f"""
                 QMainWindow {{ background-color: {colors.BG_MAIN}; }}
                 QLabel {{ font-family: 'Segoe UI', 'Cairo', sans-serif; color: {colors.TEXT_PRIMARY}; }}
                 QScrollArea {{ border: none; background: transparent; }}
-            """)
+            """
+            )
 
         self.current_photo_path = None
         self.selected_student_id = None
@@ -133,9 +154,11 @@ class ModernStudentManagement(QMainWindow):
         # 1. Header (Deep Slate Style)
         header_frame = QFrame()
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-        header_frame.setStyleSheet(f"""
+        header_frame.setStyleSheet(
+            f"""
             QFrame {{ background-color: {colors.BG_HEADER}; border-radius: 10px; }}
-        """)
+        """
+        )
         header_frame.setMaximumHeight(80)
 
         shadow = QGraphicsDropShadowEffect()
@@ -171,12 +194,14 @@ class ModernStudentManagement(QMainWindow):
 
         # 2. Tabs
         self.tabs = QTabWidget()
-        self.tabs.setStyleSheet(f"""
+        self.tabs.setStyleSheet(
+            f"""
             QTabWidget::pane {{ border: 1px solid {colors.BORDER}; background: {colors.BG_CARD}; border-radius: 12px; margin-top: 15px; }}
             QTabBar::tab {{ background: {colors.BG_MAIN}; color: {colors.TEXT_SECONDARY}; padding: 12px 30px; margin-right: 6px; border-top-left-radius: 8px; border-top-right-radius: 8px; font-weight: bold; font-family: 'Segoe UI', 'Cairo'; font-size: 13px; }}
             QTabBar::tab:selected {{ background: {colors.BG_CARD}; color: {colors.PRIMARY}; border-bottom: 2px solid {colors.PRIMARY}; }}
             QTabBar::tab:hover {{ background: {colors.BORDER}; color: {colors.TEXT_PRIMARY}; }}
-        """)
+        """
+        )
 
         self.setup_student_tab()
         self.setup_list_tab()
@@ -186,9 +211,11 @@ class ModernStudentManagement(QMainWindow):
     def create_card(self):
         frame = QFrame()
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-        frame.setStyleSheet(f"""
+        frame.setStyleSheet(
+            f"""
             QFrame {{ background-color: {colors.BG_CARD}; border-radius: 12px; border: 1px solid {colors.BORDER}; }}
-        """)
+        """
+        )
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(20)
         shadow.setColor(QColor(15, 23, 42, 15))
@@ -233,28 +260,34 @@ class ModernStudentManagement(QMainWindow):
 
         lbl_new = QLabel("📝 NOUVEAU PROFIL / ملف جديد")
         lbl_new.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        lbl_new.setStyleSheet(f"""
+        lbl_new.setStyleSheet(
+            f"""
             background-color: {colors.BG_MAIN}; color: {colors.TEXT_SECONDARY}; font-weight: bold;
             font-size: 14px; padding: 10px; border-radius: 6px; border: 1px dashed {colors.BORDER};
-        """)
+        """
+        )
         form_layout.addWidget(lbl_new)
 
         photo_layout = QHBoxLayout()
         self.lbl_photo = QLabel()
         self.lbl_photo.setFixedSize(110, 110)
-        self.lbl_photo.setStyleSheet(f"""
+        self.lbl_photo.setStyleSheet(
+            f"""
             QLabel {{ background-color: {colors.BG_MAIN}; border-radius: 55px; border: 3px solid {colors.BORDER}; color: {colors.TEXT_SECONDARY}; }}
-        """)
+        """
+        )
         self.lbl_photo.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.lbl_photo.setText("Photo\nصورة")
 
         btn_upload = QPushButton("📷")
         btn_upload.setFixedSize(36, 36)
         btn_upload.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_upload.setStyleSheet(f"""
+        btn_upload.setStyleSheet(
+            f"""
             QPushButton {{ background-color: {colors.PRIMARY_DARK}; color: white; border-radius: 18px; font-weight: bold; border: 2px solid {colors.BG_CARD}; }}
             QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}
-        """)
+        """
+        )
         btn_upload.clicked.connect(self.upload_student_photo)
 
         photo_wrapper = QWidget()
@@ -270,9 +303,11 @@ class ModernStudentManagement(QMainWindow):
 
         def add_section_header(text, icon):
             lbl = QLabel(f"{icon} {text}")
-            lbl.setStyleSheet(f"""
+            lbl.setStyleSheet(
+                f"""
                 color: {colors.TEXT_PRIMARY}; font-weight: bold; font-size: 13px; margin-top: 10px; border-bottom: 2px solid {colors.BORDER}; padding-bottom: 5px;
-            """)
+            """
+            )
             form_layout.addWidget(lbl)
 
         # 1. البيانات الشخصية
@@ -334,9 +369,11 @@ class ModernStudentManagement(QMainWindow):
         grid2.addWidget(QLabel("N° Classe:"), 0, 4)
         self.txt_class_number = self.styled_input("Auto")
         self.txt_class_number.setReadOnly(True)
-        self.txt_class_number.setStyleSheet(f"""
+        self.txt_class_number.setStyleSheet(
+            f"""
             QLineEdit {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.BG_MAIN}; color: {colors.TEXT_PRIMARY}; font-weight: bold; }}
-        """)
+        """
+        )
         grid2.addWidget(self.txt_class_number, 0, 5)
         form_layout.addLayout(grid2)
 
@@ -385,19 +422,23 @@ class ModernStudentManagement(QMainWindow):
         self.btn_save = QPushButton("💾 Enregistrer / حفظ")
         self.btn_save.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_save.setMinimumHeight(45)
-        self.btn_save.setStyleSheet(f"""
+        self.btn_save.setStyleSheet(
+            f"""
             QPushButton {{ background-color: {colors.SUCCESS}; color: white; border-radius: 8px; font-weight: bold; border: none; }}
             QPushButton:hover {{ background-color: {colors.SUCCESS_HOVER}; }}
-        """)
+        """
+        )
         self.btn_save.clicked.connect(self.save_student)
 
         self.btn_reset = QPushButton("🧹 Réinitialiser / مسح")
         self.btn_reset.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_reset.setMinimumHeight(45)
-        self.btn_reset.setStyleSheet(f"""
+        self.btn_reset.setStyleSheet(
+            f"""
             QPushButton {{ background-color: {colors.BG_CARD}; color: {colors.TEXT_SECONDARY}; border-radius: 8px; font-weight: bold; border: 1px solid {colors.BORDER}; }}
             QPushButton:hover {{ background-color: {colors.BG_MAIN}; }}
-        """)
+        """
+        )
         self.btn_reset.clicked.connect(self.clear_student_form)
 
         btn_layout.addWidget(self.btn_save, 2)
@@ -434,18 +475,22 @@ class ModernStudentManagement(QMainWindow):
 
         btn_print_filtered = QPushButton("🖨️ Filtrée")
         btn_print_filtered.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_print_filtered.setStyleSheet(f"""
+        btn_print_filtered.setStyleSheet(
+            f"""
             QPushButton {{ background-color: {colors.BG_CARD}; color: {colors.TEXT_PRIMARY}; padding: 8px 14px; border-radius: 6px; font-weight: bold; border: 1px solid {colors.BORDER}; }}
             QPushButton:hover {{ background-color: {colors.BG_MAIN}; }}
-        """)
+        """
+        )
         btn_print_filtered.clicked.connect(self.print_filtered_list)
 
         btn_import_excel = QPushButton("📥 Importer Excel/CSV")
         btn_import_excel.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_import_excel.setStyleSheet(f"""
+        btn_import_excel.setStyleSheet(
+            f"""
             QPushButton {{ background-color: {colors.SUCCESS}; color: white; padding: 8px 14px; border-radius: 6px; font-weight: bold; border: none; }}
             QPushButton:hover {{ background-color: {colors.SUCCESS_HOVER}; }}
-        """)
+        """
+        )
         btn_import_excel.clicked.connect(self._open_import_wizard)
 
         row_search = QHBoxLayout()
@@ -511,10 +556,12 @@ class ModernStudentManagement(QMainWindow):
 
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
         btn_print = QPushButton("🖨️ Imprimer Liste")
-        btn_print.setStyleSheet(f"""
+        btn_print.setStyleSheet(
+            f"""
             QPushButton {{ background-color: {colors.BG_CARD}; color: {colors.TEXT_PRIMARY}; padding: 10px 20px; border-radius: 6px; font-weight: bold; border: 1px solid {colors.BORDER}; }}
             QPushButton:hover {{ background-color: {colors.BG_MAIN}; }}
-        """)
+        """
+        )
         btn_print.clicked.connect(self.print_student_list)
 
         flay.addWidget(self.combo_filter_cycle)
@@ -531,9 +578,21 @@ class ModernStudentManagement(QMainWindow):
         self.table_students = QTableWidget()
         self.style_table(self.table_students)
         self.table_students.setColumnCount(11)
-        self.table_students.setHorizontalHeaderLabels([
-            "ID", "Prénom & Nom (FR)", "الاسم واللقب (AR)", "Sexe", "Classe", "N° Classe", "Code Accès", "Tuteur", "Tél", "Date", "Actions"
-        ])
+        self.table_students.setHorizontalHeaderLabels(
+            [
+                "ID",
+                "Prénom & Nom (FR)",
+                "الاسم واللقب (AR)",
+                "Sexe",
+                "Classe",
+                "N° Classe",
+                "Code Accès",
+                "Tuteur",
+                "Tél",
+                "Date",
+                "Actions",
+            ]
+        )
         self.table_students.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.table_students.setColumnWidth(0, 50)
         self.table_students.setColumnWidth(3, 60)
@@ -548,13 +607,15 @@ class ModernStudentManagement(QMainWindow):
         table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         table.verticalHeader().setVisible(False)
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-        table.setStyleSheet(f"""
+        table.setStyleSheet(
+            f"""
             QTableWidget {{ background-color: {colors.BG_CARD}; border: 1px solid {colors.BORDER}; border-radius: 8px; gridline-color: {colors.BORDER}; font-size: 13px; color: {colors.TEXT_PRIMARY}; }}
             QTableWidget::item {{ padding: 5px; border-bottom: 1px solid {colors.BG_MAIN}; }}
             QTableWidget::item:alternate {{ background-color: {colors.BG_MAIN}; }}
             QTableWidget::item:selected {{ background-color: {colors.PRIMARY}; color: white; }}
             QHeaderView::section {{ background-color: {colors.BG_HEADER}; color: {colors.HEADER_TEXT}; padding: 8px; border: none; font-weight: bold; font-size: 13px; }}
-        """)
+        """
+        )
 
     # ===== Logic Methods =====
 
@@ -589,10 +650,12 @@ class ModernStudentManagement(QMainWindow):
             self.txt_class_number.clear()
         self.btn_save.setText("💾 Enregistrer / حفظ")
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-        self.btn_save.setStyleSheet(f"""
+        self.btn_save.setStyleSheet(
+            f"""
             QPushButton {{ background-color: {colors.SUCCESS}; color: white; border-radius: 8px; font-weight: bold; border: none; }}
             QPushButton:hover {{ background-color: {colors.SUCCESS_HOVER}; }}
-        """)
+        """
+        )
 
     def get_active_year_id(self):
         try:
@@ -630,10 +693,12 @@ class ModernStudentManagement(QMainWindow):
 
     def assign_class_number(self, student_id, class_id):
         year_id = self.get_active_year_id()
-        if not year_id or not class_id: return None
+        if not year_id or not class_id:
+            return None
 
         existing = self.get_student_class_number(student_id, year_id)
-        if existing and existing[0] == class_id: return existing[1]
+        if existing and existing[0] == class_id:
+            return existing[1]
 
         db = DatabaseManager()
         with db.get_connection() as conn:
@@ -644,7 +709,8 @@ class ModernStudentManagement(QMainWindow):
             return new_number
 
     def update_class_number_preview(self):
-        if not hasattr(self, "txt_class_number"): return
+        if not hasattr(self, "txt_class_number"):
+            return
         class_id = self.combo_class_reg.currentData() if hasattr(self, "combo_class_reg") else None
         if not class_id:
             self.txt_class_number.clear()
@@ -695,24 +761,40 @@ class ModernStudentManagement(QMainWindow):
             db = DatabaseManager()
             with db.get_connection() as conn:
                 repo = StudentRepository(conn)
-                student_id = repo.add_student({
-                    "first_name_fr": fn_fr, "last_name_fr": ln_fr,
-                    "first_name_ar": fn_ar, "last_name_ar": ln_ar,
-                    "birth_date": birth_d, "birth_place": birth_p,
-                    "gender": gender, "address": self.txt_address.text(),
-                    "parent_name": self.txt_parent_name.text(),
-                    "parent_phone": self.txt_parent_phone.text(),
-                    "parent_email": p_email,
-                    "parent_address": self.txt_parent_addr.text(),
-                    "registration_date": reg_d, "status": status,
-                    "photo_path": photo_path,
-                })
+                student_id = repo.add_student(
+                    {
+                        "first_name_fr": fn_fr,
+                        "last_name_fr": ln_fr,
+                        "first_name_ar": fn_ar,
+                        "last_name_ar": ln_ar,
+                        "birth_date": birth_d,
+                        "birth_place": birth_p,
+                        "gender": gender,
+                        "address": self.txt_address.text(),
+                        "parent_name": self.txt_parent_name.text(),
+                        "parent_phone": self.txt_parent_phone.text(),
+                        "parent_email": p_email,
+                        "parent_address": self.txt_parent_addr.text(),
+                        "registration_date": reg_d,
+                        "status": status,
+                        "photo_path": photo_path,
+                    }
+                )
+
+                # Assign class number in the SAME transaction to prevent FK violation
+                # (StudentClassNumbers.student_id FK requires the student to be visible)
+                year_id = repo.get_active_year_id()
+                class_number = None
+                if year_id and year_id > 0 and class_id:
+                    new_number = repo.get_next_class_number(class_id, year_id)
+                    repo.set_class_assignment(student_id, class_id, year_id, new_number)
+                    class_number = new_number
 
                 from database_setup import log_audit
+
                 log_audit(conn, getattr(self, "current_user", "system"), "ADD_STUDENT", f"{fn_fr} {ln_fr}")
                 conn.commit()
 
-            class_number = self.assign_class_number(student_id, class_id)
             if class_number is None:
                 QMessageBox.warning(self, "Attention", "Aucune année scolaire active pour attribuer رقم الفصل.")
             else:
@@ -726,11 +808,14 @@ class ModernStudentManagement(QMainWindow):
             QMessageBox.critical(self, "Erreur", str(e))
 
     def save_student(self):
-        if self.selected_student_id: self.update_student()
-        else: self.add_student()
+        if self.selected_student_id:
+            self.update_student()
+        else:
+            self.add_student()
 
     def update_student(self):
-        if not self.selected_student_id: return
+        if not self.selected_student_id:
+            return
 
         fn_fr = self.txt_fname_fr.text().strip()
         ln_fr = self.txt_lname_fr.text().strip()
@@ -754,28 +839,37 @@ class ModernStudentManagement(QMainWindow):
                     shutil.copy(self.current_photo_path, photo_path)
 
                 repo = StudentRepository(conn)
-                repo.update_student(self.selected_student_id, {
-                    "first_name_fr": self.txt_fname_fr.text(),
-                    "last_name_fr": self.txt_lname_fr.text(),
-                    "first_name_ar": self.txt_fname_ar.text(),
-                    "last_name_ar": self.txt_lname_ar.text(),
-                    "birth_date": self.date_birth.date().toString("yyyy-MM-dd"),
-                    "birth_place": self.txt_birth_place.text(),
-                    "gender": self.gender_to_db_value(),
-                    "address": self.txt_address.text(),
-                    "parent_name": self.txt_parent_name.text(),
-                    "parent_phone": self.txt_parent_phone.text(),
-                    "parent_email": self.txt_parent_email.text(),
-                    "parent_address": self.txt_parent_addr.text(),
-                    "registration_date": self.date_registration.date().toString("yyyy-MM-dd"),
-                    "status": self.combo_status.currentText(),
-                    "photo_path": photo_path,
-                })
+                repo.update_student(
+                    self.selected_student_id,
+                    {
+                        "first_name_fr": self.txt_fname_fr.text(),
+                        "last_name_fr": self.txt_lname_fr.text(),
+                        "first_name_ar": self.txt_fname_ar.text(),
+                        "last_name_ar": self.txt_lname_ar.text(),
+                        "birth_date": self.date_birth.date().toString("yyyy-MM-dd"),
+                        "birth_place": self.txt_birth_place.text(),
+                        "gender": self.gender_to_db_value(),
+                        "address": self.txt_address.text(),
+                        "parent_name": self.txt_parent_name.text(),
+                        "parent_phone": self.txt_parent_phone.text(),
+                        "parent_email": self.txt_parent_email.text(),
+                        "parent_address": self.txt_parent_addr.text(),
+                        "registration_date": self.date_registration.date().toString("yyyy-MM-dd"),
+                        "status": self.combo_status.currentText(),
+                        "photo_path": photo_path,
+                    },
+                )
 
                 from database_setup import log_audit
+
                 fn_fr_val = self.txt_fname_fr.text().strip()
                 ln_fr_val = self.txt_lname_fr.text().strip()
-                log_audit(conn, getattr(self, "current_user", "system"), "EDIT_STUDENT", f"{fn_fr_val} {ln_fr_val} (id={self.selected_student_id})")
+                log_audit(
+                    conn,
+                    getattr(self, "current_user", "system"),
+                    "EDIT_STUDENT",
+                    f"{fn_fr_val} {ln_fr_val} (id={self.selected_student_id})",
+                )
                 conn.commit()
 
             class_number = self.assign_class_number(self.selected_student_id, class_id)
@@ -792,8 +886,12 @@ class ModernStudentManagement(QMainWindow):
             QMessageBox.critical(self, "Erreur", str(e))
 
     def delete_student(self, student_id):
-        reply = QMessageBox.question(self, "Confirmation", "Supprimer cet étudiant ?",
-                                     QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        reply = QMessageBox.question(
+            self,
+            "Confirmation",
+            "Supprimer cet étudiant ?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
         if reply == QMessageBox.StandardButton.Yes:
             try:
                 db = DatabaseManager()
@@ -802,6 +900,7 @@ class ModernStudentManagement(QMainWindow):
                     repo.delete_student(student_id)
                     conn.commit()
                     from database_setup import log_audit
+
                     log_audit(conn, getattr(self, "current_user", "system"), "DELETE_STUDENT", f"id={student_id}")
                 self.refresh_student_list()
             except Exception as e:
@@ -842,7 +941,8 @@ class ModernStudentManagement(QMainWindow):
                 class_id = data[15]  # Index 15 is class_id from JOIN
                 if class_id:
                     idx = self.combo_class_reg.findData(class_id)
-                    if idx >= 0: self.combo_class_reg.setCurrentIndex(idx)
+                    if idx >= 0:
+                        self.combo_class_reg.setCurrentIndex(idx)
                 self.update_class_number_preview()
 
                 if data[12]:
@@ -859,10 +959,12 @@ class ModernStudentManagement(QMainWindow):
 
                 self.btn_save.setText("✏️ Modifier / تعديل")
                 colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-                self.btn_save.setStyleSheet(f"""
+                self.btn_save.setStyleSheet(
+                    f"""
                     QPushButton {{ background-color: {colors.WARNING}; color: white; border-radius: 8px; font-weight: bold; border: none; }}
                     QPushButton:hover {{ background-color: {colors.WARNING}; }}
-                """)
+                """
+                )
                 self.tabs.setCurrentIndex(0)
         except Exception as e:
             AppLogger.error("StudentManagement", f"Error loading student: {e}")
@@ -871,7 +973,8 @@ class ModernStudentManagement(QMainWindow):
         self._load_cycles_into(self.combo_cycle_reg, "Choisis Cycle...")
         try:
             self._load_classes_into(self.combo_filter_class_reg, None, "Toutes les Classes")
-        except Exception: pass
+        except Exception:
+            pass
 
     def load_cycles_filter(self):
         self._load_cycles_into(self.combo_filter_cycle, "Tous les cycles")
@@ -882,7 +985,8 @@ class ModernStudentManagement(QMainWindow):
             rows = StudentRepository(conn).list_cycles()
         combo.clear()
         combo.addItem(default_text, None)
-        for r in rows: combo.addItem(r[1], r[0])
+        for r in rows:
+            combo.addItem(r[1], r[0])
 
     def load_classes_for_reg(self):
         cid = self.combo_cycle_reg.currentData()
@@ -899,7 +1003,8 @@ class ModernStudentManagement(QMainWindow):
             rows = StudentRepository(conn).list_classes(cycle_id)
         combo.clear()
         combo.addItem(default_text, None)
-        for r in rows: combo.addItem(r[1], r[0])
+        for r in rows:
+            combo.addItem(r[1], r[0])
 
     def refresh_student_list(self):
         self.populate_table(self.table_students)
@@ -911,7 +1016,9 @@ class ModernStudentManagement(QMainWindow):
             cycle_id = self.combo_filter_cycle.currentData()
             class_id = self.combo_filter_class.currentData()
             search = self.txt_search.text().strip()
-            date_from = self.date_filter_from.date().toString("yyyy-MM-dd") if hasattr(self, "date_filter_from") else None
+            date_from = (
+                self.date_filter_from.date().toString("yyyy-MM-dd") if hasattr(self, "date_filter_from") else None
+            )
             date_to = self.date_filter_to.date().toString("yyyy-MM-dd") if hasattr(self, "date_filter_to") else None
         else:
             cycle_id = None
@@ -955,7 +1062,8 @@ class ModernStudentManagement(QMainWindow):
                 table.setItem(row_idx, 0, QTableWidgetItem(str(r[0])))
                 table.setItem(row_idx, 1, QTableWidgetItem(class_no))
                 name_item = QTableWidgetItem(name_value)
-                if name_lang == "ar": name_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
+                if name_lang == "ar":
+                    name_item.setTextAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
                 table.setItem(row_idx, 2, name_item)
 
                 container = QWidget()
@@ -965,7 +1073,9 @@ class ModernStudentManagement(QMainWindow):
 
                 btn_edit = QPushButton("✎")
                 btn_edit.setFixedSize(28, 28)
-                btn_edit.setStyleSheet(f"background: {Colors().PRIMARY}; color: white; border-radius: 4px; border: none;")
+                btn_edit.setStyleSheet(
+                    f"background: {Colors().PRIMARY}; color: white; border-radius: 4px; border: none;"
+                )
                 btn_edit.clicked.connect(lambda ch, sid=r[0]: self.load_student_for_edit(sid))
 
                 btn_del = QPushButton("✕")
@@ -1005,16 +1115,39 @@ class ModernStudentManagement(QMainWindow):
     def print_student_list(self):
         rows = self._fetch_full_list_rows()
         headers = [
-            "ID", "Prénom (FR)", "Nom (FR)", "الاسم (AR)", "اللقب (AR)",
-            "Naissance", "Lieu", "Sexe", "Adresse", "Classe", "N° Cls", "Code Accès",
-            "Tuteur", "Tél", "Email", "Date", "Statut"
+            "ID",
+            "Prénom (FR)",
+            "Nom (FR)",
+            "الاسم (AR)",
+            "اللقب (AR)",
+            "Naissance",
+            "Lieu",
+            "Sexe",
+            "Adresse",
+            "Classe",
+            "N° Cls",
+            "Code Accès",
+            "Tuteur",
+            "Tél",
+            "Email",
+            "Date",
+            "Statut",
         ]
         filename = self._build_report_filename("Liste_Complete_Eleves", self.combo_filter_class.currentText())
-        self._generate_pdf_rows(headers, rows, filename, orientation='L', title_doc="LISTE COMPLETE DES ELEVES INSCRITES DE: " +
-                                (self.combo_filter_class.currentText() if self.combo_filter_class.currentData() else "Toutes les classes"))
+        self._generate_pdf_rows(
+            headers,
+            rows,
+            filename,
+            orientation='L',
+            title_doc="LISTE COMPLETE DES ELEVES INSCRITES DE: "
+            + (
+                self.combo_filter_class.currentText() if self.combo_filter_class.currentData() else "Toutes les classes"
+            ),
+        )
 
     def _open_import_wizard(self):
         from import_wizard import ImportWizard
+
         actor = getattr(self, "current_user", "system")
         wiz = ImportWizard(parent=self, actor=actor)
         wiz.exec()
@@ -1023,8 +1156,18 @@ class ModernStudentManagement(QMainWindow):
     def print_filtered_list(self):
         rows, headers = self._fetch_reg_list_rows()
         filename = self._build_report_filename("Liste_Eleves_Filtrees", self.combo_filter_class_reg.currentText())
-        self._generate_pdf_rows(headers, rows, filename, orientation='P', title_doc="LISTE DES ELEVES DE: " +
-                                (self.combo_filter_class_reg.currentText() if self.combo_filter_class_reg.currentData() else "Toutes les classes"))
+        self._generate_pdf_rows(
+            headers,
+            rows,
+            filename,
+            orientation='P',
+            title_doc="LISTE DES ELEVES DE: "
+            + (
+                self.combo_filter_class_reg.currentText()
+                if self.combo_filter_class_reg.currentData()
+                else "Toutes les classes"
+            ),
+        )
 
     def _build_report_filename(self, prefix, class_label):
         class_text = class_label if class_label and "Toutes" not in class_label else "Toutes_Classes"
@@ -1065,12 +1208,27 @@ class ModernStudentManagement(QMainWindow):
         for r in rows:
             gender_str = self.gender_to_label(r[7])
             class_no = str(r[10]) if r[10] else "-"
-            result.append([
-                str(r[0]), r[1] or "", r[2] or "", r[3] or "", r[4] or "",
-                r[5] or "", r[6] or "", gender_str, r[8] or "", r[9] or "-",
-                class_no, r[11] or "", r[12] or "", r[13] or "", r[14] or "", r[15] or "",
-                r[16] or ""
-            ])
+            result.append(
+                [
+                    str(r[0]),
+                    r[1] or "",
+                    r[2] or "",
+                    r[3] or "",
+                    r[4] or "",
+                    r[5] or "",
+                    r[6] or "",
+                    gender_str,
+                    r[8] or "",
+                    r[9] or "-",
+                    class_no,
+                    r[11] or "",
+                    r[12] or "",
+                    r[13] or "",
+                    r[14] or "",
+                    r[15] or "",
+                    r[16] or "",
+                ]
+            )
         return result
 
     def _fetch_reg_list_rows(self):
@@ -1117,15 +1275,25 @@ class ModernStudentManagement(QMainWindow):
             for col in range(col_count):
                 txt = row[col] if col < len(row) else ""
                 txt = self._prepare_pdf_text(txt)
-                try: txt.encode('latin-1')
+                try:
+                    txt.encode('latin-1')
                 except Exception:
-                    if not self._is_arabic_font_ready(): txt = self._latin_fallback_text(txt)
+                    if not self._is_arabic_font_ready():
+                        txt = self._latin_fallback_text(txt)
                 cell_w = col_widths[col] if col_widths else w
                 pdf.cell(cell_w, 8, txt, 1, 0, fill=row_fill)
             pdf.ln()
             row_fill = not row_fill
 
-        output_pdf(pdf, self, filename, mode=STUDENT_LIST_OUTPUT_MODE, dialog_title="Save PDF", success_save_message="PDF généré.", success_print_message="Liste envoyée à l'imprimante.")
+        output_pdf(
+            pdf,
+            self,
+            filename,
+            mode=STUDENT_LIST_OUTPUT_MODE,
+            dialog_title="Save PDF",
+            success_save_message="PDF généré.",
+            success_print_message="Liste envoyée à l'imprimante.",
+        )
 
     def _generate_pdf(self, table, filename):
         pdf = StudentListPDF()
@@ -1146,60 +1314,92 @@ class ModernStudentManagement(QMainWindow):
                 txt = item.text() if item else ""
                 txt = txt.replace("\n", " / ")
                 txt = self._prepare_pdf_text(txt)
-                try: txt.encode('latin-1')
+                try:
+                    txt.encode('latin-1')
                 except Exception:
-                    if not self._is_arabic_font_ready(): txt = self._latin_fallback_text(txt)
+                    if not self._is_arabic_font_ready():
+                        txt = self._latin_fallback_text(txt)
                 pdf.cell(w, 10, txt, 1, 0, fill=row_fill)
             pdf.ln()
             row_fill = not row_fill
 
-        output_pdf(pdf, self, filename, mode=STUDENT_LIST_OUTPUT_MODE, dialog_title="Save PDF", success_save_message="PDF généré.", success_print_message="Liste envoyée à l'imprimante.")
+        output_pdf(
+            pdf,
+            self,
+            filename,
+            mode=STUDENT_LIST_OUTPUT_MODE,
+            dialog_title="Save PDF",
+            success_save_message="PDF généré.",
+            success_print_message="Liste envoyée à l'imprimante.",
+        )
 
-    def _get_pdf_font_name(self): return "ArabicFont" if self._is_arabic_font_ready() else "Arial"
+    def _get_pdf_font_name(self):
+        return "ArabicFont" if self._is_arabic_font_ready() else "Arial"
 
     def _get_arabic_font_path(self):
         base_dir = os.path.dirname(os.path.abspath(__file__))
         candidates = [
-            os.path.join(base_dir, "fonts", "Amiri-Regular.ttf"), os.path.join(base_dir, "fonts", "NotoNaskhArabic-Regular.ttf"),
-            os.path.join(base_dir, "fonts", "Cairo-Regular.ttf"), os.path.join(base_dir, "Fonts", "Amiri", "Amiri-Regular.ttf"),
-            os.path.join(base_dir, "Fonts", "Noto_Naskh_Arabic", "NotoNaskhArabic-Regular.ttf"), os.path.join(base_dir, "Fonts", "Cairo", "Cairo-Regular.ttf"),
+            os.path.join(base_dir, "fonts", "Amiri-Regular.ttf"),
+            os.path.join(base_dir, "fonts", "NotoNaskhArabic-Regular.ttf"),
+            os.path.join(base_dir, "fonts", "Cairo-Regular.ttf"),
+            os.path.join(base_dir, "Fonts", "Amiri", "Amiri-Regular.ttf"),
+            os.path.join(base_dir, "Fonts", "Noto_Naskh_Arabic", "NotoNaskhArabic-Regular.ttf"),
+            os.path.join(base_dir, "Fonts", "Cairo", "Cairo-Regular.ttf"),
         ]
         for path in candidates:
-            if os.path.exists(path): return path
+            if os.path.exists(path):
+                return path
         return None
 
     def _latin_fallback_text(self, text):
-        if text is None: return "-"
-        if not isinstance(text, str): text = str(text)
+        if text is None:
+            return "-"
+        if not isinstance(text, str):
+            text = str(text)
         cleaned = text.encode('latin-1', 'ignore').decode('latin-1').strip()
         return cleaned or "-"
 
-    def _is_arabic_font_ready(self): return self._get_arabic_font_path() is not None
+    def _is_arabic_font_ready(self):
+        return self._get_arabic_font_path() is not None
 
     def _setup_pdf_fonts(self, pdf):
         font_path = self._get_arabic_font_path()
         if font_path:
-            try: pdf.add_font("ArabicFont", "", font_path, uni=True)
-            except Exception: pass
+            try:
+                pdf.add_font("ArabicFont", "", font_path, uni=True)
+            except Exception:
+                pass
         else:
             if ARABIC_SUPPORT:
-                QMessageBox.information(self, "Police عربية مفقودة", "لتصدير PDF يدعم العربية، ضع ملف خط (TTF) في مجلد fonts داخل المشروع.")
+                QMessageBox.information(
+                    self, "Police عربية مفقودة", "لتصدير PDF يدعم العربية، ضع ملف خط (TTF) في مجلد fonts داخل المشروع."
+                )
 
     def _prepare_pdf_text(self, text):
-        if text is None: return text
-        if not isinstance(text, str): text = str(text)
-        if not text: return text
-        if not self._contains_arabic(text): return text
-        if not ARABIC_SUPPORT: return text
+        if text is None:
+            return text
+        if not isinstance(text, str):
+            text = str(text)
+        if not text:
+            return text
+        if not self._contains_arabic(text):
+            return text
+        if not ARABIC_SUPPORT:
+            return text
         try:
             reshaped = arabic_reshaper.reshape(text)
             return get_display(reshaped)
-        except Exception: return text
+        except Exception:
+            return text
 
     def _contains_arabic(self, text):
-        if text is None: return False
-        if not isinstance(text, str): text = str(text)
-        return any("\u0600" <= ch <= "\u06FF" or "\u0750" <= ch <= "\u077F" or "\u08A0" <= ch <= "\u08FF" for ch in text)
+        if text is None:
+            return False
+        if not isinstance(text, str):
+            text = str(text)
+        return any(
+            "\u0600" <= ch <= "\u06FF" or "\u0750" <= ch <= "\u077F" or "\u08A0" <= ch <= "\u08FF" for ch in text
+        )
 
 
 if __name__ == "__main__":
