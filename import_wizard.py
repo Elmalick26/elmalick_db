@@ -17,27 +17,41 @@ import_wizard.py — معالج الاستيراد الجماعي للطلاب �
   - Staff.status = 'Actif' — غير مستخدم هنا
 """
 
-import os
 import csv
-from datetime import datetime, date
+import os
+from datetime import date, datetime
 
-from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QFileDialog, QTableWidget, QTableWidgetItem, QComboBox,
-    QProgressBar, QTextEdit, QMessageBox, QFrame, QScrollArea,
-    QWidget, QHeaderView, QSizePolicy
-)
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
-from PyQt6.QtGui import QFont, QColor
+from PyQt6.QtGui import QColor, QFont
+from PyQt6.QtWidgets import (
+    QComboBox,
+    QDialog,
+    QFileDialog,
+    QFrame,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QMessageBox,
+    QProgressBar,
+    QPushButton,
+    QScrollArea,
+    QSizePolicy,
+    QTableWidget,
+    QTableWidgetItem,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+)
 
-from database_setup import DatabaseManager, log_audit
 from app_logger import AppLogger
-from validators import validate_student, format_errors
-from ui_styles import ThemeManager
+from database_setup import DatabaseManager, log_audit
 from repositories.import_wizard_repo import ImportWizardRepository
+from ui_styles import ThemeManager
+from validators import format_errors, validate_student
 
 try:
     import openpyxl
+
     OPENPYXL_AVAILABLE = True
 except ImportError:
     OPENPYXL_AVAILABLE = False
@@ -57,6 +71,7 @@ STUDENT_FIELDS = [
     ("parent_phone", "Téléphone parent"),
     ("parent_email", "Email parent"),
     ("parent_address", "Adresse parent"),
+    ("class_name", "Classe / الفصل (optionnel)"),
 ]
 FIELD_KEYS = [f[0] for f in STUDENT_FIELDS]
 FIELD_LABELS = [f[1] for f in STUDENT_FIELDS]
@@ -91,16 +106,26 @@ def _normalize_gender(raw) -> str:
 
 class ImportWorker(QThread):
     """خيط الخلفية لتنفيذ الاستيراد الفعلي"""
-    progress = pyqtSignal(int)          # 0-100
-    row_result = pyqtSignal(int, bool, str)   # row_index, success, message
-    finished_sig = pyqtSignal(int, int)    # imported, failed
 
-    def __init__(self, rows: list[dict], class_id: int, year_id: int, actor: str):
+    progress = pyqtSignal(int)  # 0-100
+    row_result = pyqtSignal(int, bool, str)  # row_index, success, message
+    finished_sig = pyqtSignal(int, int)  # imported, failed
+
+    def __init__(
+        self,
+        rows: list[dict],
+        class_id: int,
+        year_id: int,
+        actor: str,
+        classes_map: dict | None = None,
+    ):
         super().__init__()
         self.rows = rows
         self.class_id = class_id
         self.year_id = year_id
         self.actor = actor
+        # {normalized_class_name: class_id} — pour l'affectation par ligne
+        self.classes_map: dict[str, int] = classes_map or {}
 
     def run(self):
         imported = 0
@@ -110,20 +135,33 @@ class ImportWorker(QThread):
         db = DatabaseManager()
         for idx, data in enumerate(self.rows):
             try:
+                # Résoudre le fصل pour cette ligne:
+                # si une colonne 'class_name' est renseignée et reconnue → on l'utilise,
+                # sinon on retombe sur la sélection globale.
+                row_class_id = self.class_id
+                if self.classes_map and data.get("class_name"):
+                    name_key = str(data["class_name"]).strip().lower()
+                    if name_key in self.classes_map:
+                        row_class_id = self.classes_map[name_key]
+
                 with db.get_connection() as conn:
                     repo = ImportWizardRepository(conn)
 
                     # احتساب رقم الطالب التالي في الفصل
-                    next_num = repo.get_next_class_number(self.class_id, self.year_id)
+                    next_num = repo.get_next_class_number(row_class_id, self.year_id)
 
                     # إدراج الطالب
                     student_id = repo.insert_student(data)
 
                     # ربط الطالب بالفصل والسنة
-                    repo.insert_student_class_number(student_id, self.class_id, self.year_id, next_num)
+                    repo.insert_student_class_number(student_id, row_class_id, self.year_id, next_num)
 
-                    log_audit(conn, self.actor, "IMPORT_STUDENT",
-                              f"{data.get('first_name_fr', '')} {data.get('last_name_fr', '')} (id={student_id})")
+                    log_audit(
+                        conn,
+                        self.actor,
+                        "IMPORT_STUDENT",
+                        f"{data.get('first_name_fr', '')} {data.get('last_name_fr', '')} (id={student_id})",
+                    )
                     conn.commit()
 
                 imported += 1
@@ -177,7 +215,8 @@ class ImportWizard(QDialog):
         root.addWidget(lbl)
 
         # — الخط الفاصل —
-        sep = QFrame(); sep.setFrameShape(QFrame.Shape.HLine)
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
         sep.setStyleSheet(f"background-color: {colors.BORDER}; max-height: 1px;")
         root.addWidget(sep)
 
@@ -195,7 +234,12 @@ class ImportWizard(QDialog):
 
         # — سطر: الفصل والسنة الدراسية —
         dest_row = QHBoxLayout()
-        dest_row.addWidget(QLabel("Classe:"))
+        lbl_cls = QLabel("Classe par défaut / فصل افتراضي:")
+        lbl_cls.setToolTip(
+            "Utilisée pour les lignes sans colonne 'Classe' ou avec une valeur inconnue.\n"
+            "يُستخدم للصفوف التي لا تحتوي على عمود 'الفصل' أو تحتوي على قيمة غير معروفة."
+        )
+        dest_row.addWidget(lbl_cls)
         self.combo_class = QComboBox()
         self.combo_class.setMinimumWidth(180)
         self.combo_class.setStyleSheet(self._combo_style(colors))
@@ -239,10 +283,12 @@ class ImportWizard(QDialog):
         # — شريط التقدم —
         self.progress_bar = QProgressBar()
         self.progress_bar.setVisible(False)
-        self.progress_bar.setStyleSheet(f"""
+        self.progress_bar.setStyleSheet(
+            f"""
             QProgressBar {{ border-radius: 5px; background: {colors.INPUT_BG}; height: 18px; text-align: center; }}
             QProgressBar::chunk {{ background: {colors.SUCCESS}; border-radius: 5px; }}
-        """)
+        """
+        )
         root.addWidget(self.progress_bar)
 
         # — سجل النتائج —
@@ -253,7 +299,9 @@ class ImportWizard(QDialog):
         self.log_text = QTextEdit()
         self.log_text.setReadOnly(True)
         self.log_text.setMaximumHeight(120)
-        self.log_text.setStyleSheet(f"background: {colors.INPUT_BG}; color: {colors.TEXT_SECONDARY}; border-radius: 6px; padding: 5px;")
+        self.log_text.setStyleSheet(
+            f"background: {colors.INPUT_BG}; color: {colors.TEXT_SECONDARY}; border-radius: 6px; padding: 5px;"
+        )
         root.addWidget(self.log_text)
 
         # — أزرار الأسفل —
@@ -389,17 +437,33 @@ class ImportWizard(QDialog):
         """تخمين تلقائي للحقل بناءً على اسم العمود"""
         h = header.strip().lower()
         mapping = {
-            "prenom": "first_name_fr", "prénom": "first_name_fr",
-            "first_name": "first_name_fr", "nom": "last_name_fr",
-            "last_name": "last_name_fr", "الاسم الأول": "first_name_ar",
-            "اسم العائلة": "last_name_ar", "naissance": "birth_date",
-            "birth": "birth_date", "nais": "birth_date",
-            "lieu": "birth_place", "sexe": "gender",
-            "genre": "gender", "gender": "gender",
-            "adresse": "address", "address": "address",
-            "parent": "parent_name", "tuteur": "parent_name",
-            "phone": "parent_phone", "tel": "parent_phone",
-            "email": "parent_email", "mail": "parent_email",
+            "prenom": "first_name_fr",
+            "prénom": "first_name_fr",
+            "first_name": "first_name_fr",
+            "nom": "last_name_fr",
+            "last_name": "last_name_fr",
+            "الاسم الأول": "first_name_ar",
+            "اسم العائلة": "last_name_ar",
+            "naissance": "birth_date",
+            "birth": "birth_date",
+            "nais": "birth_date",
+            "lieu": "birth_place",
+            "sexe": "gender",
+            "genre": "gender",
+            "gender": "gender",
+            "adresse": "address",
+            "address": "address",
+            "parent": "parent_name",
+            "tuteur": "parent_name",
+            "phone": "parent_phone",
+            "tel": "parent_phone",
+            "email": "parent_email",
+            "mail": "parent_email",
+            "classe": "class_name",
+            "class": "class_name",
+            "فصل": "class_name",
+            "groupe": "class_name",
+            "group": "class_name",
         }
         for key, field in mapping.items():
             if key in h:
@@ -435,9 +499,10 @@ class ImportWizard(QDialog):
                 # التحقق من التاريخ لـ validators
                 try:
                     from datetime import date as _date
-                    data["_birth_date_obj"] = datetime.strptime(
-                        data["birth_date"], "%Y-%m-%d"
-                    ).date() if data["birth_date"] else None
+
+                    data["_birth_date_obj"] = (
+                        datetime.strptime(data["birth_date"], "%Y-%m-%d").date() if data["birth_date"] else None
+                    )
                 except (ValueError, TypeError):
                     data["_birth_date_obj"] = None
 
@@ -450,10 +515,7 @@ class ImportWizard(QDialog):
             errs = validate_student(validate_data)
             if errs:
                 errors_found += 1
-                self._log(
-                    f"❌  Ligne {row_idx + 2}: {format_errors(errs)}",
-                    color="#EF4444"
-                )
+                self._log(f"❌  Ligne {row_idx + 2}: {format_errors(errs)}", color="#EF4444")
             else:
                 self._validated_rows.append(data)
 
@@ -485,17 +547,17 @@ class ImportWizard(QDialog):
         year_id = self.combo_year.currentData()
 
         if not class_id or not year_id:
-            QMessageBox.warning(self, "Sélection manquante",
-                                "Veuillez sélectionner une classe et une année scolaire.")
+            QMessageBox.warning(self, "Sélection manquante", "Veuillez sélectionner une classe et une année scolaire.")
             return
         if not self._validated_rows:
             QMessageBox.warning(self, "Pas de données", "Aucune ligne valide à importer.")
             return
 
         confirm = QMessageBox.question(
-            self, "Confirmation",
+            self,
+            "Confirmation",
             f"Importer {len(self._validated_rows)} élève(s) dans la classe sélectionnée ?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
         if confirm != QMessageBox.StandardButton.Yes:
             return
@@ -506,7 +568,18 @@ class ImportWizard(QDialog):
         self.progress_bar.setValue(0)
         self.log_text.clear()
 
-        self._worker = ImportWorker(self._validated_rows, class_id, year_id, self.actor)
+        # Construire la table de correspondance nom_classe → id pour l'affectation par ligne
+        classes_map: dict[str, int] = {}
+        try:
+            _db = DatabaseManager()
+            with _db.get_connection() as _conn:
+                _repo = ImportWizardRepository(_conn)
+                for cid, cname in _repo.list_classes():
+                    classes_map[cname.strip().lower()] = cid
+        except Exception as _e:
+            AppLogger.error("ImportWizard", f"Chargement classes (map): {_e}")
+
+        self._worker = ImportWorker(self._validated_rows, class_id, year_id, self.actor, classes_map)
         self._worker.progress.connect(self.progress_bar.setValue)
         self._worker.row_result.connect(self._on_row_result)
         self._worker.finished_sig.connect(self._on_import_finished)
@@ -522,25 +595,20 @@ class ImportWizard(QDialog):
 
     def _on_import_finished(self, imported: int, failed: int):
         self.progress_bar.setValue(100)
-        self._log(
-            f"\n🏁  Importation terminée: {imported} réussi(s), {failed} échoué(s).",
-            color="#3B82F6"
-        )
+        self._log(f"\n🏁  Importation terminée: {imported} réussi(s), {failed} échoué(s).", color="#3B82F6")
         self.btn_validate.setEnabled(True)
         AppLogger.info("ImportWizard", f"Import terminé: {imported} ok, {failed} erreurs")
         if imported > 0:
             QMessageBox.information(
-                self, "Importation terminée",
-                f"✅  {imported} élève(s) importé(s) avec succès.\n" +
-                (f"⚠️  {failed} ligne(s) en erreur." if failed else "")
+                self,
+                "Importation terminée",
+                f"✅  {imported} élève(s) importé(s) avec succès.\n"
+                + (f"⚠️  {failed} ligne(s) en erreur." if failed else ""),
             )
 
     # ---------------------------------------------------------------- Template
     def _download_template(self):
-        path, _ = QFileDialog.getSaveFileName(
-            self, "Enregistrer le modèle", "modele_import_eleves.csv",
-            "CSV (*.csv)"
-        )
+        path, _ = QFileDialog.getSaveFileName(self, "Enregistrer le modèle", "modele_import_eleves.csv", "CSV (*.csv)")
         if not path:
             return
         headers = [lbl for key, lbl in STUDENT_FIELDS if key]
@@ -548,13 +616,24 @@ class ImportWizard(QDialog):
             with open(path, "w", encoding="utf-8-sig", newline="") as f:
                 writer = csv.writer(f)
                 writer.writerow(headers)
-                writer.writerow([
-                    "Ahmed", "Diallo", "أحمد", "ديالو",
-                    "2010-05-15", "Dakar", "M", "Rue 10 Dakar",
-                    "Moussa Diallo", "771234567", "", ""
-                ])
-            QMessageBox.information(self, "Modèle enregistré",
-                                    f"Modèle sauvegardé:\n{path}")
+                writer.writerow(
+                    [
+                        "Ahmed",
+                        "Diallo",
+                        "أحمد",
+                        "ديالو",
+                        "2010-05-15",
+                        "Dakar",
+                        "M",
+                        "Rue 10 Dakar",
+                        "Moussa Diallo",
+                        "771234567",
+                        "",
+                        "",
+                        "",  # Classe (optionnel — laisser vide pour utiliser la sélection globale)
+                    ]
+                )
+            QMessageBox.information(self, "Modèle enregistré", f"Modèle sauvegardé:\n{path}")
         except Exception as e:
             QMessageBox.critical(self, "Erreur", str(e))
 
