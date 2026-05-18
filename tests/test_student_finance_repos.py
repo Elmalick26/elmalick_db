@@ -4,11 +4,11 @@ from unittest.mock import MagicMock, call
 
 import pytest
 
-from repositories.student_repo import StudentRepository
 from repositories.finance_repo import FinanceRepository
-
+from repositories.student_repo import StudentRepository
 
 # ─── helpers ────────────────────────────────────────────────────────────────
+
 
 def _conn():
     conn = MagicMock()
@@ -38,12 +38,28 @@ _STUDENT_DATA = {
 
 # ─── StudentRepository ───────────────────────────────────────────────────────
 
+
 class TestStudentRepository:
     def test_get_student_for_edit(self):
         conn, cur = _conn()
-        cur.fetchone.return_value = ("Ahmed", "Ba", "أحمد", "با", "2010-05-01",
-                                     "Dakar", "M", "Rue 12", "Parent", "771234567",
-                                     None, None, "2026-09-01", "Active", None, 1)
+        cur.fetchone.return_value = (
+            "Ahmed",
+            "Ba",
+            "أحمد",
+            "با",
+            "2010-05-01",
+            "Dakar",
+            "M",
+            "Rue 12",
+            "Parent",
+            "771234567",
+            None,
+            None,
+            "2026-09-01",
+            "Active",
+            None,
+            1,
+        )
         repo = StudentRepository(conn)
         row = repo.get_student_for_edit(1, 10)
         assert row[0] == "Ahmed"
@@ -51,7 +67,9 @@ class TestStudentRepository:
 
     def test_list_students_no_filters(self):
         conn, cur = _conn()
-        cur.fetchall.return_value = [(1, "Ahmed", "Ba", "أحمد", "با", "M", "CE1", "Parent", "77", "2026-09-01", 5, "EMG-001")]
+        cur.fetchall.return_value = [
+            (1, "Ahmed", "Ba", "أحمد", "با", "M", "CE1", "Parent", "77", "2026-09-01", 5, "EMG-001")
+        ]
         repo = StudentRepository(conn)
         rows = repo.list_students(year_id=1)
         assert len(rows) == 1
@@ -103,7 +121,12 @@ class TestStudentRepository:
         repo = StudentRepository(conn)
         new_id = repo.add_student(_STUDENT_DATA)
         assert new_id == 55
-        assert "INSERT INTO Students" in cur.execute.call_args[0][0]
+        # Two calls: INSERT then UPDATE student_code — check the first call
+        first_call_sql = cur.execute.call_args_list[0][0][0]
+        assert "INSERT INTO Students" in first_call_sql
+        # Verify student_code generation was also called
+        last_call_sql = cur.execute.call_args_list[-1][0][0]
+        assert "student_code" in last_call_sql
 
     def test_update_student_no_photo(self):
         conn, cur = _conn()
@@ -233,6 +256,7 @@ class TestStudentRepository:
 
 
 # ─── FinanceRepository ───────────────────────────────────────────────────────
+
 
 class TestFinanceRepository:
     def test_list_classes(self):

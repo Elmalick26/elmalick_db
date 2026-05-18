@@ -52,7 +52,13 @@ class ImportWizardRepository:
                     data.get("parent_address", ""),
                 ),
             )
-            return cur.fetchone()[0]
+            student_id = cur.fetchone()[0]
+            # توليد رمز الوصول الدائم (EMG-XXXX) فور الإنشاء
+            cur.execute(
+                "UPDATE Students SET student_code = %s WHERE id = %s AND student_code IS NULL",
+                (f"EMG-{student_id:04d}", student_id),
+            )
+            return student_id
 
     def insert_student_class_number(self, student_id: int, class_id: int, year_id: int, class_number: int) -> None:
         """Lie l'étudiant au fصل et à l'année."""

@@ -149,7 +149,13 @@ class StudentRepository:
                 data.get("photo_path"),
             ),
         )
-        return cursor.fetchone()[0]
+        student_id = cursor.fetchone()[0]
+        # توليد رمز الوصول الدائم (EMG-XXXX) فور الإنشاء
+        cursor.execute(
+            "UPDATE Students SET student_code = %s WHERE id = %s AND student_code IS NULL",
+            (f"EMG-{student_id:04d}", student_id),
+        )
+        return student_id
 
     def update_student(self, student_id: int, data: dict) -> None:
         """Update an existing student record.
