@@ -221,9 +221,9 @@ class GradesRepository:
             SELECT S.first_name_fr || ' ' || S.last_name_fr,
                    ROUND(
                        AVG(G.score * 20.0 /
-                           CASE WHEN LOWER(CY.name_fr) SIMILAR TO '%%(elem|prim|ibtida)%%'
+                           CASE WHEN LOWER(CY.name_fr) ~* '(elem|prim|ibtida)'
                                 THEN 10.0 ELSE 20.0 END
-                       )::numeric, 1
+                       )
                    ) AS avg_normalized
             FROM Grades G
             JOIN Students S ON G.student_id = S.id
@@ -234,7 +234,7 @@ class GradesRepository:
             GROUP BY S.id, S.first_name_fr, S.last_name_fr
             HAVING ROUND(
                        AVG(G.score * 20.0 /
-                           CASE WHEN LOWER(CY.name_fr) SIMILAR TO '%%(elem|prim|ibtida)%%'
+                           CASE WHEN LOWER(CY.name_fr) ~* '(elem|prim|ibtida)'
                                 THEN 10.0 ELSE 20.0 END
                        )::numeric, 1
                    ) < %s

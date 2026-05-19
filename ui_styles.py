@@ -3,11 +3,21 @@
 Unified UI Styles for the School Management System
 """
 
-from PyQt6.QtWidgets import (QApplication, QPushButton, QLineEdit, QComboBox,
-                             QDateEdit, QDoubleSpinBox, QTextEdit, QLabel,
-                             QFrame, QGraphicsDropShadowEffect)
-from PyQt6.QtGui import QFont, QColor
 from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QColor, QFont
+from PyQt6.QtWidgets import (
+    QApplication,
+    QComboBox,
+    QDateEdit,
+    QDoubleSpinBox,
+    QFrame,
+    QGraphicsDropShadowEffect,
+    QLabel,
+    QLineEdit,
+    QPushButton,
+    QTextEdit,
+)
+
 from db_path import configure_qt_font_environment
 
 configure_qt_font_environment()
@@ -17,6 +27,7 @@ configure_qt_font_environment()
 
 class Colors:
     """مجموعة الألوان الموحدة - Deep Slate Theme (Light Mode)"""
+
     PRIMARY = "#3B82F6"  # Blue 500
     PRIMARY_HOVER = "#2563EB"  # Blue 600
     PRIMARY_DARK = "#1E40AF"  # Blue 700
@@ -53,6 +64,7 @@ class Colors:
 
 class DarkColors:
     """مجموعة الألوان للوضع الداكن - Dark Theme"""
+
     PRIMARY = "#60A5FA"  # Blue 400 (Lighter for dark mode)
     PRIMARY_HOVER = "#3B82F6"
     PRIMARY_DARK = "#2563EB"
@@ -382,6 +394,7 @@ class ThemeManager:
 
 # ========== HELPER FUNCTIONS (للاستخدام داخل الملفات) ==========
 
+
 def create_shadow_effect(blur=15, offset=4, opacity=40):
     """تأثير ظل موحد"""
     shadow = QGraphicsDropShadowEffect()
@@ -478,3 +491,129 @@ def get_tabs_style():
             background: {colors.BORDER};
         }}
     """
+
+
+# ========== LOADING OVERLAY ==========
+
+from PyQt6.QtCore import QTimer  # noqa: E402
+from PyQt6.QtWidgets import QVBoxLayout, QWidget  # noqa: E402 (imports at module level preferred)
+
+
+class LoadingOverlay(QWidget):
+    """
+    Superpose un voile semi-transparent + spinner texte sur un widget parent
+    pendant les opérations longues (requêtes DB, génération PDF…).
+
+    Utilisation :
+        overlay = LoadingOverlay(parent_widget)
+        overlay.show_loading("Chargement en cours…")
+        # … travail en arrière-plan …
+        overlay.hide_loading()
+    """
+
+    def __init__(self, parent: QWidget) -> None:
+        super().__init__(parent)
+        self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, False)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
+        self.hide()
+
+        layout = QVBoxLayout(self)
+        layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+        self._label = QLabel("⏳  جارٍ التحميل…")
+        self._label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._label.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
+        layout.addWidget(self._label)
+
+        self._dots = 0
+        self._timer = QTimer(self)
+        self._timer.timeout.connect(self._animate)
+
+    # ------------------------------------------------------------------ #
+    def show_loading(self, message: str = "Chargement…") -> None:
+        """Affiche le voile avec *message* et démarre l'animation."""
+        self._base_msg = message
+        self._label.setText(f"⏳  {message}")
+        colors = ThemeManager.get_colors()
+        self.setStyleSheet("background-color: rgba(0,0,0,0.45); border-radius: 8px;")
+        self._label.setStyleSheet(
+            f"color: white; background: transparent; padding: 20px 40px;"
+            f"border-radius: 12px; background-color: {colors.BG_HEADER};"
+        )
+        # Ajuster la taille sur le parent
+        if self.parent():
+            self.setGeometry(self.parent().rect())  # type: ignore[union-attr]
+        self.raise_()
+        self.show()
+        self._dots = 0
+        self._timer.start(400)
+
+    def hide_loading(self) -> None:
+        """Masque le voile et arrête l'animation."""
+        self._timer.stop()
+        self.hide()
+
+    def _animate(self) -> None:
+        self._dots = (self._dots + 1) % 4
+        dots = "." * self._dots
+        self._label.setText(f"⏳  {self._base_msg}{dots}")
+
+    # Redimensionnement automatique quand le parent change de taille
+    def resizeEvent(self, event) -> None:  # type: ignore[override]
+        super().resizeEvent(event)
+        if self.parent():
+            self.setGeometry(self.parent().rect())  # type: ignore[union-attr]
+
+
+# ========== FRIENDLY DB ERROR MESSAGES ==========
+
+
+def friendly_db_error(exc: Exception) -> str:
+    """
+    Traduit une exception psycopg2 / générale en message lisible
+    pour l'utilisateur final (arabe + français).
+
+    Usage :
+        except Exception as e:
+            QMessageBox.warning(self, "Erreur", friendly_db_error(e))
+    """
+    msg = str(exc).lower()
+
+    # Contrainte de clé étrangère
+    if "foreign key" in msg or "violates foreign key" in msg or "fk" in msg:
+        return (
+            "Impossible de supprimer cet enregistrement : il est lié à d'autres données.\n"
+            "لا يمكن حذف هذا السجل لأنه مرتبط ببيانات أخرى."
+        )
+    # Valeur unique dupliquée
+    if "unique" in msg or "duplicate" in msg:
+        return (
+            "Cette valeur existe déjà. Veuillez en choisir une autre.\n"
+            "هذه القيمة موجودة بالفعل. يرجى اختيار قيمة مختلفة."
+        )
+    # Colonne / table introuvable (erreur de schéma)
+    if "column" in msg and ("does not exist" in msg or "n'existe pas" in msg):
+        return (
+            "Erreur de structure de la base de données. Contactez l'administrateur.\n"
+            "خطأ في هيكل قاعدة البيانات. تواصل مع المسؤول."
+        )
+    # Connexion perdue
+    if "connection" in msg or "connexion" in msg or "timeout" in msg:
+        return (
+            "Connexion à la base de données interrompue. Vérifiez le serveur.\n"
+            "انقطع الاتصال بقاعدة البيانات. تحقق من الخادم."
+        )
+    # Données trop longues
+    if "too long" in msg or "value too long" in msg or "character varying" in msg:
+        return "La valeur saisie est trop longue pour ce champ.\n" "القيمة المُدخلة أطول مما يسمح به الحقل."
+    # Champ obligatoire NULL
+    if "null value" in msg or "not-null" in msg or "violates not-null" in msg:
+        return (
+            "Un champ obligatoire est vide. Vérifiez les données saisies.\n"
+            "حقل إلزامي فارغ. يرجى التحقق من البيانات المُدخلة."
+        )
+    # Message générique
+    return (
+        "Une erreur inattendue s'est produite. Consultez les journaux pour plus de détails.\n"
+        "حدث خطأ غير متوقع. راجع سجلات النظام للمزيد من التفاصيل."
+    )

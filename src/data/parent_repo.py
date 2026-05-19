@@ -111,7 +111,7 @@ class ParentRepository:
                    SB.coefficient,
                    AP.period_name_fr AS period,
                    AT.name_fr AS exam_type,
-                   CASE WHEN LOWER(CY.name_fr) SIMILAR TO '%%(elem|prim|ibtida)%%'
+                   CASE WHEN LOWER(CY.name_fr) ~* '(elem|prim|ibtida)'
                         THEN 10.0 ELSE 20.0 END AS max_score
             FROM Grades G
             JOIN Subjects SB ON G.subject_id = SB.id

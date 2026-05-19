@@ -27,6 +27,8 @@ per-file-ignores =
     bulletin_generation.py:C901,E501,
     # ملفات API: sys.path.insert ضروري للاستيراد الصحيح
     api/*.py:E402,
+    # main_dashbord.py: الاستيراد يأتي بعد دالة find_font_dir
+    main_dashbord.py:E402,F841,
     # validators.py: re-import في __main__ block
     validators.py:F811,
 max-complexity = 15

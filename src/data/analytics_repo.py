@@ -257,7 +257,7 @@ class AnalyticsRepository:
             SELECT SB.subject_name_fr,
                    AVG(G.score)       AS avg_score,
                    SB.coefficient,
-                   MAX(CASE WHEN LOWER(CY.name_fr) SIMILAR TO '%%(elem|prim|ibtida)%%'
+                   MAX(CASE WHEN LOWER(CY.name_fr) ~* '(elem|prim|ibtida)'
                             THEN 10.0 ELSE 20.0 END) AS max_score
             FROM Grades G
             JOIN Subjects SB    ON G.subject_id = SB.id
