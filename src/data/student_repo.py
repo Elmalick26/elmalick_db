@@ -35,6 +35,8 @@ class StudentRepository:
         search: str = "",
         date_from: Any = None,
         date_to: Any = None,
+        limit: int | None = None,
+        offset: int = 0,
     ) -> list[tuple]:
         cursor = self.conn.cursor()
         query = """
@@ -65,8 +67,51 @@ class StudentRepository:
             params.extend([date_from, date_to])
 
         query += " ORDER BY S.id DESC"
+        if limit is not None:
+            query += " LIMIT %s OFFSET %s"
+            params.extend([limit, offset])
         cursor.execute(query, params)
         return cursor.fetchall()
+
+    def count_students(
+        self,
+        year_id: int,
+        cycle_id: int | None = None,
+        class_id: int | None = None,
+        search: str = "",
+        date_from: Any = None,
+        date_to: Any = None,
+    ) -> int:
+        """Retourne le nombre total de résultats (sans LIMIT) pour la pagination."""
+        cursor = self.conn.cursor()
+        query = """
+            SELECT COUNT(*)
+            FROM Students S
+            LEFT JOIN StudentClassNumbers SCN ON SCN.student_id = S.id AND SCN.year_id = %s
+            LEFT JOIN Classes C ON SCN.class_id = C.id
+            WHERE 1=1
+        """
+        params: list[Any] = [year_id]
+
+        if class_id:
+            query += " AND SCN.class_id = %s"
+            params.append(class_id)
+        elif cycle_id:
+            query += " AND C.cycle_id = %s"
+            params.append(cycle_id)
+
+        if search:
+            query += " AND (S.last_name_fr ILIKE %s OR S.first_name_fr ILIKE %s OR S.last_name_ar ILIKE %s OR S.first_name_ar ILIKE %s)"
+            search_param = f"%{search}%"
+            params.extend([search_param, search_param, search_param, search_param])
+
+        if date_from and date_to:
+            query += " AND S.registration_date BETWEEN %s AND %s"
+            params.extend([date_from, date_to])
+
+        cursor.execute(query, params)
+        result = cursor.fetchone()
+        return int(result[0]) if result else 0
 
     def list_students_detailed(
         self,

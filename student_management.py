@@ -35,7 +35,7 @@ from database_setup import DatabaseManager
 from print_export_service import get_report_output_mode, output_pdf
 from repositories.finance_repo import FinanceRepository
 from repositories.student_repo import StudentRepository
-from ui_styles import Colors, ThemeManager, get_table_style, get_tabs_style
+from ui_styles import Colors, EmptyStateWidget, PaginationWidget, ThemeManager, get_table_style, get_tabs_style
 
 THEME_AVAILABLE = True
 STUDENT_LIST_OUTPUT_MODE = get_report_output_mode("student_list_mode", "save")
@@ -617,6 +617,19 @@ class ModernStudentManagement(QMainWindow):
         self.table_students.setColumnWidth(3, 60)
 
         layout.addWidget(self.table_students)
+
+        self.empty_state_list = EmptyStateWidget(
+            icon="🎓",
+            title="Aucun élève trouvé / لا يوجد طلاب",
+            subtitle="Modifiez les filtres ou ajoutez un nouvel élève.",
+        )
+        self.empty_state_list.setVisible(False)
+        layout.addWidget(self.empty_state_list)
+
+        self.pagination_list = PaginationWidget(page_size=50)
+        self.pagination_list.page_changed.connect(lambda _: self.populate_table(self.table_students))
+        layout.addWidget(self.pagination_list)
+
         self.tabs.addTab(tab, "  Liste Complète / القائمة الشاملة  ")
 
     def style_table(self, table):
@@ -1026,6 +1039,8 @@ class ModernStudentManagement(QMainWindow):
             combo.addItem(r[1], r[0])
 
     def refresh_student_list(self):
+        if hasattr(self, "pagination_list"):
+            self.pagination_list.reset()
         self.populate_table(self.table_students)
         self.populate_table(self.table_students_reg)
 
@@ -1052,14 +1067,37 @@ class ModernStudentManagement(QMainWindow):
         db = DatabaseManager()
         with db.get_connection() as conn:
             repo = StudentRepository(conn)
-            rows = repo.list_students(
-                year_param,
-                cycle_id=cycle_id,
-                class_id=class_id,
-                search=search,
-                date_from=date_from,
-                date_to=date_to,
-            )
+            if table == self.table_students and hasattr(self, "pagination_list"):
+                total = repo.count_students(
+                    year_param,
+                    cycle_id=cycle_id,
+                    class_id=class_id,
+                    search=search,
+                    date_from=date_from,
+                    date_to=date_to,
+                )
+                rows = repo.list_students(
+                    year_param,
+                    cycle_id=cycle_id,
+                    class_id=class_id,
+                    search=search,
+                    date_from=date_from,
+                    date_to=date_to,
+                    limit=self.pagination_list.page_size,
+                    offset=self.pagination_list.current_offset(),
+                )
+                self.pagination_list.set_total(total)
+                self.table_students.setVisible(total > 0)
+                self.empty_state_list.setVisible(total == 0)
+            else:
+                rows = repo.list_students(
+                    year_param,
+                    cycle_id=cycle_id,
+                    class_id=class_id,
+                    search=search,
+                    date_from=date_from,
+                    date_to=date_to,
+                )
 
         for r in rows:
             row_idx = table.rowCount()

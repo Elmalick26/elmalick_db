@@ -496,7 +496,8 @@ def get_tabs_style():
 # ========== LOADING OVERLAY ==========
 
 from PyQt6.QtCore import QTimer  # noqa: E402
-from PyQt6.QtWidgets import QVBoxLayout, QWidget  # noqa: E402 (imports at module level preferred)
+from PyQt6.QtCore import pyqtSignal  # noqa: E402
+from PyQt6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget  # noqa: E402 (imports at module level preferred)
 
 
 class LoadingOverlay(QWidget):
@@ -678,3 +679,172 @@ def get_module_caps(role: str, module_id: str) -> dict:
     if "*" in role_caps:
         return role_caps["*"]
     return role_caps.get(module_id, _DEFAULT_CAPS)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  PaginationWidget — شريط تنقل بين صفحات الجدول
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class PaginationWidget(QWidget):
+    """
+    شريط ترقيم الصفحات لجداول البيانات الكبيرة.
+
+    Émet ``page_changed(page_index)`` (0-based) à chaque changement de page.
+
+    Usage::
+        self.pagination = PaginationWidget(page_size=50)
+        self.pagination.page_changed.connect(self._on_page_changed)
+        layout.addWidget(self.pagination)
+        # بعد استرداد البيانات:
+        self.pagination.set_total(total_count)
+    """
+
+    page_changed = pyqtSignal(int)  # page index (0-based)
+
+    def __init__(self, page_size: int = 50, parent=None):
+        super().__init__(parent)
+        self.page_size = page_size
+        self._current_page = 0
+        self._total = 0
+
+        lay = QHBoxLayout(self)
+        lay.setContentsMargins(0, 6, 0, 6)
+        lay.setSpacing(8)
+
+        colors = ThemeManager.get_colors()
+
+        btn_style = (
+            f"QPushButton {{ background: {colors.BG_CARD}; color: {colors.TEXT_PRIMARY}; "
+            f"border: 1px solid {colors.BORDER}; border-radius: 6px; "
+            f"padding: 4px 14px; font-weight: bold; }}"
+            f"QPushButton:hover {{ background: {colors.PRIMARY}; color: white; }}"
+            f"QPushButton:disabled {{ color: {colors.TEXT_SECONDARY}; }}"
+        )
+
+        self.btn_first = QPushButton("⏮")
+        self.btn_prev = QPushButton("◀")
+        self.lbl_info = QLabel("Page 1 / 1  (0 résultats)")
+        self.btn_next = QPushButton("▶")
+        self.btn_last = QPushButton("⏭")
+
+        for btn in (self.btn_first, self.btn_prev, self.btn_next, self.btn_last):
+            btn.setFixedHeight(32)
+            btn.setStyleSheet(btn_style)
+            btn.setCursor(Qt.CursorShape.PointingHandCursor)
+
+        self.lbl_info.setStyleSheet(f"color: {colors.TEXT_SECONDARY}; font-size: 12px; padding: 0 10px;")
+
+        lay.addStretch()
+        lay.addWidget(self.btn_first)
+        lay.addWidget(self.btn_prev)
+        lay.addWidget(self.lbl_info)
+        lay.addWidget(self.btn_next)
+        lay.addWidget(self.btn_last)
+        lay.addStretch()
+
+        self.btn_first.clicked.connect(lambda: self._go_to(0))
+        self.btn_prev.clicked.connect(lambda: self._go_to(self._current_page - 1))
+        self.btn_next.clicked.connect(lambda: self._go_to(self._current_page + 1))
+        self.btn_last.clicked.connect(lambda: self._go_to(self._total_pages() - 1))
+
+        self._refresh_ui()
+
+    # ------------------------------------------------------------------ #
+    def set_total(self, total: int) -> None:
+        """Met à jour le nombre total de résultats sans réinitialiser la page."""
+        self._total = max(0, total)
+        # Clamp current page in case total shrank
+        if self._current_page >= self._total_pages():
+            self._current_page = max(0, self._total_pages() - 1)
+        self._refresh_ui()
+
+    def reset(self) -> None:
+        """Réinitialise à la page 0 (à appeler lors d'un changement de filtre)."""
+        self._current_page = 0
+        self._refresh_ui()
+
+    def current_offset(self) -> int:
+        """Offset SQL à passer à la requête (page × page_size)."""
+        return self._current_page * self.page_size
+
+    def _total_pages(self) -> int:
+        if self._total == 0:
+            return 1
+        import math
+
+        return math.ceil(self._total / self.page_size)
+
+    def _go_to(self, page: int) -> None:
+        page = max(0, min(page, self._total_pages() - 1))
+        if page == self._current_page:
+            return
+        self._current_page = page
+        self._refresh_ui()
+        self.page_changed.emit(self._current_page)
+
+    def _refresh_ui(self) -> None:
+        total_pages = self._total_pages()
+        self.lbl_info.setText(f"Page {self._current_page + 1} / {total_pages}  ({self._total} résultats)")
+        self.btn_first.setEnabled(self._current_page > 0)
+        self.btn_prev.setEnabled(self._current_page > 0)
+        self.btn_next.setEnabled(self._current_page < total_pages - 1)
+        self.btn_last.setEnabled(self._current_page < total_pages - 1)
+        # Cacher le widget entier si tout tient sur 1 page
+        self.setVisible(self._total > self.page_size)
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  EmptyStateWidget — رسالة حالة فارغة للجداول
+# ─────────────────────────────────────────────────────────────────────────────
+
+
+class EmptyStateWidget(QWidget):
+    """
+    Widget affiché à la place d'un tableau vide.
+
+    Affiche une icône, un message principal et un sous-message
+    bilingues (arabe + français).
+
+    Usage::
+        self.empty_state = EmptyStateWidget(
+            icon="🎓",
+            title="Aucun élève trouvé / لا يوجد طلاب",
+            subtitle="Ajoutez un élève ou modifiez les filtres.",
+        )
+        layout.addWidget(self.empty_state)
+        self.empty_state.setVisible(len(rows) == 0)
+        my_table.setVisible(len(rows) > 0)
+    """
+
+    def __init__(self, icon: str = "📭", title: str = "Aucun résultat", subtitle: str = "", parent=None):
+        super().__init__(parent)
+        colors = ThemeManager.get_colors()
+
+        lay = QVBoxLayout(self)
+        lay.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lay.setSpacing(10)
+        lay.setContentsMargins(40, 40, 40, 40)
+
+        lbl_icon = QLabel(icon)
+        lbl_icon.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lbl_icon.setStyleSheet("font-size: 48px; background: transparent; border: none;")
+
+        lbl_title = QLabel(title)
+        lbl_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lbl_title.setWordWrap(True)
+        lbl_title.setStyleSheet(
+            f"color: {colors.TEXT_PRIMARY}; font-size: 16px; font-weight: bold; background: transparent; border: none;"
+        )
+
+        lay.addWidget(lbl_icon)
+        lay.addWidget(lbl_title)
+
+        if subtitle:
+            lbl_sub = QLabel(subtitle)
+            lbl_sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
+            lbl_sub.setWordWrap(True)
+            lbl_sub.setStyleSheet(
+                f"color: {colors.TEXT_SECONDARY}; font-size: 13px; background: transparent; border: none;"
+            )
+            lay.addWidget(lbl_sub)
