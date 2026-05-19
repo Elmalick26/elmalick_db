@@ -1,10 +1,10 @@
-import os
+﻿import os
 import sys
 import traceback
 from datetime import datetime
 
 import matplotlib.pyplot as plt
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from PyQt6.QtCore import QSize, Qt, QTimer
 from PyQt6.QtGui import QColor, QFont, QIcon, QKeySequence, QShortcut
@@ -883,6 +883,9 @@ class MainWindow(QMainWindow):
 
             try:
                 module_instance = window_class()
+                # تطبيق RBAC على مستوى الأزرار داخل الوحدة
+                if hasattr(module_instance, "apply_rbac"):
+                    module_instance.apply_rbac(self.user_role)
                 self.module_windows[mod_id] = module_instance
 
                 if isinstance(module_instance, QMainWindow):

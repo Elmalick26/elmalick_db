@@ -139,9 +139,28 @@ class ModernStudentManagement(QMainWindow):
 
         self.current_photo_path = None
         self.selected_student_id = None
+        # علامات RBAC — يتم تحديثهما بواسطة apply_rbac() بعد الإنشاء
+        self._rbac_can_write = True
+        self._rbac_can_delete = True
         self.init_ui()
         self.load_cycles_filter()
         self.load_cycles_reg()
+        self.refresh_student_list()
+
+    def apply_rbac(self, role: str) -> None:
+        """تطبيق صلاحيات الأزرار بناءً على دور المستخدم الحالي.
+        يُستدعى من MainWindow بعد إنشاء الوحدة مباشرةً.
+        """
+        from ui_styles import get_module_caps
+
+        caps = get_module_caps(role, "student_management")
+        self._rbac_can_write = caps["can_write"]
+        self._rbac_can_delete = caps["can_delete"]
+        # زر الحفظ (إضافة / تعديل)
+        self.btn_save.setEnabled(caps["can_write"])
+        self.btn_save.setVisible(caps["can_write"])
+        self.btn_reset.setVisible(caps["can_write"])
+        # إعادة تحميل الجدول لتطبيق إخفاء أزرار الحذف/التعديل
         self.refresh_student_list()
 
     def init_ui(self):
@@ -1077,11 +1096,13 @@ class ModernStudentManagement(QMainWindow):
                     f"background: {Colors().PRIMARY}; color: white; border-radius: 4px; border: none;"
                 )
                 btn_edit.clicked.connect(lambda ch, sid=r[0]: self.load_student_for_edit(sid))
+                btn_edit.setVisible(self._rbac_can_write)
 
                 btn_del = QPushButton("✕")
                 btn_del.setFixedSize(28, 28)
                 btn_del.setStyleSheet(f"background: {Colors().DANGER}; color: white; border-radius: 4px; border: none;")
                 btn_del.clicked.connect(lambda ch, sid=r[0]: self.delete_student(sid))
+                btn_del.setVisible(self._rbac_can_delete)
 
                 layout.addWidget(btn_edit)
                 layout.addWidget(btn_del)
@@ -1109,6 +1130,7 @@ class ModernStudentManagement(QMainWindow):
                 btn_del.setFixedSize(24, 24)
                 btn_del.setStyleSheet(f"background: {Colors().DANGER}; color: white; border-radius: 4px; border: none;")
                 btn_del.clicked.connect(lambda ch, sid=r[0]: self.delete_student(sid))
+                btn_del.setVisible(self._rbac_can_delete)
                 layout.addWidget(btn_del)
                 table.setCellWidget(row_idx, 10, container)
 

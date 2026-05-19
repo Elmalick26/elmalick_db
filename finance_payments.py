@@ -1,23 +1,50 @@
-import sys
-import psycopg2
 import os
+import sys
 from datetime import datetime
-from database_setup import DatabaseManager, log_audit
-from app_logger import AppLogger
-from fpdf import FPDF
-from repositories.finance_repo import FinanceRepository
-from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
-                             QHBoxLayout, QTableWidget, QTableWidgetItem,
-                             QPushButton, QLabel, QLineEdit, QComboBox,
-                             QMessageBox, QHeaderView, QGroupBox, QCheckBox,
-                             QScrollArea, QFrame, QGridLayout, QDoubleSpinBox, QDialog,
-                             QGraphicsDropShadowEffect, QFileDialog, QTabWidget)
-from PyQt6.QtCore import Qt, QDate
-from PyQt6.QtGui import QFont, QColor
 
-from ui_styles import ThemeManager, get_card_style, apply_shadow_to_widget, get_table_style, get_tabs_style
-from print_export_service import output_pdf, get_report_output_mode
-from pdf_report_style import apply_title_style, apply_table_header_style, apply_table_body_style, set_zebra_row_fill, apply_grades_sheet_header, get_school_info_row
+import psycopg2
+from fpdf import FPDF
+from PyQt6.QtCore import QDate, Qt
+from PyQt6.QtGui import QColor, QFont
+from PyQt6.QtWidgets import (
+    QApplication,
+    QCheckBox,
+    QComboBox,
+    QDialog,
+    QDoubleSpinBox,
+    QFileDialog,
+    QFrame,
+    QGraphicsDropShadowEffect,
+    QGridLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QLineEdit,
+    QMainWindow,
+    QMessageBox,
+    QPushButton,
+    QScrollArea,
+    QTableWidget,
+    QTableWidgetItem,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
+)
+
+from app_logger import AppLogger
+from database_setup import DatabaseManager, log_audit
+from pdf_report_style import (
+    apply_grades_sheet_header,
+    apply_table_body_style,
+    apply_table_header_style,
+    apply_title_style,
+    get_school_info_row,
+    set_zebra_row_fill,
+)
+from print_export_service import get_report_output_mode, output_pdf
+from repositories.finance_repo import FinanceRepository
+from ui_styles import ThemeManager, apply_shadow_to_widget, get_card_style, get_table_style, get_tabs_style
 
 THEME_AVAILABLE = True
 LATE_PAYERS_OUTPUT_MODE = get_report_output_mode("late_payers_mode", "print")
@@ -74,10 +101,12 @@ class LatePayersDialog(QDialog):
         btn_print.setCursor(Qt.CursorShape.PointingHandCursor)
         if THEME_AVAILABLE:
             colors = ThemeManager.get_colors()
-            btn_print.setStyleSheet(f"""
+            btn_print.setStyleSheet(
+                f"""
                 QPushButton {{ background-color: {colors.PRIMARY}; color: white; font-weight: bold; padding: 10px; border-radius: 6px; border: none; }}
                 QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}
-            """)
+            """
+            )
         btn_print.clicked.connect(self.print_list)
         self.layout.addWidget(btn_print)
 
@@ -188,7 +217,9 @@ class StudentPaymentWindow(QMainWindow):
                 cursor.execute("SAVEPOINT sp_idx;")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_payments_student ON Payments(student_id)")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_payments_date ON Payments(transaction_date)")
-                cursor.execute("CREATE INDEX IF NOT EXISTS idx_payments_student_date ON Payments(student_id, transaction_date)")
+                cursor.execute(
+                    "CREATE INDEX IF NOT EXISTS idx_payments_student_date ON Payments(student_id, transaction_date)"
+                )
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_student_dues_paid ON StudentDues(is_paid)")
                 cursor.execute("RELEASE SAVEPOINT sp_idx;")
             except psycopg2.Error as e:
@@ -202,6 +233,13 @@ class StudentPaymentWindow(QMainWindow):
                 return FinanceRepository(conn).get_active_year_id()
         except Exception:
             return -1
+
+    def apply_rbac(self, role: str) -> None:
+        """تطبيق صلاحيات الأزرار بناءً على دور المستخدم — يُستدعى من MainWindow."""
+        from ui_styles import get_module_caps
+
+        caps = get_module_caps(role, "finance_payments")
+        self.btn_validate_payment.setEnabled(caps["can_write"])
 
     def init_ui(self):
         self.central_widget = QWidget()
@@ -217,9 +255,11 @@ class StudentPaymentWindow(QMainWindow):
         header_text = colors.HEADER_TEXT
         sub_text = colors.TEXT_SECONDARY
 
-        header_frame.setStyleSheet(f"""
+        header_frame.setStyleSheet(
+            f"""
             QFrame {{ background-color: {bg_header}; border-radius: 10px; }}
-        """)
+        """
+        )
         header_frame.setFixedHeight(80)
 
         shadow = QGraphicsDropShadowEffect()
@@ -248,13 +288,15 @@ class StudentPaymentWindow(QMainWindow):
         btn_late.setCursor(Qt.CursorShape.PointingHandCursor)
         if THEME_AVAILABLE:
             colors = ThemeManager.get_colors()
-            btn_late.setStyleSheet(f"""
+            btn_late.setStyleSheet(
+                f"""
                 QPushButton {{
                     background-color: {colors.DANGER}; color: white; font-weight: bold;
                     padding: 10px 20px; border-radius: 6px; border: none;
                 }}
                 QPushButton:hover {{ background-color: {colors.DANGER_HOVER}; }}
-            """)
+            """
+            )
         btn_late.clicked.connect(self.show_late_payers)
 
         hl.addWidget(icon_lbl)
@@ -273,7 +315,9 @@ class StudentPaymentWindow(QMainWindow):
 
         sel_title = QLabel("Sélection de l'élève / اختيار الطالب")
         if THEME_AVAILABLE:
-            sel_title.setStyleSheet(f"font-weight: bold; color: {ThemeManager.get_colors().TEXT_PRIMARY}; font-size: 14px;")
+            sel_title.setStyleSheet(
+                f"font-weight: bold; color: {ThemeManager.get_colors().TEXT_PRIMARY}; font-size: 14px;"
+            )
 
         self.combo_classes = self.styled_combo()
         self.combo_classes.currentIndexChanged.connect(self.load_students)
@@ -307,7 +351,9 @@ class StudentPaymentWindow(QMainWindow):
         lbl_month_title = QLabel("Factures à payer / الفواتير والمطالبات المستحقة")
         if THEME_AVAILABLE:
             colors = ThemeManager.get_colors()
-            lbl_month_title.setStyleSheet(f"font-weight: bold; color: {colors.TEXT_PRIMARY}; border-bottom: 1px solid {colors.BORDER}; padding-bottom: 5px;")
+            lbl_month_title.setStyleSheet(
+                f"font-weight: bold; color: {colors.TEXT_PRIMARY}; border-bottom: 1px solid {colors.BORDER}; padding-bottom: 5px;"
+            )
         mlay.addWidget(lbl_month_title)
 
         self.dues_grid = QGridLayout()
@@ -324,10 +370,12 @@ class StudentPaymentWindow(QMainWindow):
         action_card = self.create_card()
         if THEME_AVAILABLE:
             colors = ThemeManager.get_colors()
-            action_card.setStyleSheet(f"""
+            action_card.setStyleSheet(
+                f"""
                 QFrame {{ background-color: {colors.BG_HEADER}; border-radius: 12px; }}
                 QLabel {{ color: {colors.HEADER_TEXT}; font-weight: bold; }}
-            """)
+            """
+            )
         alay = QHBoxLayout(action_card)
         alay.setContentsMargins(20, 15, 20, 15)
         alay.setSpacing(20)
@@ -348,13 +396,15 @@ class StudentPaymentWindow(QMainWindow):
         self.btn_validate_payment.setMinimumHeight(45)
         if THEME_AVAILABLE:
             colors = ThemeManager.get_colors()
-            self.btn_validate_payment.setStyleSheet(f"""
+            self.btn_validate_payment.setStyleSheet(
+                f"""
                 QPushButton {{
                     background-color: {colors.SUCCESS}; color: white; font-weight: bold;
                     font-size: 14px; border-radius: 6px; padding: 0 30px; border: none;
                 }}
                 QPushButton:hover {{ background-color: {colors.SUCCESS_HOVER}; }}
-            """)
+            """
+            )
         self.btn_validate_payment.clicked.connect(self.execute_payment_transaction)
 
         alay.addWidget(self.lbl_total_due)
@@ -398,13 +448,15 @@ class StudentPaymentWindow(QMainWindow):
         combo = QComboBox()
         if THEME_AVAILABLE:
             colors = ThemeManager.get_colors()
-            combo.setStyleSheet(f"""
+            combo.setStyleSheet(
+                f"""
                 QComboBox {{
                     padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px;
                     background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; font-weight:bold;
                 }}
                 QComboBox:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}
-            """)
+            """
+            )
         combo.setMinimumHeight(40)
         return combo
 
@@ -415,12 +467,14 @@ class StudentPaymentWindow(QMainWindow):
         sb.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)
         if THEME_AVAILABLE:
             colors = ThemeManager.get_colors()
-            sb.setStyleSheet(f"""
+            sb.setStyleSheet(
+                f"""
                 QDoubleSpinBox {{
                     padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px;
                     background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; font-weight: bold;
                 }}
-            """)
+            """
+            )
         sb.setMinimumHeight(40)
         sb.setFixedWidth(200)
         return sb
@@ -431,7 +485,8 @@ class StudentPaymentWindow(QMainWindow):
         table.verticalHeader().setVisible(False)
         if THEME_AVAILABLE:
             colors = ThemeManager.get_colors()
-            table.setStyleSheet(f"""
+            table.setStyleSheet(
+                f"""
                 QTableWidget {{
                     background-color: {colors.BG_CARD}; border: 1px solid {colors.BORDER};
                     border-radius: 8px; gridline-color: {colors.BORDER}; font-size: 13px; color: {colors.TEXT_PRIMARY};
@@ -440,7 +495,8 @@ class StudentPaymentWindow(QMainWindow):
                 QTableWidget::item:alternate {{ background-color: {colors.BG_MAIN}; }}
                 QTableWidget::item:selected {{ background-color: {colors.PRIMARY}; color: white; }}
                 QHeaderView::section {{ background-color: {colors.BG_HEADER}; color: {colors.HEADER_TEXT}; padding: 10px; border: none; font-weight: bold; }}
-            """)
+            """
+            )
 
     # --- Logic Methods ---
     def show_late_payers(self):
@@ -459,7 +515,8 @@ class StudentPaymentWindow(QMainWindow):
     def load_students(self):
         cid = self.combo_classes.currentData()
         self.combo_students.clear()
-        if not cid: return
+        if not cid:
+            return
 
         active_year = self.get_active_year_id()
         db = DatabaseManager()
@@ -472,7 +529,8 @@ class StudentPaymentWindow(QMainWindow):
         self.clear_dues_grid()
         self.reset_calcs()
         sid = self.combo_students.currentData()
-        if not sid: return
+        if not sid:
+            return
 
         active_year = self.get_active_year_id()
         db = DatabaseManager()
@@ -497,11 +555,13 @@ class StudentPaymentWindow(QMainWindow):
                 bg_color = self._rgba(colors.SUCCESS, 35) if is_paid else self._rgba(colors.WARNING, 35)
                 border_color = colors.SUCCESS if is_paid else colors.WARNING
 
-            frame.setStyleSheet(f"""
+            frame.setStyleSheet(
+                f"""
                 QFrame {{
                     background-color: {bg_color}; border: 1px solid {border_color}; border-radius: 10px;
                 }}
-            """)
+            """
+            )
             frame.setMinimumHeight(112)
             vb = QVBoxLayout(frame)
             vb.setContentsMargins(10, 10, 10, 10)
@@ -521,8 +581,12 @@ class StudentPaymentWindow(QMainWindow):
             lbl_amt.setWordWrap(True)
 
             if THEME_AVAILABLE:
-                lbl_desc.setStyleSheet(f"color: {ThemeManager.get_colors().TEXT_PRIMARY}; border: none; background: transparent;")
-                lbl_amt.setStyleSheet(f"color: {ThemeManager.get_colors().TEXT_PRIMARY}; font-size: 13px; border: none; background: transparent;")
+                lbl_desc.setStyleSheet(
+                    f"color: {ThemeManager.get_colors().TEXT_PRIMARY}; border: none; background: transparent;"
+                )
+                lbl_amt.setStyleSheet(
+                    f"color: {ThemeManager.get_colors().TEXT_PRIMARY}; font-size: 13px; border: none; background: transparent;"
+                )
 
             chk = QCheckBox("Sélectionner pour Payer")
             chk.setStyleSheet("border: none; background: transparent; font-weight: bold;")
@@ -596,11 +660,7 @@ class StudentPaymentWindow(QMainWindow):
             QMessageBox.warning(self, "Erreur", "Veuillez saisir un montant valide (أدخل مبلغاً صحيحاً).")
             return
 
-        descriptions = [
-            desc
-            for _due_id, (chk, _amt, desc) in self.due_checkboxes.items()
-            if chk.isChecked()
-        ]
+        descriptions = [desc for _due_id, (chk, _amt, desc) in self.due_checkboxes.items() if chk.isChecked()]
         full_description = " | ".join(descriptions)
         if received < self.current_total_selected:
             full_description += " (Paiement Partiel / دفع جزئي)"
@@ -617,13 +677,21 @@ class StudentPaymentWindow(QMainWindow):
                     if chk.isChecked()
                 ]
                 pid = repo.record_payment(
-                    sid, active_year, dt,
-                    self.current_total_selected, received,
-                    full_description, allocations,
+                    sid,
+                    active_year,
+                    dt,
+                    self.current_total_selected,
+                    received,
+                    full_description,
+                    allocations,
                 )
                 student_name = self.combo_students.currentText()
-                log_audit(conn, getattr(self, "current_user", "system"), "PAYMENT",
-                          f"{student_name} - {received:,.0f} FCFA (N°{pid})")
+                log_audit(
+                    conn,
+                    getattr(self, "current_user", "system"),
+                    "PAYMENT",
+                    f"{student_name} - {received:,.0f} FCFA (N°{pid})",
+                )
                 conn.commit()
 
             QMessageBox.information(
@@ -631,7 +699,7 @@ class StudentPaymentWindow(QMainWindow):
                 "Succès",
                 f"Encaissement validé avec succès (N° {pid}).\n"
                 "Le reçu n'est pas imprimé automatiquement."
-                " Utilisez le bouton '📄 Reçu' dans le registre si nécessaire."
+                " Utilisez le bouton '📄 Reçu' dans le registre si nécessaire.",
             )
 
             self.load_student_status()
@@ -656,7 +724,9 @@ class StudentPaymentWindow(QMainWindow):
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             if THEME_AVAILABLE:
                 colors = ThemeManager.get_colors()
-                btn.setStyleSheet(f"background-color: {colors.PRIMARY}; color: white; border-radius: 4px; padding: 2px;")
+                btn.setStyleSheet(
+                    f"background-color: {colors.PRIMARY}; color: white; border-radius: 4px; padding: 2px;"
+                )
             btn.clicked.connect(lambda ch, p=row[0]: self.generate_receipt(p))
             self.table_history.setCellWidget(idx, 5, btn)
 
@@ -666,7 +736,8 @@ class StudentPaymentWindow(QMainWindow):
             repo = FinanceRepository(conn)
             data = repo.get_payment_receipt_data(pid)
 
-        if not data: return
+        if not data:
+            return
 
         total_due = float(data[4] or 0)
         discount = float(data[5] or 0)

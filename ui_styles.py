@@ -617,3 +617,64 @@ def friendly_db_error(exc: Exception) -> str:
         "Une erreur inattendue s'est produite. Consultez les journaux pour plus de détails.\n"
         "حدث خطأ غير متوقع. راجع سجلات النظام للمزيد من التفاصيل."
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+#  RBAC — صلاحيات كل دور لكل وحدة (can_write / can_delete)
+# ─────────────────────────────────────────────────────────────────────────────
+
+#: القيمة الافتراضية حين لا يُوجد سجل في القاموس
+_DEFAULT_CAPS: dict = {"can_write": False, "can_delete": False}
+
+#: يُعرِّف صلاحية الكتابة (إضافة/تعديل) والحذف لكل دور في كل وحدة.
+#: الـ Admin يملك wildcard "*" تغني عن ذكر كل وحدة.
+ROLE_CAPABILITIES: dict = {
+    "Admin": {
+        "*": {"can_write": True, "can_delete": True},
+    },
+    "Comptable": {
+        "finance_dashboard": {"can_write": False, "can_delete": False},
+        "finance_payments": {"can_write": True, "can_delete": False},
+        "fees_setup": {"can_write": True, "can_delete": False},
+        "student_dues": {"can_write": True, "can_delete": False},
+        "expenses_payroll": {"can_write": True, "can_delete": False},
+        "inventory": {"can_write": True, "can_delete": False},
+    },
+    "Secretaire": {
+        "student_management": {"can_write": True, "can_delete": False},
+        "staff_management": {"can_write": False, "can_delete": False},
+        "staff_attendance": {"can_write": True, "can_delete": False},
+        "staff_leaves": {"can_write": True, "can_delete": False},
+        "student_attendance": {"can_write": True, "can_delete": False},
+        "admin_docs": {"can_write": True, "can_delete": False},
+        "communication": {"can_write": True, "can_delete": False},
+    },
+    "Pédagogique": {
+        "academic_settings": {"can_write": False, "can_delete": False},
+        "student_management": {"can_write": False, "can_delete": False},
+        "student_attendance": {"can_write": True, "can_delete": False},
+        "student_discipline": {"can_write": True, "can_delete": False},
+        "student_grades": {"can_write": True, "can_delete": False},
+        "bulletin_generation": {"can_write": True, "can_delete": False},
+        "advanced_reports": {"can_write": False, "can_delete": False},
+    },
+    "Prof": {
+        "student_attendance": {"can_write": True, "can_delete": False},
+        "student_discipline": {"can_write": True, "can_delete": False},
+        "student_grades": {"can_write": True, "can_delete": False},
+    },
+}
+
+
+def get_module_caps(role: str, module_id: str) -> dict:
+    """
+    Retourne {'can_write': bool, 'can_delete': bool} pour le rôle et le module donnés.
+
+    يُعيد قاموس الصلاحيات للدور والوحدة المحددين.
+    - Admin يملك wildcard '*' → صلاحية كاملة على الجميع.
+    - أي دور/وحدة غير مُعرَّف → {'can_write': False, 'can_delete': False}.
+    """
+    role_caps = ROLE_CAPABILITIES.get(role, {})
+    if "*" in role_caps:
+        return role_caps["*"]
+    return role_caps.get(module_id, _DEFAULT_CAPS)

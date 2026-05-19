@@ -1,27 +1,52 @@
-import sys
-import psycopg2
+import base64
 import os
 import shutil
-import base64
+import sys
 from datetime import datetime
-from database_setup import DatabaseManager, log_audit
-from app_logger import AppLogger
-from repositories.staff_repo import StaffRepository
-from repositories.finance_repo import FinanceRepository
-from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
-                             QHBoxLayout, QTableWidget, QTableWidgetItem,
-                             QPushButton, QLabel, QLineEdit, QComboBox,
-                             QMessageBox, QHeaderView, QGroupBox, QDateEdit,
-                             QTabWidget, QGraphicsDropShadowEffect, QFrame,
-                             QFileDialog, QDoubleSpinBox, QScrollArea, QGridLayout)
-from PyQt6.QtCore import Qt, QDate, QSize, QBuffer, QByteArray
-from PyQt6.QtGui import QFont, QColor, QPixmap, QIcon, QTextDocument
-from PyQt6.QtPrintSupport import QPrinter, QPrintDialog
-from fpdf import FPDF
 
-from ui_styles import ThemeManager, Colors, get_card_style, apply_shadow_to_widget, get_table_style, get_tabs_style
-from print_export_service import output_pdf, get_report_output_mode
-from pdf_report_style import apply_grades_sheet_header, apply_table_header_style, apply_table_body_style, set_zebra_row_fill, get_school_info_row
+import psycopg2
+from fpdf import FPDF
+from PyQt6.QtCore import QBuffer, QByteArray, QDate, QSize, Qt
+from PyQt6.QtGui import QColor, QFont, QIcon, QPixmap, QTextDocument
+from PyQt6.QtPrintSupport import QPrintDialog, QPrinter
+from PyQt6.QtWidgets import (
+    QApplication,
+    QComboBox,
+    QDateEdit,
+    QDoubleSpinBox,
+    QFileDialog,
+    QFrame,
+    QGraphicsDropShadowEffect,
+    QGridLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QLineEdit,
+    QMainWindow,
+    QMessageBox,
+    QPushButton,
+    QScrollArea,
+    QTableWidget,
+    QTableWidgetItem,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
+)
+
+from app_logger import AppLogger
+from database_setup import DatabaseManager, log_audit
+from pdf_report_style import (
+    apply_grades_sheet_header,
+    apply_table_body_style,
+    apply_table_header_style,
+    get_school_info_row,
+    set_zebra_row_fill,
+)
+from print_export_service import get_report_output_mode, output_pdf
+from repositories.finance_repo import FinanceRepository
+from repositories.staff_repo import StaffRepository
+from ui_styles import Colors, ThemeManager, apply_shadow_to_widget, get_card_style, get_table_style, get_tabs_style
 
 THEME_AVAILABLE = True
 STAFF_LIST_OUTPUT_MODE = get_report_output_mode("staff_list_mode", "save")
@@ -30,6 +55,7 @@ TIMETABLE_OUTPUT_MODE = get_report_output_mode("timetable_mode", "save")
 try:
     import arabic_reshaper
     from bidi.algorithm import get_display
+
     ARABIC_SUPPORT = True
 except ModuleNotFoundError:
     ARABIC_SUPPORT = False
@@ -56,10 +82,7 @@ def _contains_arabic(text):
         return False
     if not isinstance(text, str):
         text = str(text)
-    return any(
-        "\u0600" <= ch <= "\u06FF" or "\u0750" <= ch <= "\u077F" or "\u08A0" <= ch <= "\u08FF"
-        for ch in text
-    )
+    return any("\u0600" <= ch <= "\u06FF" or "\u0750" <= ch <= "\u077F" or "\u08A0" <= ch <= "\u08FF" for ch in text)
 
 
 def _prepare_pdf_text(text):
@@ -179,7 +202,8 @@ class ModernStaffManagement(QMainWindow):
             ThemeManager.apply_theme(self)
         else:
             colors = Colors()
-            self.setStyleSheet(f"""
+            self.setStyleSheet(
+                f"""
                 QMainWindow {{ background-color: {colors.BG_MAIN}; }}
                 QLabel {{ font-family: 'Segoe UI', 'Cairo', sans-serif; color: {colors.TEXT_PRIMARY}; }}
                 QGroupBox {{
@@ -188,7 +212,8 @@ class ModernStaffManagement(QMainWindow):
                 }}
                 QGroupBox::title {{ subcontrol-origin: margin; subcontrol-position: top left; padding: 0 5px; left: 10px; }}
                 QScrollArea {{ border: none; background: transparent; }}
-            """)
+            """
+            )
 
         self.current_photo_path = None
         self.selected_staff_id = None
@@ -198,6 +223,14 @@ class ModernStaffManagement(QMainWindow):
         self.load_classes_into_combo()
         self.load_subjects_into_combo()
         self.load_timetable()
+
+    def apply_rbac(self, role: str) -> None:
+        """تطبيق صلاحيات الأزرار بناءً على دور المستخدم — يُستدعى من MainWindow."""
+        from ui_styles import get_module_caps
+
+        caps = get_module_caps(role, "staff_management")
+        self.btn_save.setEnabled(caps["can_write"])
+        self.btn_save.setVisible(caps["can_write"])
 
     def init_ui(self):
         self.central_widget = QWidget()
@@ -214,7 +247,9 @@ class ModernStaffManagement(QMainWindow):
         header_frame.setMaximumHeight(80)
 
         shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(15); shadow.setColor(QColor(15, 23, 42, 40)); shadow.setOffset(0, 4)
+        shadow.setBlurRadius(15)
+        shadow.setColor(QColor(15, 23, 42, 40))
+        shadow.setOffset(0, 4)
         header_frame.setGraphicsEffect(shadow)
 
         hl = QHBoxLayout(header_frame)
@@ -247,12 +282,14 @@ class ModernStaffManagement(QMainWindow):
         if THEME_AVAILABLE:
             self.tabs.setStyleSheet(get_tabs_style())
         else:
-            self.tabs.setStyleSheet(f"""
+            self.tabs.setStyleSheet(
+                f"""
                 QTabWidget::pane {{ border: 1px solid {colors.BORDER}; background: {colors.BG_CARD}; border-radius: 12px; margin-top: 15px; }}
                 QTabBar::tab {{ background: {colors.BG_MAIN}; color: {colors.TEXT_SECONDARY}; padding: 12px 30px; margin-right: 6px; border-top-left-radius: 8px; border-top-right-radius: 8px; font-weight: bold; font-family: 'Segoe UI', 'Cairo'; }}
                 QTabBar::tab:selected {{ background: {colors.BG_HEADER}; color: {colors.HEADER_TEXT}; }}
                 QTabBar::tab:hover {{ background: {colors.BORDER}; }}
-            """)
+            """
+            )
 
         self.setup_staff_tab()
         self.setup_timetable_tab()
@@ -266,9 +303,13 @@ class ModernStaffManagement(QMainWindow):
             apply_shadow_to_widget(frame)
         else:
             colors = Colors()
-            frame.setStyleSheet(f"QFrame {{ background-color: {colors.BG_CARD}; border-radius: 12px; border: 1px solid {colors.BORDER}; }}")
+            frame.setStyleSheet(
+                f"QFrame {{ background-color: {colors.BG_CARD}; border-radius: 12px; border: 1px solid {colors.BORDER}; }}"
+            )
             shadow = QGraphicsDropShadowEffect()
-            shadow.setBlurRadius(20); shadow.setColor(QColor(15, 23, 42, 15)); shadow.setOffset(0, 4)
+            shadow.setBlurRadius(20)
+            shadow.setColor(QColor(15, 23, 42, 15))
+            shadow.setOffset(0, 4)
             frame.setGraphicsEffect(shadow)
         return frame
 
@@ -278,7 +319,9 @@ class ModernStaffManagement(QMainWindow):
         le.setMinimumHeight(38)
         if THEME_AVAILABLE:
             colors = ThemeManager.get_colors()
-            le.setStyleSheet(f"QLineEdit {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }} QLineEdit:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}")
+            le.setStyleSheet(
+                f"QLineEdit {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }} QLineEdit:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}"
+            )
         return le
 
     def sanitize(self, text):
@@ -291,7 +334,9 @@ class ModernStaffManagement(QMainWindow):
         combo.setMinimumHeight(38)
         if THEME_AVAILABLE:
             colors = ThemeManager.get_colors()
-            combo.setStyleSheet(f"QComboBox {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }} QComboBox:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}")
+            combo.setStyleSheet(
+                f"QComboBox {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }} QComboBox:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}"
+            )
         return combo
 
     def style_table(self, table):
@@ -302,13 +347,15 @@ class ModernStaffManagement(QMainWindow):
             table.setStyleSheet(get_table_style())
         else:
             colors = Colors()
-            table.setStyleSheet(f"""
+            table.setStyleSheet(
+                f"""
                 QTableWidget {{ background-color: {colors.BG_CARD}; border: 1px solid {colors.BORDER}; border-radius: 8px; gridline-color: {colors.BORDER}; font-size: 13px; color: {colors.TEXT_PRIMARY}; }}
                 QTableWidget::item {{ padding: 6px; border-bottom: 1px solid {colors.BG_MAIN}; color: {colors.TEXT_PRIMARY}; }}
                 QTableWidget::item:alternate {{ background-color: {colors.BG_MAIN}; }}
                 QTableWidget::item:selected {{ background-color: {colors.PRIMARY}; color: white; }}
                 QHeaderView::section {{ background-color: {colors.BG_HEADER}; color: {colors.HEADER_TEXT}; padding: 10px; border: none; font-weight: bold; }}
-            """)
+            """
+            )
 
     def setup_staff_tab(self):
         tab = QWidget()
@@ -323,7 +370,9 @@ class ModernStaffManagement(QMainWindow):
         scroll.setFixedWidth(420)
 
         form_container = QFrame()
-        form_container.setStyleSheet(f"background-color: {colors.BG_CARD}; border-radius: 12px; border: 1px solid {colors.BORDER};")
+        form_container.setStyleSheet(
+            f"background-color: {colors.BG_CARD}; border-radius: 12px; border: 1px solid {colors.BORDER};"
+        )
 
         form_layout = QVBoxLayout(form_container)
         form_layout.setSpacing(15)
@@ -331,21 +380,27 @@ class ModernStaffManagement(QMainWindow):
 
         lbl_new = QLabel("📝 Nouveau Profil / ملف جديد")
         lbl_new.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        lbl_new.setStyleSheet(f"background-color: {colors.BG_MAIN}; color: {colors.TEXT_SECONDARY}; font-weight: bold; font-size: 14px; padding: 10px; border-radius: 6px; border: 1px dashed {colors.BORDER};")
+        lbl_new.setStyleSheet(
+            f"background-color: {colors.BG_MAIN}; color: {colors.TEXT_SECONDARY}; font-weight: bold; font-size: 14px; padding: 10px; border-radius: 6px; border: 1px dashed {colors.BORDER};"
+        )
         form_layout.addWidget(lbl_new)
 
         # الصورة الشخصية
         photo_layout = QHBoxLayout()
         self.lbl_photo = QLabel()
         self.lbl_photo.setFixedSize(110, 110)
-        self.lbl_photo.setStyleSheet(f"background-color: {colors.BG_MAIN}; border-radius: 55px; border: 3px solid {colors.BORDER}; color: {colors.TEXT_SECONDARY};")
+        self.lbl_photo.setStyleSheet(
+            f"background-color: {colors.BG_MAIN}; border-radius: 55px; border: 3px solid {colors.BORDER}; color: {colors.TEXT_SECONDARY};"
+        )
         self.lbl_photo.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.lbl_photo.setText("Photo")
 
         btn_upload = QPushButton("📷")
         btn_upload.setFixedSize(36, 36)
         btn_upload.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_upload.setStyleSheet(f"background-color: {colors.PRIMARY_DARK}; color: white; border-radius: 18px; border: 2px solid {colors.BG_CARD};")
+        btn_upload.setStyleSheet(
+            f"background-color: {colors.PRIMARY_DARK}; color: white; border-radius: 18px; border: 2px solid {colors.BG_CARD};"
+        )
         btn_upload.clicked.connect(self.upload_photo)
 
         photo_wrapper = QWidget()
@@ -361,7 +416,9 @@ class ModernStaffManagement(QMainWindow):
 
         # الحقول الأساسية
         lbl_info = QLabel("👤 Infos Personnelles / البيانات الشخصية")
-        lbl_info.setStyleSheet(f"font-weight: bold; color: {colors.TEXT_PRIMARY}; border-bottom: 2px solid {colors.BORDER}; padding-bottom: 5px;")
+        lbl_info.setStyleSheet(
+            f"font-weight: bold; color: {colors.TEXT_PRIMARY}; border-bottom: 2px solid {colors.BORDER}; padding-bottom: 5px;"
+        )
         form_layout.addWidget(lbl_info)
 
         self.txt_fname = self.styled_input("Prénom / الاسم")
@@ -380,7 +437,16 @@ class ModernStaffManagement(QMainWindow):
         self.txt_address = self.styled_input("Adresse / العنوان")
 
         self.combo_status = self.styled_combo()
-        self.combo_status.addItems(["Actif / نشط", "Congé / إجازة", "Suspendu / موقوف", "Démission / استقالة", "Licencié / مفصول", "Retraité / متقاعد"])
+        self.combo_status.addItems(
+            [
+                "Actif / نشط",
+                "Congé / إجازة",
+                "Suspendu / موقوف",
+                "Démission / استقالة",
+                "Licencié / مفصول",
+                "Retraité / متقاعد",
+            ]
+        )
 
         form_layout.addWidget(self.txt_spec)
         form_layout.addWidget(self.txt_phone)
@@ -391,13 +457,17 @@ class ModernStaffManagement(QMainWindow):
 
         # إعدادات العقد والراتب
         lbl_contract = QLabel("💼 Contrat & Salaire / العقد والراتب")
-        lbl_contract.setStyleSheet(f"font-weight: bold; color: {colors.TEXT_PRIMARY}; margin-top: 10px; border-bottom: 2px solid {colors.BORDER}; padding-bottom: 5px;")
+        lbl_contract.setStyleSheet(
+            f"font-weight: bold; color: {colors.TEXT_PRIMARY}; margin-top: 10px; border-bottom: 2px solid {colors.BORDER}; padding-bottom: 5px;"
+        )
         form_layout.addWidget(lbl_contract)
 
         self.date_hire = QDateEdit()
         self.date_hire.setCalendarPopup(True)
         self.date_hire.setDate(QDate.currentDate())
-        self.date_hire.setStyleSheet(f"QDateEdit {{ padding: 8px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }} QDateEdit:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}")
+        self.date_hire.setStyleSheet(
+            f"QDateEdit {{ padding: 8px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }} QDateEdit:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}"
+        )
         self.date_hire.setMinimumHeight(38)
 
         form_layout.addWidget(QLabel("Date d'embauche:"))
@@ -413,7 +483,9 @@ class ModernStaffManagement(QMainWindow):
         self.spin_salary.setRange(0, 5000000)
         self.spin_salary.setPrefix("FCFA ")
         self.spin_salary.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)
-        self.spin_salary.setStyleSheet(f"QDoubleSpinBox {{ padding: 8px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }} QDoubleSpinBox:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}")
+        self.spin_salary.setStyleSheet(
+            f"QDoubleSpinBox {{ padding: 8px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }} QDoubleSpinBox:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}"
+        )
         self.spin_salary.setMinimumHeight(38)
         self.lbl_salary = QLabel("Salaire de Base:")
 
@@ -421,7 +493,9 @@ class ModernStaffManagement(QMainWindow):
         self.spin_hourly.setRange(0, 100000)
         self.spin_hourly.setPrefix("FCFA ")
         self.spin_hourly.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)
-        self.spin_hourly.setStyleSheet(f"QDoubleSpinBox {{ padding: 8px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }} QDoubleSpinBox:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}")
+        self.spin_hourly.setStyleSheet(
+            f"QDoubleSpinBox {{ padding: 8px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }} QDoubleSpinBox:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}"
+        )
         self.spin_hourly.setMinimumHeight(38)
         self.lbl_hourly = QLabel("Taux Horaire:")
 
@@ -435,13 +509,17 @@ class ModernStaffManagement(QMainWindow):
         self.btn_save = QPushButton("💾 Enregistrer")
         self.btn_save.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_save.setMinimumHeight(45)
-        self.btn_save.setStyleSheet(f"QPushButton {{ background-color: {colors.SUCCESS}; color: white; border-radius: 8px; font-weight: bold; border: none; }} QPushButton:hover {{ background-color: {colors.SUCCESS_HOVER}; }}")
+        self.btn_save.setStyleSheet(
+            f"QPushButton {{ background-color: {colors.SUCCESS}; color: white; border-radius: 8px; font-weight: bold; border: none; }} QPushButton:hover {{ background-color: {colors.SUCCESS_HOVER}; }}"
+        )
         self.btn_save.clicked.connect(self.save_staff)
 
         btn_clear = QPushButton("🔄")
         btn_clear.setMinimumHeight(45)
         btn_clear.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_clear.setStyleSheet(f"QPushButton {{ background-color: {colors.BG_CARD}; color: {colors.TEXT_SECONDARY}; border-radius: 8px; font-weight: bold; border: 1px solid {colors.BORDER}; }} QPushButton:hover {{ background-color: {colors.BG_MAIN}; }}")
+        btn_clear.setStyleSheet(
+            f"QPushButton {{ background-color: {colors.BG_CARD}; color: {colors.TEXT_SECONDARY}; border-radius: 8px; font-weight: bold; border: 1px solid {colors.BORDER}; }} QPushButton:hover {{ background-color: {colors.BG_MAIN}; }}"
+        )
         btn_clear.clicked.connect(self.clear_form)
 
         btn_layout.addWidget(self.btn_save)
@@ -469,7 +547,9 @@ class ModernStaffManagement(QMainWindow):
 
         btn_print = QPushButton("🖨️ Liste")
         btn_print.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_print.setStyleSheet(f"QPushButton {{ background-color: {colors.PRIMARY}; color: white; padding: 8px 15px; border-radius: 6px; font-weight: bold; border: none; }} QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}")
+        btn_print.setStyleSheet(
+            f"QPushButton {{ background-color: {colors.PRIMARY}; color: white; padding: 8px 15px; border-radius: 6px; font-weight: bold; border: none; }} QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}"
+        )
         btn_print.clicked.connect(self.print_staff_list)
 
         slayout.addWidget(self.txt_search)
@@ -480,7 +560,9 @@ class ModernStaffManagement(QMainWindow):
         self.table_staff = QTableWidget()
         self.style_table(self.table_staff)
         self.table_staff.setColumnCount(9)
-        self.table_staff.setHorizontalHeaderLabels(["ID", "Nom & Prénom", "Fonction", "Spécialité", "Tél", "Contrat", "Montant", "Statut", "Actions"])
+        self.table_staff.setHorizontalHeaderLabels(
+            ["ID", "Nom & Prénom", "Fonction", "Spécialité", "Tél", "Contrat", "Montant", "Statut", "Actions"]
+        )
         self.table_staff.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.table_staff.setColumnWidth(0, 50)
         self.table_staff.setColumnWidth(7, 80)
@@ -525,13 +607,17 @@ class ModernStaffManagement(QMainWindow):
         btn_add_tt = QPushButton("➕ Ajouter")
         btn_add_tt.setCursor(Qt.CursorShape.PointingHandCursor)
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-        btn_add_tt.setStyleSheet(f"QPushButton {{ background-color: {colors.SUCCESS}; color: white; padding: 10px 20px; font-weight: bold; border-radius: 6px; border: none; }} QPushButton:hover {{ background-color: {colors.SUCCESS_HOVER}; }}")
+        btn_add_tt.setStyleSheet(
+            f"QPushButton {{ background-color: {colors.SUCCESS}; color: white; padding: 10px 20px; font-weight: bold; border-radius: 6px; border: none; }} QPushButton:hover {{ background-color: {colors.SUCCESS_HOVER}; }}"
+        )
         btn_add_tt.clicked.connect(self.add_to_timetable)
 
         # زر جديد لطباعة جدول الفصل
         btn_print_class_tt = QPushButton("🖨️ Imprimer Classe")
         btn_print_class_tt.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_print_class_tt.setStyleSheet(f"QPushButton {{ background-color: {colors.PRIMARY}; color: white; padding: 10px 15px; font-weight: bold; border-radius: 6px; border: none; }} QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}")
+        btn_print_class_tt.setStyleSheet(
+            f"QPushButton {{ background-color: {colors.PRIMARY}; color: white; padding: 10px 15px; font-weight: bold; border-radius: 6px; border: none; }} QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}"
+        )
         btn_print_class_tt.clicked.connect(self.print_class_timetable)
 
         row_top.addWidget(QLabel("Prof:"))
@@ -584,7 +670,11 @@ class ModernStaffManagement(QMainWindow):
         if file_path:
             self.current_photo_path = file_path
             pixmap = QPixmap(file_path)
-            self.lbl_photo.setPixmap(pixmap.scaled(100, 100, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation))
+            self.lbl_photo.setPixmap(
+                pixmap.scaled(
+                    100, 100, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation
+                )
+            )
             self.lbl_photo.setText("")
 
     def load_staff_list(self):
@@ -643,13 +733,17 @@ class ModernStaffManagement(QMainWindow):
                 btn_edit = QPushButton("✎")
                 btn_edit.setFixedSize(28, 28)
                 btn_edit.setCursor(Qt.CursorShape.PointingHandCursor)
-                btn_edit.setStyleSheet(f"background-color: {colors.WARNING}; color: white; border-radius: 4px; border: none;")
+                btn_edit.setStyleSheet(
+                    f"background-color: {colors.WARNING}; color: white; border-radius: 4px; border: none;"
+                )
                 btn_edit.clicked.connect(lambda ch, pid=row[0]: self.load_staff_details(pid))
 
                 btn_del = QPushButton("✕")
                 btn_del.setFixedSize(28, 28)
                 btn_del.setCursor(Qt.CursorShape.PointingHandCursor)
-                btn_del.setStyleSheet(f"background-color: {colors.DANGER}; color: white; border-radius: 4px; border: none;")
+                btn_del.setStyleSheet(
+                    f"background-color: {colors.DANGER}; color: white; border-radius: 4px; border: none;"
+                )
                 btn_del.clicked.connect(lambda ch, pid=row[0]: self.delete_staff_from_table(pid))
 
                 btn_layout.addWidget(btn_edit)
@@ -668,7 +762,7 @@ class ModernStaffManagement(QMainWindow):
         address = self.txt_address.text().strip()
         hire_d = self.date_hire.date().toString("yyyy-MM-dd")
 
-        is_monthly = (self.combo_contract.currentIndex() == 0)
+        is_monthly = self.combo_contract.currentIndex() == 0
         contract = "Monthly" if is_monthly else "Hourly"
         base_sal = self.spin_salary.value() if is_monthly else 0.0
         hr_rate = 0.0 if is_monthly else self.spin_hourly.value()
@@ -686,36 +780,50 @@ class ModernStaffManagement(QMainWindow):
             db = DatabaseManager()
             if self.current_photo_path:
                 save_dir = "staff_photos"
-                if not os.path.exists(save_dir): os.makedirs(save_dir)
+                if not os.path.exists(save_dir):
+                    os.makedirs(save_dir)
                 ext = os.path.splitext(self.current_photo_path)[1]
                 filename = f"staff_{datetime.now().strftime('%Y%m%d%H%M%S')}{ext}"
                 saved_photo_path = os.path.join(save_dir, filename)
-                try: shutil.copy(self.current_photo_path, saved_photo_path)
-                except Exception as e: print(f"Failed to copy photo: {e}")
+                try:
+                    shutil.copy(self.current_photo_path, saved_photo_path)
+                except Exception as e:
+                    print(f"Failed to copy photo: {e}")
             elif self.selected_staff_id:
                 with db.get_connection() as conn:
                     repo = StaffRepository(conn)
                     saved_photo_path = repo.get_photo_path(self.selected_staff_id) or ""
 
             staff_data = {
-                "first_name": fname, "last_name": lname, "role": role,
-                "specialty": spec, "phone": phone, "hire_date": hire_d,
-                "contract_type": contract, "salary_base": base_sal,
-                "hourly_rate": hr_rate, "photo_path": saved_photo_path,
-                "email": email, "address": address, "status": status,
+                "first_name": fname,
+                "last_name": lname,
+                "role": role,
+                "specialty": spec,
+                "phone": phone,
+                "hire_date": hire_d,
+                "contract_type": contract,
+                "salary_base": base_sal,
+                "hourly_rate": hr_rate,
+                "photo_path": saved_photo_path,
+                "email": email,
+                "address": address,
+                "status": status,
             }
 
             with db.get_connection() as conn:
                 repo = StaffRepository(conn)
                 if self.selected_staff_id:
                     repo.update_staff(self.selected_staff_id, staff_data)
-                    log_audit(conn, getattr(self, "current_user", "system"),
-                              "EDIT_STAFF", f"{fname} {lname} (id={self.selected_staff_id})")
+                    log_audit(
+                        conn,
+                        getattr(self, "current_user", "system"),
+                        "EDIT_STAFF",
+                        f"{fname} {lname} (id={self.selected_staff_id})",
+                    )
                     QMessageBox.information(self, "Succès", "Mise à jour réussie.")
                 else:
                     repo.add_staff(staff_data)
-                    log_audit(conn, getattr(self, "current_user", "system"),
-                              "ADD_STAFF", f"{fname} {lname}")
+                    log_audit(conn, getattr(self, "current_user", "system"), "ADD_STAFF", f"{fname} {lname}")
                     QMessageBox.information(self, "Succès", "Employé ajouté avec succès.")
                 conn.commit()
 
@@ -741,7 +849,9 @@ class ModernStaffManagement(QMainWindow):
         self.combo_status.setCurrentIndex(0)
         self.btn_save.setText("💾 Enregistrer")
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-        self.btn_save.setStyleSheet(f"QPushButton {{ background-color: {colors.SUCCESS}; color: white; border-radius: 8px; font-weight: bold; border: none; }} QPushButton:hover {{ background-color: {colors.SUCCESS_HOVER}; }}")
+        self.btn_save.setStyleSheet(
+            f"QPushButton {{ background-color: {colors.SUCCESS}; color: white; border-radius: 8px; font-weight: bold; border: none; }} QPushButton:hover {{ background-color: {colors.SUCCESS_HOVER}; }}"
+        )
 
     def on_staff_selected(self):
         selected_rows = self.table_staff.selectedIndexes()
@@ -768,8 +878,10 @@ class ModernStaffManagement(QMainWindow):
                 self.txt_address.setText(data[6] or "")
 
                 try:
-                    if data[7]: self.date_hire.setDate(QDate.fromString(data[7], "yyyy-MM-dd"))
-                except Exception: pass
+                    if data[7]:
+                        self.date_hire.setDate(QDate.fromString(data[7], "yyyy-MM-dd"))
+                except Exception:
+                    pass
                 idx = 0 if data[8] == "Monthly" else 1
                 self.combo_contract.setCurrentIndex(idx)
                 self.spin_salary.setValue(data[9] or 0)
@@ -778,27 +890,38 @@ class ModernStaffManagement(QMainWindow):
                 if data[11] and os.path.exists(data[11]):
                     self.current_photo_path = data[11]
                     pixmap = QPixmap(data[11])
-                    self.lbl_photo.setPixmap(pixmap.scaled(100, 100, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation))
+                    self.lbl_photo.setPixmap(
+                        pixmap.scaled(
+                            100,
+                            100,
+                            Qt.AspectRatioMode.KeepAspectRatioByExpanding,
+                            Qt.TransformationMode.SmoothTransformation,
+                        )
+                    )
                 else:
                     self.lbl_photo.clear()
                     self.lbl_photo.setText("Photo")
                     self.current_photo_path = None
 
                 staff_status = data[12] or "Actif"
-                status_map = {
-                    "Actif": 0, "Congé": 1, "Suspendu": 2,
-                    "Démission": 3, "Licencié": 4, "Retraité": 5
-                }
+                status_map = {"Actif": 0, "Congé": 1, "Suspendu": 2, "Démission": 3, "Licencié": 4, "Retraité": 5}
                 self.combo_status.setCurrentIndex(status_map.get(staff_status, 0))
 
                 self.btn_save.setText("✏️ Modifier")
                 colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-                self.btn_save.setStyleSheet(f"QPushButton {{ background-color: {colors.WARNING}; color: white; border-radius: 8px; font-weight: bold; border: none; }}")
+                self.btn_save.setStyleSheet(
+                    f"QPushButton {{ background-color: {colors.WARNING}; color: white; border-radius: 8px; font-weight: bold; border: none; }}"
+                )
         except Exception as e:
             QMessageBox.critical(self, "Erreur", f"Impossible de charger les détails: {str(e)}")
 
     def delete_staff_from_table(self, pid):
-        reply = QMessageBox.question(self, 'Confirmation', "Voulez-vous archiver cet employé ?\n(Cela masquera l'employé des listes actives)", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        reply = QMessageBox.question(
+            self,
+            'Confirmation',
+            "Voulez-vous archiver cet employé ?\n(Cela masquera l'employé des listes actives)",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
         if reply == QMessageBox.StandardButton.Yes:
             try:
                 db = DatabaseManager()
@@ -830,9 +953,18 @@ class ModernStaffManagement(QMainWindow):
 
             col_widths = [10, 35, 25, 28, 32, 36, 36, 18, 15, 13, 13, 18]
             headers = [
-                "ID", "Nom Complet", "Fonction", "Spécialité", "Téléphone",
-                "Email", "Adresse", "Embauche", "Contrat", "Salaire",
-                "Heure", "Statut"
+                "ID",
+                "Nom Complet",
+                "Fonction",
+                "Spécialité",
+                "Téléphone",
+                "Email",
+                "Adresse",
+                "Embauche",
+                "Contrat",
+                "Salaire",
+                "Heure",
+                "Statut",
             ]
             for i, header in enumerate(headers):
                 ln_val = 1 if i == len(headers) - 1 else 0
@@ -856,9 +988,13 @@ class ModernStaffManagement(QMainWindow):
                 pdf.cell(col_widths[5], 6, pdf.sanitize(row[5]), 1, 0, 'L', fill)
                 pdf.cell(col_widths[6], 6, pdf.sanitize(row[6]), 1, 0, 'L', fill)
                 pdf.cell(col_widths[7], 6, pdf.sanitize(row[7]), 1, 0, 'C', fill)
-                pdf.cell(col_widths[8], 6, pdf.sanitize("Mensuel" if row[8] == "Monthly" else "Horaire"), 1, 0, 'L', fill)
+                pdf.cell(
+                    col_widths[8], 6, pdf.sanitize("Mensuel" if row[8] == "Monthly" else "Horaire"), 1, 0, 'L', fill
+                )
                 pdf.cell(col_widths[9], 6, pdf.sanitize(f"{row[9]:.0f}" if row[9] is not None else ""), 1, 0, 'R', fill)
-                pdf.cell(col_widths[10], 6, pdf.sanitize(f"{row[10]:.0f}" if row[10] is not None else ""), 1, 0, 'R', fill)
+                pdf.cell(
+                    col_widths[10], 6, pdf.sanitize(f"{row[10]:.0f}" if row[10] is not None else ""), 1, 0, 'R', fill
+                )
                 pdf.cell(col_widths[11], 6, pdf.sanitize(row[11]), 1, 1, 'C', fill)
 
             output_pdf(
@@ -881,7 +1017,8 @@ class ModernStaffManagement(QMainWindow):
                 self.combo_class_tt.clear()
                 for c in StaffRepository(conn).list_classes():
                     self.combo_class_tt.addItem(c[1], c[0])
-        except Exception as e: print(f"Classes TT Load Error: {e}")
+        except Exception as e:
+            print(f"Classes TT Load Error: {e}")
 
     def load_subjects_into_combo(self):
         try:
@@ -890,7 +1027,8 @@ class ModernStaffManagement(QMainWindow):
                 self.combo_subject_tt.clear()
                 for s in StaffRepository(conn).list_subjects():
                     self.combo_subject_tt.addItem(s[1], s[0])
-        except Exception as e: print(f"Subjects TT Load Error: {e}")
+        except Exception as e:
+            print(f"Subjects TT Load Error: {e}")
 
     # ================== خوارزمية فحص التداخل (Conflict Detection) ==================
     def check_timetable_conflict(self, conn, teacher_id, class_id, day, start, end):
@@ -915,7 +1053,10 @@ class ModernStaffManagement(QMainWindow):
             e_end = datetime.strptime(existing_end, "%H:%M").time()
             if (t_start < e_end) and (t_end > e_start):
                 prof_name = self.combo_prof_tt.currentText()
-                return True, f"Le professeur {prof_name} est déjà assigné à la classe {cname} le {day} de {existing_start} à {existing_end}."
+                return (
+                    True,
+                    f"Le professeur {prof_name} est déjà assigné à la classe {cname} le {day} de {existing_start} à {existing_end}.",
+                )
 
         # 2. فحص تداخل الفصل (هل الفصل لديه حصة أخرى في نفس الوقت؟)
         for prof_name, sub_name, existing_start, existing_end in repo.get_class_timetable_for_day(class_id, day):
@@ -923,7 +1064,10 @@ class ModernStaffManagement(QMainWindow):
             e_end = datetime.strptime(existing_end, "%H:%M").time()
             if (t_start < e_end) and (t_end > e_start):
                 cname = self.combo_class_tt.currentText()
-                return True, f"La classe {cname} a déjà cours de {sub_name} avec {prof_name} le {day} de {existing_start} à {existing_end}."
+                return (
+                    True,
+                    f"La classe {cname} a déjà cours de {sub_name} avec {prof_name} le {day} de {existing_start} à {existing_end}.",
+                )
 
         return False, ""
 
@@ -987,7 +1131,12 @@ class ModernStaffManagement(QMainWindow):
             AppLogger.error("StaffManagement", f"Error loading timetable: {e}")
 
     def delete_tt(self, tid):
-        reply = QMessageBox.question(self, 'Confirmation', "Supprimer cet horaire ?", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        reply = QMessageBox.question(
+            self,
+            'Confirmation',
+            "Supprimer cet horaire ?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
         if reply == QMessageBox.StandardButton.Yes:
             try:
                 db = DatabaseManager()

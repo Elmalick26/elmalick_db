@@ -1,23 +1,39 @@
-import sys
 import os
-from database_setup import DatabaseManager
+import sys
+
+from fpdf import FPDF
+from PyQt6.QtCore import QDate, Qt
+from PyQt6.QtGui import QColor, QFont
+from PyQt6.QtWidgets import (
+    QApplication,
+    QComboBox,
+    QDoubleSpinBox,
+    QFrame,
+    QGraphicsDropShadowEffect,
+    QGridLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QLineEdit,
+    QMainWindow,
+    QMessageBox,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
+)
+
 from app_logger import AppLogger
+from database_setup import DatabaseManager
+from pdf_report_style import apply_table_body_style, apply_table_header_style, set_zebra_row_fill
+from print_export_service import get_report_output_mode, output_pdf
+from repositories.finance_repo import FinanceRepository
 from repositories.grades_repo import GradesRepository
 from repositories.student_repo import StudentRepository
-from repositories.finance_repo import FinanceRepository
-from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
-                             QHBoxLayout, QTableWidget, QTableWidgetItem,
-                             QPushButton, QLabel, QComboBox, QMessageBox,
-                             QHeaderView, QFrame, QGroupBox, QDoubleSpinBox,
-                             QGridLayout, QTabWidget, QLineEdit,
-                             QGraphicsDropShadowEffect)
-from PyQt6.QtCore import Qt, QDate
-from PyQt6.QtGui import QFont, QColor
-from fpdf import FPDF
-
-from ui_styles import ThemeManager, Colors, get_card_style, apply_shadow_to_widget, get_table_style, get_tabs_style
-from print_export_service import output_pdf, get_report_output_mode
-from pdf_report_style import apply_table_header_style, apply_table_body_style, set_zebra_row_fill
+from ui_styles import Colors, ThemeManager, apply_shadow_to_widget, get_card_style, get_table_style, get_tabs_style
 
 THEME_AVAILABLE = True
 GRADES_SHEET_OUTPUT_MODE = get_report_output_mode("grades_sheet_mode", "print")
@@ -25,6 +41,7 @@ GRADES_SHEET_OUTPUT_MODE = get_report_output_mode("grades_sheet_mode", "print")
 try:
     import arabic_reshaper
     from bidi.algorithm import get_display
+
     ARABIC_SUPPORT = True
 except ModuleNotFoundError:
     ARABIC_SUPPORT = False
@@ -77,7 +94,11 @@ def _get_arabic_font_files():
                 "regular": family["regular"],
                 "bold": family["bold"] if os.path.exists(family["bold"]) else family["regular"],
                 "italic": family["italic"] if os.path.exists(family["italic"]) else family["regular"],
-                "bold_italic": family["bold_italic"] if os.path.exists(family["bold_italic"]) else family["bold"] if os.path.exists(family["bold"]) else family["regular"],
+                "bold_italic": (
+                    family["bold_italic"]
+                    if os.path.exists(family["bold_italic"])
+                    else family["bold"] if os.path.exists(family["bold"]) else family["regular"]
+                ),
             }
     return None
 
@@ -87,10 +108,7 @@ def _contains_arabic(text):
         return False
     if not isinstance(text, str):
         text = str(text)
-    return any(
-        "\u0600" <= ch <= "\u06FF" or "\u0750" <= ch <= "\u077F" or "\u08A0" <= ch <= "\u08FF"
-        for ch in text
-    )
+    return any("\u0600" <= ch <= "\u06FF" or "\u0750" <= ch <= "\u077F" or "\u08A0" <= ch <= "\u08FF" for ch in text)
 
 
 def _prepare_pdf_text(text):
@@ -127,6 +145,7 @@ def _register_arabic_font(pdf):
         return True
     except Exception:
         return False
+
 
 # --- فئة تقارير PDF الرسمية ---
 
@@ -206,14 +225,16 @@ class StudentGradesWindow(QMainWindow):
             ThemeManager.apply_theme(self)
         else:
             colors = Colors()
-            self.setStyleSheet(f"""
+            self.setStyleSheet(
+                f"""
                 QMainWindow {{ background-color: {colors.BG_MAIN}; }}
                 QLabel {{ font-family: 'Segoe UI', 'Cairo', sans-serif; color: {colors.TEXT_PRIMARY}; }}
                 QGroupBox {{
                     border: 1px solid {colors.BORDER}; border-radius: 8px; margin-top: 10px;
                     background-color: {colors.BG_CARD}; font-weight: bold; color: {colors.TEXT_SECONDARY};
                 }}
-            """)
+            """
+            )
 
         self.init_ui()
         self.load_classes(self.combo_class)
@@ -229,6 +250,16 @@ class StudentGradesWindow(QMainWindow):
         except Exception:
             return -1
 
+    def apply_rbac(self, role: str) -> None:
+        """تطبيق صلاحيات الأزرار بناءً على دور المستخدم — يُستدعى من MainWindow."""
+        from ui_styles import get_module_caps
+
+        caps = get_module_caps(role, "student_grades")
+        # btn_save يُنشأ في setup_entry_tab → قد لا يكون موجوداً بعد في هذه المرحلة
+        if hasattr(self, "btn_save"):
+            self.btn_save.setEnabled(caps["can_write"])
+            self.btn_save.setVisible(caps["can_write"])
+
     def init_ui(self):
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
@@ -240,9 +271,11 @@ class StudentGradesWindow(QMainWindow):
         header_frame = QFrame()
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
 
-        header_frame.setStyleSheet(f"""
+        header_frame.setStyleSheet(
+            f"""
             QFrame {{ background-color: {colors.BG_HEADER}; border-radius: 10px; }}
-        """)
+        """
+        )
         header_frame.setMaximumHeight(80)
 
         shadow = QGraphicsDropShadowEffect()
@@ -281,12 +314,14 @@ class StudentGradesWindow(QMainWindow):
         if THEME_AVAILABLE:
             self.tabs.setStyleSheet(get_tabs_style())
         else:
-            self.tabs.setStyleSheet(f"""
+            self.tabs.setStyleSheet(
+                f"""
                 QTabWidget::pane {{ border: 1px solid {colors.BORDER}; background: {colors.BG_CARD}; border-radius: 12px; margin-top: 15px; }}
                 QTabBar::tab {{ background: {colors.BG_MAIN}; color: {colors.TEXT_SECONDARY}; padding: 12px 30px; margin-right: 6px; border-top-left-radius: 8px; border-top-right-radius: 8px; font-weight: bold; font-family: 'Segoe UI', 'Cairo'; }}
                 QTabBar::tab:selected {{ background: {colors.BG_CARD}; color: {colors.PRIMARY}; border-bottom: 2px solid {colors.PRIMARY}; }}
                 QTabBar::tab:hover {{ background: {colors.BORDER}; }}
-            """)
+            """
+            )
 
         self.setup_entry_tab()
         self.setup_view_tab()
@@ -300,21 +335,28 @@ class StudentGradesWindow(QMainWindow):
             apply_shadow_to_widget(frame)
         else:
             colors = Colors()
-            frame.setStyleSheet(f"QFrame {{ background-color: {colors.BG_CARD}; border-radius: 12px; border: 1px solid {colors.BORDER}; }}")
+            frame.setStyleSheet(
+                f"QFrame {{ background-color: {colors.BG_CARD}; border-radius: 12px; border: 1px solid {colors.BORDER}; }}"
+            )
             shadow = QGraphicsDropShadowEffect()
-            shadow.setBlurRadius(20); shadow.setColor(QColor(15, 23, 42, 15)); shadow.setOffset(0, 4)
+            shadow.setBlurRadius(20)
+            shadow.setColor(QColor(15, 23, 42, 15))
+            shadow.setOffset(0, 4)
             frame.setGraphicsEffect(shadow)
         return frame
 
     def sanitize_filename(self, text):
-        if not text: return ""
+        if not text:
+            return ""
         cleaned = str(text).strip().replace(" ", "_")
         return "".join(ch for ch in cleaned if ch.isalnum() or ch in "-_")
 
     def styled_combo(self):
         combo = QComboBox()
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-        combo.setStyleSheet(f"QComboBox {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }} QComboBox:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}")
+        combo.setStyleSheet(
+            f"QComboBox {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }} QComboBox:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}"
+        )
         combo.setMinimumHeight(40)
         return combo
 
@@ -326,13 +368,15 @@ class StudentGradesWindow(QMainWindow):
             table.setStyleSheet(get_table_style())
         else:
             colors = Colors()
-            table.setStyleSheet(f"""
+            table.setStyleSheet(
+                f"""
                 QTableWidget {{ background-color: {colors.BG_CARD}; border: 1px solid {colors.BORDER}; border-radius: 8px; gridline-color: {colors.BORDER}; font-size: 13px; color: {colors.TEXT_PRIMARY}; }}
                 QTableWidget::item {{ padding: 6px; border-bottom: 1px solid {colors.BG_MAIN}; color: {colors.TEXT_PRIMARY}; }}
                 QTableWidget::item:alternate {{ background-color: {colors.BG_MAIN}; }}
                 QTableWidget::item:selected {{ background-color: {colors.PRIMARY}; color: white; }}
                 QHeaderView::section {{ background-color: {colors.BG_HEADER}; color: {colors.HEADER_TEXT}; padding: 8px; border: none; font-weight: bold; }}
-            """)
+            """
+            )
 
     # ---------------------------------------------------------
     # TAB 1: Saisie (الإدخال)
@@ -360,7 +404,9 @@ class StudentGradesWindow(QMainWindow):
         btn_load = QPushButton("📥 Charger / تحميل")
         btn_load.setCursor(Qt.CursorShape.PointingHandCursor)
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-        btn_load.setStyleSheet(f"QPushButton {{ background-color: {colors.PRIMARY}; color: white; font-weight: bold; padding: 10px; border-radius: 6px; border: none; }} QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}")
+        btn_load.setStyleSheet(
+            f"QPushButton {{ background-color: {colors.PRIMARY}; color: white; font-weight: bold; padding: 10px; border-radius: 6px; border: none; }} QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}"
+        )
         btn_load.clicked.connect(self.load_grading_sheet)
 
         filter_layout.addWidget(QLabel("Classe:"), 0, 0)
@@ -385,18 +431,22 @@ class StudentGradesWindow(QMainWindow):
 
         btn_print_blank = QPushButton("🖨️ Feuille Vierge / ورقة فارغة")
         btn_print_blank.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_print_blank.setStyleSheet(f"QPushButton {{ background-color: {colors.SECONDARY}; color: white; font-weight: bold; padding: 10px; border-radius: 6px; border: none; }} QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}")
+        btn_print_blank.setStyleSheet(
+            f"QPushButton {{ background-color: {colors.SECONDARY}; color: white; font-weight: bold; padding: 10px; border-radius: 6px; border: none; }} QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}"
+        )
         btn_print_blank.clicked.connect(self.print_sheet)
 
-        btn_save = QPushButton("💾 Enregistrer / حفظ")
-        btn_save.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_save.setStyleSheet(f"QPushButton {{ background-color: {colors.SUCCESS}; color: white; font-weight: bold; padding: 10px; border-radius: 6px; border: none; }} QPushButton:hover {{ background-color: {colors.SUCCESS_HOVER}; }}")
-        btn_save.clicked.connect(self.save_grades)
+        self.btn_save = QPushButton("💾 Enregistrer / حفظ")
+        self.btn_save.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_save.setStyleSheet(
+            f"QPushButton {{ background-color: {colors.SUCCESS}; color: white; font-weight: bold; padding: 10px; border-radius: 6px; border: none; }} QPushButton:hover {{ background-color: {colors.SUCCESS_HOVER}; }}"
+        )
+        self.btn_save.clicked.connect(self.save_grades)
 
         action_layout = QHBoxLayout()
         action_layout.setSpacing(10)
         action_layout.addWidget(btn_print_blank)
-        action_layout.addWidget(btn_save)
+        action_layout.addWidget(self.btn_save)
         layout.addLayout(action_layout)
 
         self.tabs.addTab(tab, "  📝 Saisie / الإدخال  ")
@@ -424,11 +474,15 @@ class StudentGradesWindow(QMainWindow):
         self.txt_search_student.setPlaceholderText("Nom de l'etudiant...")
         self.txt_search_student.setMinimumHeight(38)
         colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-        self.txt_search_student.setStyleSheet(f"QLineEdit {{ padding: 6px 10px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }} QLineEdit:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}")
+        self.txt_search_student.setStyleSheet(
+            f"QLineEdit {{ padding: 6px 10px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }} QLineEdit:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}"
+        )
 
         btn_search = QPushButton("🔍 Rechercher")
         btn_search.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_search.setStyleSheet(f"QPushButton {{ background-color: {colors.SECONDARY}; color: white; font-weight: bold; padding: 10px; border-radius: 6px; border: none; }} QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}")
+        btn_search.setStyleSheet(
+            f"QPushButton {{ background-color: {colors.SECONDARY}; color: white; font-weight: bold; padding: 10px; border-radius: 6px; border: none; }} QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}"
+        )
         btn_search.clicked.connect(self.search_grades)
 
         slayout.addWidget(self.combo_view_class, 1)
@@ -475,7 +529,7 @@ class StudentGradesWindow(QMainWindow):
                     if p[1] not in seen:
                         combo.addItem(p[1], p[0])
                         seen.add(p[1])
-        except Exception as e:
+        except Exception:
             pass
 
     def on_view_class_changed(self):
@@ -490,9 +544,11 @@ class StudentGradesWindow(QMainWindow):
                 return
             db = DatabaseManager()
             with db.get_connection() as conn:
-                periods = GradesRepository(conn).list_periods_for_class_year(
-                    class_id, active_year
-                ) if class_id else GradesRepository(conn).list_periods_for_year(active_year)
+                periods = (
+                    GradesRepository(conn).list_periods_for_class_year(class_id, active_year)
+                    if class_id
+                    else GradesRepository(conn).list_periods_for_year(active_year)
+                )
             for period_id, period_name in periods:
                 self.combo_view_period.addItem(period_name, period_id)
         except Exception:
@@ -504,7 +560,8 @@ class StudentGradesWindow(QMainWindow):
         class_id = self.combo_class.currentData()
         self.combo_subject.clear()
         self.combo_period.clear()
-        if not class_id: return
+        if not class_id:
+            return
 
         active_year = self.get_active_year_id()
         if active_year == -1:
@@ -515,7 +572,8 @@ class StudentGradesWindow(QMainWindow):
             with db.get_connection() as conn:
                 repo = GradesRepository(conn)
                 subjects = repo.get_class_subjects(class_id)
-                if not subjects: return
+                if not subjects:
+                    return
 
                 for s in subjects:
                     self.combo_subject.addItem(f"{s[1]} (Coef: {s[3]})", s[0])
@@ -529,13 +587,16 @@ class StudentGradesWindow(QMainWindow):
     def load_assessments_entry(self):
         period_id = self.combo_period.currentData()
         self.combo_assessment.clear()
-        if not period_id: return
+        if not period_id:
+            return
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
                 for a in GradesRepository(conn).list_assessments_for_period(period_id):
                     self.combo_assessment.addItem(a[1], a[0])
-        except Exception: pass
+        except Exception:
+            pass
+
     # ===== جلب الطلاب باستخدام جدول التسجيل SCN =====
 
     def load_grading_sheet(self):
@@ -583,8 +644,11 @@ class StudentGradesWindow(QMainWindow):
                     spin.setRange(0, max_score)
                     spin.setSingleStep(0.25)
                     spin.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                    spin.setStyleSheet(f"background: {colors.INPUT_BG}; border: 1px solid {colors.BORDER}; color: {colors.TEXT_PRIMARY};")
-                    if r[3] is not None: spin.setValue(r[3])
+                    spin.setStyleSheet(
+                        f"background: {colors.INPUT_BG}; border: 1px solid {colors.BORDER}; color: {colors.TEXT_PRIMARY};"
+                    )
+                    if r[3] is not None:
+                        spin.setValue(r[3])
                     self.table_grades.setCellWidget(idx, 3, spin)
 
                     self.table_grades.setItem(idx, 4, QTableWidgetItem(r[4] or ""))
@@ -596,10 +660,12 @@ class StudentGradesWindow(QMainWindow):
         subject_id = self.combo_subject.currentData()
         assess_id = self.combo_assessment.currentData()
 
-        if not all([class_id, subject_id, assess_id]): return
+        if not all([class_id, subject_id, assess_id]):
+            return
 
         active_year = self.get_active_year_id()
-        if active_year == -1: return
+        if active_year == -1:
+            return
 
         try:
             db = DatabaseManager()
@@ -693,7 +759,9 @@ class StudentGradesWindow(QMainWindow):
                     spin.setRange(0, max_score)
                     spin.setSingleStep(0.25)
                     spin.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                    spin.setStyleSheet(f"background: {colors.INPUT_BG}; border: 1px solid {colors.BORDER}; color: {colors.TEXT_PRIMARY};")
+                    spin.setStyleSheet(
+                        f"background: {colors.INPUT_BG}; border: 1px solid {colors.BORDER}; color: {colors.TEXT_PRIMARY};"
+                    )
                     self.table_grades.setCellWidget(idx, 3, spin)
 
                     self.table_grades.setItem(idx, 4, QTableWidgetItem(""))
