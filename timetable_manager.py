@@ -54,6 +54,14 @@ from repositories.finance_repo import FinanceRepository
 from repositories.timetable_repo import TimetableRepository
 from ui_styles import Colors, ThemeManager
 
+try:
+    import arabic_reshaper
+    from bidi.algorithm import get_display as _bidi_display
+
+    _ARABIC_SUPPORT = True
+except ModuleNotFoundError:
+    _ARABIC_SUPPORT = False
+
 # ──────────────────────────────────────────────────────────────
 DAYS_FR = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"]
 DAYS_AR = ["الإثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"]
@@ -61,6 +69,17 @@ DAY_COLORS = ["#1a3a5c", "#1a4a3c", "#3c2a1a", "#3c1a2a", "#2a1a4a", "#1a3a3c"]
 DAYS_FR_AR = dict(zip(DAYS_FR, DAYS_AR))
 
 TIMETABLE_PDF_MODE = get_report_output_mode("timetable_mode", "save")
+
+
+def _ar_text(text: str) -> str:
+    """Reshape + reorder Arabic text for RTL display in fpdf2."""
+    if not text or not _ARABIC_SUPPORT:
+        return text or ""
+    try:
+        return _bidi_display(arabic_reshaper.reshape(str(text)))
+    except Exception:
+        return str(text)
+
 
 # خلفيات الحصص حسب المادة
 SLOT_PALETTE = [
@@ -674,7 +693,7 @@ class TimetableWindow(QMainWindow):
 
     # ── Print ─────────────────────────────────────────────────
     def _print_timetable(self):
-        """Generate an official PDF timetable for the selected class or teacher."""
+        """Generate an official PDF timetable — Portrait A4 with Arabic support."""
         class_id = self._class_id
         teacher_id = self.cmb_teacher.currentData()
 
@@ -706,81 +725,31 @@ class TimetableWindow(QMainWindow):
             QMessageBox.information(self, "Vide", "Aucune séance à imprimer pour cette sélection.")
             return
 
-        # ── Build PDF ──────────────────────────────────────────
-        pdf = FPDF(orientation="L", format="A4")
+        # ── Build PDF (Portrait A4) ────────────────────────────
+        pdf = FPDF(orientation="P", format="A4")
         pdf.set_margins(10, 10, 10)
-        pdf.set_auto_page_break(auto=True, margin=12)
+        pdf.set_auto_page_break(auto=True, margin=15)
         pdf.add_page()
 
-        # Register Cairo font for Unicode (Arabic class/teacher names)
-        _font_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Fonts", "Cairo", "static")
-        _font_ok = False
-        try:
-            pdf.add_font("Cairo", "", os.path.join(_font_dir, "Cairo-Regular.ttf"))
-            pdf.add_font("Cairo", "B", os.path.join(_font_dir, "Cairo-Bold.ttf"))
-            _font_ok = True
-        except Exception:
-            pass
-        font = "Cairo" if _font_ok else "Helvetica"
+        font = self._register_arabic_font(pdf)
 
-        # Official header (school info + title)
+        # Official header (school info + title — uses Helvetica + latin sanitize internally)
         apply_grades_sheet_header(pdf, school_info, title)
 
         # Date subtitle
-        pdf.set_font(font, "", 9)
+        pdf.set_font(font, "", 8)
         pdf.set_text_color(100, 116, 139)
         pdf.cell(
             0,
-            6,
+            5,
             f"Imprimé le : {datetime.now().strftime('%d/%m/%Y à %H:%M')}",
             new_x="LMARGIN",
             new_y="NEXT",
             align="C",
         )
-        pdf.ln(3)
+        pdf.ln(2)
 
-        # ── Table ──────────────────────────────────────────────
-        col_w = [32, 20, 20, 65, 65, 26]
-        headers = ["Jour", "Début", "Fin", "Matière", col5_header, "Salle"]
-
-        apply_table_header_style(pdf, font, 10)
-        for w, h_text in zip(col_w, headers):
-            pdf.cell(w, 9, h_text, border=1, fill=True)
-        pdf.ln()
-
-        apply_table_body_style(pdf, font, 9)
-        current_day = ""
-        row_idx = 0
-
-        for row in rows:
-            day, start, end, subject, col5, room = (str(v or "") for v in row)
-
-            # Day group separator
-            if day != current_day:
-                current_day = day
-                day_ar = DAYS_FR_AR.get(day, "")
-                pdf.set_fill_color(30, 41, 59)
-                pdf.set_text_color(248, 250, 252)
-                pdf.set_font(font, "B", 9)
-                pdf.cell(
-                    sum(col_w),
-                    7,
-                    f"  {day}    {day_ar}",
-                    border=1,
-                    new_x="LMARGIN",
-                    new_y="NEXT",
-                    fill=True,
-                )
-                apply_table_body_style(pdf, font, 9)
-
-            set_zebra_row_fill(pdf, row_idx)
-            pdf.cell(col_w[0], 7, day, border=1, fill=True)
-            pdf.cell(col_w[1], 7, start, border=1, fill=True)
-            pdf.cell(col_w[2], 7, end, border=1, fill=True)
-            pdf.cell(col_w[3], 7, subject, border=1, fill=True)
-            pdf.cell(col_w[4], 7, col5, border=1, fill=True)
-            pdf.cell(col_w[5], 7, room, border=1, new_x="LMARGIN", new_y="NEXT", fill=True)
-            row_idx += 1
+        self._render_timetable_rows(pdf, font, col5_header, rows)
 
         # Footer note
         pdf.ln(3)
@@ -799,6 +768,64 @@ class TimetableWindow(QMainWindow):
             success_print_message="Emploi du temps envoyé à l'imprimante.",
         )
         AppLogger.info("Timetable", f"PDF emploi du temps généré: {entity_name}")
+
+    @staticmethod
+    def _register_arabic_font(pdf: FPDF) -> str:
+        """Register Cairo/Amiri TTF font and return the font name to use."""
+        _base = os.path.dirname(os.path.abspath(__file__))
+        candidates = [
+            (
+                os.path.join(_base, "Fonts", "Cairo", "static", "Cairo-Regular.ttf"),
+                os.path.join(_base, "Fonts", "Cairo", "static", "Cairo-Bold.ttf"),
+            ),
+            (
+                os.path.join(_base, "Fonts", "Amiri", "Amiri-Regular.ttf"),
+                os.path.join(_base, "Fonts", "Amiri", "Amiri-Bold.ttf"),
+            ),
+        ]
+        for reg, bold in candidates:
+            if os.path.exists(reg):
+                try:
+                    pdf.add_font("ArabicFont", "", reg)
+                    pdf.add_font("ArabicFont", "B", bold if os.path.exists(bold) else reg)
+                    return "ArabicFont"
+                except Exception:
+                    pass
+                break
+        return "Helvetica"
+
+    @staticmethod
+    def _render_timetable_rows(pdf: FPDF, font: str, col5_header: str, rows: list) -> None:
+        """Render the timetable table (header + body rows) into *pdf*."""
+        # col widths: 28+18+18+52+50+24 = 190mm (Portrait A4 usable)
+        col_w = [28, 18, 18, 52, 50, 24]
+        headers = ["Jour", "Début", "Fin", "Matière", col5_header, "Salle"]
+
+        apply_table_header_style(pdf, font, 9)
+        for w, h_text in zip(col_w, headers):
+            pdf.cell(w, 8, h_text, border=1, fill=True)
+        pdf.ln()
+
+        apply_table_body_style(pdf, font, 9)
+        current_day = ""
+        for row_idx, row in enumerate(rows):
+            day, start, end, subject, col5, room = (str(v or "") for v in row)
+            if day != current_day:
+                current_day = day
+                day_ar = _ar_text(DAYS_FR_AR.get(day, ""))
+                day_display = f"  {day}    {day_ar}" if day_ar else f"  {day}"
+                pdf.set_fill_color(30, 41, 59)
+                pdf.set_text_color(248, 250, 252)
+                pdf.set_font(font, "B", 9)
+                pdf.cell(sum(col_w), 7, day_display, border=1, new_x="LMARGIN", new_y="NEXT", fill=True)
+                apply_table_body_style(pdf, font, 9)
+            set_zebra_row_fill(pdf, row_idx)
+            pdf.cell(col_w[0], 7, day, border=1, fill=True)
+            pdf.cell(col_w[1], 7, start, border=1, fill=True)
+            pdf.cell(col_w[2], 7, end, border=1, fill=True)
+            pdf.cell(col_w[3], 7, _ar_text(subject), border=1, fill=True)
+            pdf.cell(col_w[4], 7, _ar_text(col5), border=1, fill=True)
+            pdf.cell(col_w[5], 7, room, border=1, new_x="LMARGIN", new_y="NEXT", fill=True)
 
     # Called by main_dashbord refresh system
     def refresh_data(self):
