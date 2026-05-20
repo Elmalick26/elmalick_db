@@ -11,10 +11,10 @@ tests/test_timetable_manager.py
 
 from __future__ import annotations
 
-import sys
 import os
+import sys
 import types
-from unittest.mock import MagicMock, patch, call
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
@@ -135,11 +135,7 @@ _make_qt_stubs()
 
 # ── Stubs internes ───────────────────────────────────────────
 # Save any real modules already loaded so we can restore them afterwards.
-_saved_internal = {
-    mod: sys.modules[mod]
-    for mod in ("database_setup", "app_logger", "ui_styles")
-    if mod in sys.modules
-}
+_saved_internal = {mod: sys.modules[mod] for mod in ("database_setup", "app_logger", "ui_styles") if mod in sys.modules}
 
 for mod_name, attrs in [
     ("database_setup", {"DatabaseManager": MagicMock()}),
@@ -152,13 +148,7 @@ for mod_name, attrs in [
     sys.modules[mod_name] = m
 
 # ── Import module ────────────────────────────────────────────
-from timetable_manager import (
-    TimetableGrid,
-    TimetableWindow,
-    SlotDialog,
-    DAYS_FR,
-    SLOT_PALETTE,
-)
+from timetable_manager import DAYS_FR, SLOT_PALETTE, SlotDialog, TimetableGrid, TimetableWindow
 
 # Restore original modules (or remove stubs if nothing was saved).
 for _stub_mod in ("database_setup", "app_logger", "ui_styles"):
@@ -358,6 +348,8 @@ class TestTimetableWindowCrud:
         w._staff = [(1, "M. Diallo"), (2, "Mme Sow")]
         w.cmb_class = MagicMock()
         w.cmb_class.currentText.return_value = "6ème A"
+        w.cmb_teacher = MagicMock()
+        w.cmb_teacher.currentData.return_value = None
         w.grid = MagicMock()
         return w
 
@@ -404,7 +396,7 @@ class TestTimetableWindowCrud:
             "teacher_id": 1,
             "room": "S02",
         }
-        with p:
+        with p, patch.object(w, "_check_conflict", return_value=(False, "")):
             w._save_slot(values)
         # First call is INSERT, second is SELECT (from _load_grid)
         sql = cur.execute.call_args_list[0][0][0]
@@ -430,7 +422,7 @@ class TestTimetableWindowCrud:
     def test_save_slot_empty_room_stored_as_none(self):
         w = self._window()
         p, db, conn, cur = self._patch_db(w)
-        with p:
+        with p, patch.object(w, "_check_conflict", return_value=(False, "")):
             w._save_slot(
                 {
                     "day_of_week": "Lundi",
@@ -457,7 +449,7 @@ class TestTimetableWindowCrud:
             "teacher_id": 2,
             "room": "S03",
         }
-        with p:
+        with p, patch.object(w, "_check_conflict", return_value=(False, "")):
             w._update_slot(42, values)
         # First call is UPDATE, second is SELECT (from _load_grid)
         sql = cur.execute.call_args_list[0][0][0]
@@ -615,6 +607,9 @@ class TestTimetableWindowFilters:
         w.cmb_class = MagicMock()
         w.cmb_class.currentData.return_value = None
         w.cmb_class.currentText.return_value = "6ème A"
+        w.cmb_teacher = MagicMock()
+        w.cmb_teacher.currentData.return_value = None
+        w.cmb_teacher.currentText.return_value = "— Tous les profs —"
         w.grid = MagicMock()
         return w
 
@@ -737,11 +732,12 @@ class TestTimetableWindowFilters:
     def test_print_fpdf_missing_shows_warning(self):
         w = self._window()
         w._class_id = 1
-        # Remove fpdf from sys.modules to simulate ImportError
-        with patch.dict(sys.modules, {"fpdf": None}), patch("timetable_manager.QMessageBox") as MockMsg:
-            MockMsg.warning = MagicMock()
+        # Simulate a DB error during print
+        with patch("timetable_manager.DatabaseManager") as MockDB, patch("timetable_manager.QMessageBox") as MockMsg:
+            MockDB.return_value.get_connection.side_effect = Exception("db error")
+            MockMsg.critical = MagicMock()
             w._print_timetable()
-        MockMsg.warning.assert_called_once()
+        MockMsg.critical.assert_called_once()
 
     def test_edit_slot_cancelled_no_update(self):
         w = self._window()

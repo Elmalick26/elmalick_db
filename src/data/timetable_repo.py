@@ -136,3 +136,105 @@ class TimetableRepository:
     def delete_slot(self, slot_id: int) -> None:
         cursor = self.conn.cursor()
         cursor.execute("DELETE FROM Timetable WHERE id = %s", (slot_id,))
+
+    # ── Teacher view ────────────────────────────────────────────
+
+    def list_slots_for_teacher(self, teacher_id: int) -> list:
+        """Return all slots assigned to a teacher, across all classes."""
+        cursor = self.conn.cursor()
+        cursor.execute(
+            """
+            SELECT
+                T.id,
+                T.day_of_week,
+                T.start_time,
+                T.end_time,
+                T.subject_id,
+                T.teacher_id,
+                T.room,
+                SB.subject_name_fr,
+                CONCAT(ST.first_name, ' ', ST.last_name) AS teacher_name,
+                C.class_name_fr
+            FROM Timetable T
+            JOIN Subjects SB ON T.subject_id = SB.id
+            LEFT JOIN Staff ST ON T.teacher_id = ST.id
+            JOIN Classes C ON T.class_id = C.id
+            WHERE T.teacher_id = %s
+            ORDER BY
+                CASE T.day_of_week
+                    WHEN 'Lundi' THEN 1 WHEN 'Mardi' THEN 2 WHEN 'Mercredi' THEN 3
+                    WHEN 'Jeudi' THEN 4 WHEN 'Vendredi' THEN 5 WHEN 'Samedi' THEN 6
+                END,
+                T.start_time
+            """,
+            (teacher_id,),
+        )
+        return cursor.fetchall()
+
+    def list_slots_for_teacher_print(self, teacher_id: int) -> list:
+        """Return (day, start, end, subject, class_name, room) for a teacher PDF."""
+        cursor = self.conn.cursor()
+        cursor.execute(
+            """
+            SELECT T.day_of_week, T.start_time, T.end_time,
+                   SB.subject_name_fr,
+                   C.class_name_fr,
+                   COALESCE(T.room, '—') AS room
+            FROM Timetable T
+            JOIN Subjects SB ON T.subject_id = SB.id
+            JOIN Classes C ON T.class_id = C.id
+            WHERE T.teacher_id = %s
+            ORDER BY
+                CASE T.day_of_week
+                    WHEN 'Lundi' THEN 1 WHEN 'Mardi' THEN 2 WHEN 'Mercredi' THEN 3
+                    WHEN 'Jeudi' THEN 4 WHEN 'Vendredi' THEN 5 WHEN 'Samedi' THEN 6
+                END,
+                T.start_time
+            """,
+            (teacher_id,),
+        )
+        return cursor.fetchall()
+
+    # ── Conflict detection ──────────────────────────────────────
+
+    def get_teacher_slots_for_day(self, teacher_id: int, day: str, exclude_slot_id: int | None = None) -> list:
+        """Return (class_name, start_time, end_time) for a teacher on a given day.
+
+        Used to detect scheduling conflicts before inserting or updating a slot.
+        Pass *exclude_slot_id* when editing an existing slot so the current row is
+        not compared against itself.
+        """
+        cursor = self.conn.cursor()
+        sql = """
+            SELECT C.class_name_fr, T.start_time, T.end_time
+            FROM Timetable T
+            JOIN Classes C ON T.class_id = C.id
+            WHERE T.teacher_id = %s AND T.day_of_week = %s
+        """
+        params: list = [teacher_id, day]
+        if exclude_slot_id is not None:
+            sql += " AND T.id != %s"
+            params.append(exclude_slot_id)
+        cursor.execute(sql, params)
+        return cursor.fetchall()
+
+    def get_class_slots_for_day(self, class_id: int, day: str, exclude_slot_id: int | None = None) -> list:
+        """Return (teacher_name, subject_name, start_time, end_time) for a class on a given day.
+
+        Used to detect class scheduling conflicts.
+        """
+        cursor = self.conn.cursor()
+        sql = """
+            SELECT COALESCE(CONCAT(ST.first_name, ' ', ST.last_name), '—'),
+                   SB.subject_name_fr, T.start_time, T.end_time
+            FROM Timetable T
+            JOIN Subjects SB ON T.subject_id = SB.id
+            LEFT JOIN Staff ST ON T.teacher_id = ST.id
+            WHERE T.class_id = %s AND T.day_of_week = %s
+        """
+        params: list = [class_id, day]
+        if exclude_slot_id is not None:
+            sql += " AND T.id != %s"
+            params.append(exclude_slot_id)
+        cursor.execute(sql, params)
+        return cursor.fetchall()

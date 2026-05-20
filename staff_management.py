@@ -50,7 +50,6 @@ from ui_styles import Colors, ThemeManager, apply_shadow_to_widget, get_card_sty
 
 THEME_AVAILABLE = True
 STAFF_LIST_OUTPUT_MODE = get_report_output_mode("staff_list_mode", "save")
-TIMETABLE_OUTPUT_MODE = get_report_output_mode("timetable_mode", "save")
 
 try:
     import arabic_reshaper
@@ -220,9 +219,6 @@ class ModernStaffManagement(QMainWindow):
 
         self.init_ui()
         self.load_staff_list()
-        self.load_classes_into_combo()
-        self.load_subjects_into_combo()
-        self.load_timetable()
 
     def apply_rbac(self, role: str) -> None:
         """تطبيق صلاحيات الأزرار بناءً على دور المستخدم — يُستدعى من MainWindow."""
@@ -292,7 +288,6 @@ class ModernStaffManagement(QMainWindow):
             )
 
         self.setup_staff_tab()
-        self.setup_timetable_tab()
 
         self.main_layout.addWidget(self.tabs)
 
@@ -576,81 +571,6 @@ class ModernStaffManagement(QMainWindow):
         self.toggle_salary_fields()
         self.tabs.addTab(tab, "  👨‍💼 Personnel / الموظفون  ")
 
-    def setup_timetable_tab(self):
-        tab = QWidget()
-        layout = QVBoxLayout(tab)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(15)
-
-        # Control Card
-        control_card = self.create_card()
-        clayout = QVBoxLayout(control_card)
-        clayout.setContentsMargins(15, 15, 15, 15)
-        clayout.setSpacing(8)
-
-        row_top = QHBoxLayout()
-        row_top.setSpacing(10)
-        row_bottom = QHBoxLayout()
-        row_bottom.setSpacing(10)
-
-        self.combo_prof_tt = self.styled_combo()
-        self.combo_class_tt = self.styled_combo()
-        self.combo_subject_tt = self.styled_combo()
-        self.combo_day_tt = self.styled_combo()
-        self.combo_day_tt.addItems(["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi", "Dimanche"])
-
-        self.txt_time_start = self.styled_input("Début (08:00)")
-        self.txt_time_start.setMaximumWidth(100)
-        self.txt_time_end = self.styled_input("Fin (10:00)")
-        self.txt_time_end.setMaximumWidth(100)
-
-        btn_add_tt = QPushButton("➕ Ajouter")
-        btn_add_tt.setCursor(Qt.CursorShape.PointingHandCursor)
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-        btn_add_tt.setStyleSheet(
-            f"QPushButton {{ background-color: {colors.SUCCESS}; color: white; padding: 10px 20px; font-weight: bold; border-radius: 6px; border: none; }} QPushButton:hover {{ background-color: {colors.SUCCESS_HOVER}; }}"
-        )
-        btn_add_tt.clicked.connect(self.add_to_timetable)
-
-        # زر جديد لطباعة جدول الفصل
-        btn_print_class_tt = QPushButton("🖨️ Imprimer Classe")
-        btn_print_class_tt.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_print_class_tt.setStyleSheet(
-            f"QPushButton {{ background-color: {colors.PRIMARY}; color: white; padding: 10px 15px; font-weight: bold; border-radius: 6px; border: none; }} QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}"
-        )
-        btn_print_class_tt.clicked.connect(self.print_class_timetable)
-
-        row_top.addWidget(QLabel("Prof:"))
-        row_top.addWidget(self.combo_prof_tt, 2)
-        row_top.addWidget(QLabel("Classe:"))
-        row_top.addWidget(self.combo_class_tt, 1)
-        row_top.addWidget(btn_print_class_tt)
-        row_top.addStretch()
-
-        row_bottom.addWidget(QLabel("Matière:"))
-        row_bottom.addWidget(self.combo_subject_tt, 2)
-        row_bottom.addWidget(self.combo_day_tt, 1)
-        row_bottom.addWidget(self.txt_time_start)
-        row_bottom.addWidget(self.txt_time_end)
-        row_bottom.addWidget(btn_add_tt)
-
-        clayout.addLayout(row_top)
-        clayout.addLayout(row_bottom)
-
-        layout.addWidget(control_card)
-
-        # Table
-        self.table_tt = QTableWidget()
-        self.style_table(self.table_tt)
-        self.table_tt.setColumnCount(7)
-        self.table_tt.setHorizontalHeaderLabels(["ID", "Professeur", "Classe", "Matière", "Jour", "Horaire", "Action"])
-        self.table_tt.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-        self.table_tt.setColumnWidth(0, 50)
-        self.table_tt.setColumnWidth(6, 60)
-
-        layout.addWidget(self.table_tt)
-        self.tabs.addTab(tab, "  🗓️ Emploi du Temps / الجدول  ")
-
     # --- Logic Methods ---
     def toggle_salary_fields(self):
         idx = self.combo_contract.currentIndex()
@@ -679,7 +599,6 @@ class ModernStaffManagement(QMainWindow):
 
     def load_staff_list(self):
         self.table_staff.setRowCount(0)
-        self.combo_prof_tt.clear()
         search_txt = self.txt_search.text()
 
         try:
@@ -719,10 +638,6 @@ class ModernStaffManagement(QMainWindow):
                 else:
                     status_item.setForeground(QColor(239, 68, 68))
                 self.table_staff.setItem(r_idx, 7, status_item)
-
-                role_value = row[2] or ""
-                if ("Prof" in role_value or "Ens" in role_value) and status == "Actif":
-                    self.combo_prof_tt.addItem(row[1], row[0])
 
                 btn_widget = QWidget()
                 btn_layout = QHBoxLayout(btn_widget)
@@ -1006,218 +921,6 @@ class ModernStaffManagement(QMainWindow):
                 success_save_message="Rapport généré en PDF.",
                 success_print_message="Rapport envoyé à l'imprimante.",
             )
-        except Exception as e:
-            QMessageBox.critical(self, "Erreur", f"Erreur lors de la génération du PDF: {str(e)}")
-
-    # --- Timetable Logic ---
-    def load_classes_into_combo(self):
-        try:
-            db = DatabaseManager()
-            with db.get_connection() as conn:
-                self.combo_class_tt.clear()
-                for c in StaffRepository(conn).list_classes():
-                    self.combo_class_tt.addItem(c[1], c[0])
-        except Exception as e:
-            print(f"Classes TT Load Error: {e}")
-
-    def load_subjects_into_combo(self):
-        try:
-            db = DatabaseManager()
-            with db.get_connection() as conn:
-                self.combo_subject_tt.clear()
-                for s in StaffRepository(conn).list_subjects():
-                    self.combo_subject_tt.addItem(s[1], s[0])
-        except Exception as e:
-            print(f"Subjects TT Load Error: {e}")
-
-    # ================== خوارزمية فحص التداخل (Conflict Detection) ==================
-    def check_timetable_conflict(self, conn, teacher_id, class_id, day, start, end):
-        """
-        يفحص إذا كان هناك تداخل في الجدول الزمني
-        يعود بـ (True, رسالة الخطأ) إذا كان هناك تداخل، و (False, "") إذا كان الوضع آمناً.
-        """
-        try:
-            t_start = datetime.strptime(start, "%H:%M").time()
-            t_end = datetime.strptime(end, "%H:%M").time()
-        except ValueError:
-            return True, "Format d'heure invalide. Utilisez HH:MM (ex: 08:00)"
-
-        if t_start >= t_end:
-            return True, "L'heure de fin doit être après l'heure de début."
-
-        repo = StaffRepository(conn)
-
-        # 1. فحص تداخل الأستاذ (هل يدرس في فصل آخر في نفس الوقت؟)
-        for cname, existing_start, existing_end in repo.get_teacher_timetable_for_day(teacher_id, day):
-            e_start = datetime.strptime(existing_start, "%H:%M").time()
-            e_end = datetime.strptime(existing_end, "%H:%M").time()
-            if (t_start < e_end) and (t_end > e_start):
-                prof_name = self.combo_prof_tt.currentText()
-                return (
-                    True,
-                    f"Le professeur {prof_name} est déjà assigné à la classe {cname} le {day} de {existing_start} à {existing_end}.",
-                )
-
-        # 2. فحص تداخل الفصل (هل الفصل لديه حصة أخرى في نفس الوقت؟)
-        for prof_name, sub_name, existing_start, existing_end in repo.get_class_timetable_for_day(class_id, day):
-            e_start = datetime.strptime(existing_start, "%H:%M").time()
-            e_end = datetime.strptime(existing_end, "%H:%M").time()
-            if (t_start < e_end) and (t_end > e_start):
-                cname = self.combo_class_tt.currentText()
-                return (
-                    True,
-                    f"La classe {cname} a déjà cours de {sub_name} avec {prof_name} le {day} de {existing_start} à {existing_end}.",
-                )
-
-        return False, ""
-
-    def add_to_timetable(self):
-        teacher_id = self.combo_prof_tt.currentData()
-        class_id = self.combo_class_tt.currentData()
-        sub_id = self.combo_subject_tt.currentData()
-        day = self.combo_day_tt.currentText()
-        start = self.txt_time_start.text().strip()
-        end = self.txt_time_end.text().strip()
-
-        if not teacher_id or not class_id or not sub_id or not start or not end:
-            QMessageBox.warning(self, "Attention", "Veuillez remplir tous les champs du calendrier.")
-            return
-
-        try:
-            db = DatabaseManager()
-            with db.get_connection() as conn:
-                # --- استخدام خوارزمية منع التداخل ---
-                is_conflict, conflict_msg = self.check_timetable_conflict(conn, teacher_id, class_id, day, start, end)
-                if is_conflict:
-                    QMessageBox.critical(self, "Conflit d'Horaire / تداخل في الجدول", conflict_msg)
-                    return
-
-                StaffRepository(conn).insert_timetable_entry(teacher_id, class_id, sub_id, day, start, end)
-                conn.commit()
-            self.load_timetable()
-            self.txt_time_start.clear()
-            self.txt_time_end.clear()
-            QMessageBox.information(self, "Succès", "Séance ajoutée avec succès.")
-        except Exception as e:
-            QMessageBox.critical(self, "Erreur", f"Erreur lors de l'ajout: {str(e)}")
-
-    def load_timetable(self):
-        self.table_tt.setRowCount(0)
-        try:
-            db = DatabaseManager()
-            with db.get_connection() as conn:
-                rows = StaffRepository(conn).list_timetable()
-
-            for row in rows:
-                idx = self.table_tt.rowCount()
-                self.table_tt.insertRow(idx)
-                for c, val in enumerate(row):
-                    self.table_tt.setItem(idx, c, QTableWidgetItem(str(val)))
-
-                btn = QPushButton("✕")
-                btn.setFixedSize(24, 24)
-                btn.setCursor(Qt.CursorShape.PointingHandCursor)
-                colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-                btn.setStyleSheet(f"background-color: {colors.DANGER}; color: white; border-radius: 4px; border: none;")
-                btn.clicked.connect(lambda ch, tid=row[0]: self.delete_tt(tid))
-
-                container = QWidget()
-                layout = QHBoxLayout(container)
-                layout.setContentsMargins(0, 0, 0, 0)
-                layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                layout.addWidget(btn)
-                self.table_tt.setCellWidget(idx, 6, container)
-        except Exception as e:
-            AppLogger.error("StaffManagement", f"Error loading timetable: {e}")
-
-    def delete_tt(self, tid):
-        reply = QMessageBox.question(
-            self,
-            'Confirmation',
-            "Supprimer cet horaire ?",
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-        )
-        if reply == QMessageBox.StandardButton.Yes:
-            try:
-                db = DatabaseManager()
-                with db.get_connection() as conn:
-                    StaffRepository(conn).delete_timetable_entry(tid)
-                    conn.commit()
-                self.load_timetable()
-            except Exception as e:
-                QMessageBox.critical(self, "Erreur", str(e))
-
-    # ================== طباعة جدول الفصل (Print Class Timetable) ==================
-    def print_class_timetable(self):
-        class_id = self.combo_class_tt.currentData()
-        class_name = self.combo_class_tt.currentText()
-        if not class_id:
-            QMessageBox.warning(self, "Erreur", "Veuillez sélectionner une classe d'abord.")
-            return
-
-        try:
-            db = DatabaseManager()
-            with db.get_connection() as conn:
-                school_info = FinanceRepository(conn).get_school_info()
-                timetable_data = StaffRepository(conn).get_timetable_for_class(class_id)
-
-            if not timetable_data:
-                QMessageBox.information(self, "Vide", f"Aucun emploi du temps trouvé pour la classe {class_name}.")
-                return
-
-            pdf = StaffReportPDF(school_info, f"EMPLOI DU TEMPS - {class_name.upper()}", orientation='P')
-            pdf.add_page()
-
-            # الألوان والخطوط للجدول المطبوع
-            pdf.set_fill_color(30, 41, 59)  # Header color
-            pdf.set_text_color(255, 255, 255)
-            font_to_use = "ArabicFont" if pdf.arabic_font_ready else "Helvetica"
-            pdf.set_font(font_to_use, 'B', 10)
-
-            col_widths = [30, 40, 50, 70]  # Total 190 (A4 Portrait width minus margins)
-            headers = ["Jour", "Horaire", "Matière", "Professeur"]
-
-            for i, header in enumerate(headers):
-                ln_val = 1 if i == len(headers) - 1 else 0
-                pdf.cell(col_widths[i], 8, pdf.sanitize(header), 1, ln_val, 'C', True)
-
-            pdf.set_text_color(0, 0, 0)
-            pdf.set_font(font_to_use, '', 9)
-
-            current_day = ""
-            for i, row in enumerate(timetable_data):
-                day, start, end, subject, prof = row
-
-                # تلوين تبادلي بناءً على الأيام لسهولة القراءة
-                if day != current_day:
-                    current_day = day
-                    pdf.set_fill_color(226, 232, 240)  # لون رمادي فاتح لفاصل الأيام
-                    pdf.set_font(font_to_use, 'B', 9)
-                    pdf.cell(sum(col_widths), 6, pdf.sanitize(day.upper()), 1, 1, 'C', True)
-                    pdf.set_font(font_to_use, '', 9)
-
-                fill = i % 2 == 0
-                if fill:
-                    pdf.set_fill_color(248, 250, 252)
-                else:
-                    pdf.set_fill_color(255, 255, 255)
-
-                time_str = f"{start} - {end}"
-                pdf.cell(col_widths[0], 7, pdf.sanitize(day), 1, 0, 'C', fill)
-                pdf.cell(col_widths[1], 7, pdf.sanitize(time_str), 1, 0, 'C', fill)
-                pdf.cell(col_widths[2], 7, pdf.sanitize(subject), 1, 0, 'C', fill)
-                pdf.cell(col_widths[3], 7, pdf.sanitize(prof), 1, 1, 'C', fill)
-
-            output_pdf(
-                pdf,
-                self,
-                f"Emploi_Du_Temps_{class_name.replace(' ', '_')}.pdf",
-                mode=TIMETABLE_OUTPUT_MODE,
-                dialog_title="Sauvegarder Emploi du Temps PDF",
-                success_save_message="Emploi du temps généré en PDF.",
-                success_print_message="Emploi du temps envoyé à l'imprimante.",
-            )
-
         except Exception as e:
             QMessageBox.critical(self, "Erreur", f"Erreur lors de la génération du PDF: {str(e)}")
 

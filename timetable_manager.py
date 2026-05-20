@@ -10,6 +10,10 @@ timetable_manager.py — Phase 6.2
 
 from __future__ import annotations
 
+import os
+from datetime import datetime
+
+from fpdf import FPDF
 from PyQt6.QtCore import QSize, Qt, QTime
 from PyQt6.QtGui import QAction, QBrush, QColor, QFont
 from PyQt6.QtWidgets import (
@@ -39,6 +43,14 @@ from PyQt6.QtWidgets import (
 
 from app_logger import AppLogger
 from database_setup import DatabaseManager
+from pdf_report_style import (
+    apply_grades_sheet_header,
+    apply_table_body_style,
+    apply_table_header_style,
+    set_zebra_row_fill,
+)
+from print_export_service import get_report_output_mode, output_pdf
+from repositories.finance_repo import FinanceRepository
 from repositories.timetable_repo import TimetableRepository
 from ui_styles import Colors, ThemeManager
 
@@ -46,6 +58,9 @@ from ui_styles import Colors, ThemeManager
 DAYS_FR = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"]
 DAYS_AR = ["الإثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"]
 DAY_COLORS = ["#1a3a5c", "#1a4a3c", "#3c2a1a", "#3c1a2a", "#2a1a4a", "#1a3a3c"]
+DAYS_FR_AR = dict(zip(DAYS_FR, DAYS_AR))
+
+TIMETABLE_PDF_MODE = get_report_output_mode("timetable_mode", "save")
 
 # خلفيات الحصص حسب المادة
 SLOT_PALETTE = [
@@ -96,6 +111,7 @@ class SlotCell(QFrame):
         room = slot_data.get("room", "")
         start = slot_data.get("start_time", "")
         end = slot_data.get("end_time", "")
+        class_name = slot_data.get("class_name_fr", "")  # only in teacher-view mode
 
         lbl_subject = QLabel(subject)
         lbl_subject.setFont(QFont("Cairo", 10, QFont.Weight.Bold))
@@ -108,17 +124,20 @@ class SlotCell(QFrame):
         lbl_time = QLabel(f"⏱ {start}–{end}" if start else "")
         lbl_time.setStyleSheet("color: #aaa; font-size: 9px;")
 
-        if room:
-            lbl_room = QLabel(f"🚪 {room}")
-            lbl_room.setStyleSheet("color: #aaa; font-size: 9px;")
+        if class_name:
+            lbl_extra = QLabel(f"🏫 {class_name}")
+            lbl_extra.setStyleSheet("color: #80cbc4; font-size: 9px;")
+        elif room:
+            lbl_extra = QLabel(f"🚪 {room}")
+            lbl_extra.setStyleSheet("color: #aaa; font-size: 9px;")
         else:
-            lbl_room = None
+            lbl_extra = None
 
         layout.addWidget(lbl_subject)
         layout.addWidget(lbl_info)
         layout.addWidget(lbl_time)
-        if lbl_room:
-            layout.addWidget(lbl_room)
+        if lbl_extra:
+            layout.addWidget(lbl_extra)
         layout.addStretch()
 
         # Buttons (edit/delete)
@@ -372,6 +391,16 @@ class TimetableWindow(QMainWindow):
         self.cmb_class.currentIndexChanged.connect(self._on_class_changed)
         hdr.addWidget(self.cmb_class)
 
+        hdr.addWidget(QLabel("Professeur:"))
+        self.cmb_teacher = QComboBox()
+        self.cmb_teacher.setMinimumWidth(160)
+        self.cmb_teacher.setStyleSheet(
+            "QComboBox { background:#252b3b; color:white; border:1px solid #444; "
+            "border-radius:4px; padding:5px 8px; } QComboBox::drop-down { border: none; }"
+        )
+        self.cmb_teacher.currentIndexChanged.connect(self._on_teacher_changed)
+        hdr.addWidget(self.cmb_teacher)
+
         btn_print = QPushButton("🖨️ Imprimer")
         btn_print.setStyleSheet(
             "QPushButton { background:#37474f; color:white; border-radius:6px; padding:6px 14px; }"
@@ -413,6 +442,12 @@ class TimetableWindow(QMainWindow):
 
                 # Staff (teachers)
                 self._staff = repo.list_active_staff()
+                self.cmb_teacher.blockSignals(True)
+                self.cmb_teacher.clear()
+                self.cmb_teacher.addItem("— Tous les profs —", None)
+                for tid, name in self._staff:
+                    self.cmb_teacher.addItem(name, tid)
+                self.cmb_teacher.blockSignals(False)
 
         except Exception as e:
             AppLogger.error("Timetable", f"_load_filters error: {e}")
@@ -420,6 +455,22 @@ class TimetableWindow(QMainWindow):
     def _on_class_changed(self):
         self._class_id = self.cmb_class.currentData()
         if self._class_id:
+            # Reset teacher filter when switching to class view
+            self.cmb_teacher.blockSignals(True)
+            self.cmb_teacher.setCurrentIndex(0)
+            self.cmb_teacher.blockSignals(False)
+            self._load_grid()
+
+    def _on_teacher_changed(self):
+        teacher_id = self.cmb_teacher.currentData()
+        if teacher_id:
+            # Reset class filter when switching to teacher view
+            self._class_id = None
+            self.cmb_class.blockSignals(True)
+            self.cmb_class.setCurrentIndex(0)
+            self.cmb_class.blockSignals(False)
+            self._load_grid_teacher(teacher_id)
+        elif self._class_id:
             self._load_grid()
 
     # ── Grid loading ──────────────────────────────────────────
@@ -450,6 +501,34 @@ class TimetableWindow(QMainWindow):
         except Exception as e:
             AppLogger.error("Timetable", f"_load_grid error: {e}")
             QMessageBox.warning(self, "Erreur", f"Chargement du planning: {e}")
+
+    def _load_grid_teacher(self, teacher_id: int):
+        """Load and render the weekly schedule for a specific teacher (all classes)."""
+        try:
+            db = DatabaseManager()
+            with db.get_connection() as conn:
+                rows = TimetableRepository(conn).list_slots_for_teacher(teacher_id)
+
+            slots = [
+                {
+                    "id": r[0],
+                    "day_of_week": r[1],
+                    "start_time": r[2],
+                    "end_time": r[3],
+                    "subject_id": r[4],
+                    "teacher_id": r[5],
+                    "room": r[6] or "",
+                    "subject_name_fr": r[7],
+                    "teacher_name": r[8] or "",
+                    "class_name_fr": r[9] or "",  # shown instead of room in teacher view
+                }
+                for r in rows
+            ]
+            self.grid.render(slots)
+
+        except Exception as e:
+            AppLogger.error("Timetable", f"_load_grid_teacher error: {e}")
+            QMessageBox.warning(self, "Erreur", f"Chargement du planning professeur: {e}")
 
     # ── CRUD operations ───────────────────────────────────────
     def _add_slot_for_day(self, day: str):
@@ -483,10 +562,64 @@ class TimetableWindow(QMainWindow):
         if reply == QMessageBox.StandardButton.Yes:
             self._delete_slot(slot_data["id"])
 
+    # ── Conflict detection ────────────────────────────────────
+    def _check_conflict(
+        self, conn, class_id: int, values: dict, exclude_slot_id: int | None = None
+    ) -> tuple[bool, str]:
+        """Return (is_conflict, message).
+
+        Checks both teacher overlap and class overlap for the given slot values.
+        Pass *exclude_slot_id* when editing so the existing row is not compared
+        against itself.
+        """
+        try:
+            t_start = datetime.strptime(values["start_time"], "%H:%M").time()
+            t_end = datetime.strptime(values["end_time"], "%H:%M").time()
+        except ValueError:
+            return True, "Format d'heure invalide (HH:MM attendu, ex: 08:00)."
+        if t_start >= t_end:
+            return True, "L'heure de fin doit être après l'heure de début."
+
+        repo = TimetableRepository(conn)
+        day = values["day_of_week"]
+        teacher_id = values.get("teacher_id")
+
+        # 1. Teacher conflict
+        if teacher_id:
+            for cname, ex_start, ex_end in repo.get_teacher_slots_for_day(teacher_id, day, exclude_slot_id):
+                s = datetime.strptime(ex_start, "%H:%M").time()
+                e = datetime.strptime(ex_end, "%H:%M").time()
+                if t_start < e and t_end > s:
+                    # Find teacher name for the message
+                    teacher_name = next((n for tid, n in self._staff if tid == teacher_id), "ce professeur")
+                    return (
+                        True,
+                        f"⚠️ Conflit : {teacher_name} est déjà assigné(e) à {cname} "
+                        f"le {day} de {ex_start} à {ex_end}.",
+                    )
+
+        # 2. Class conflict
+        for prof, subj, ex_start, ex_end in repo.get_class_slots_for_day(class_id, day, exclude_slot_id):
+            s = datetime.strptime(ex_start, "%H:%M").time()
+            e = datetime.strptime(ex_end, "%H:%M").time()
+            if t_start < e and t_end > s:
+                class_name = self.cmb_class.currentText()
+                return (
+                    True,
+                    f"⚠️ Conflit : la classe {class_name} a déjà cours de {subj} "
+                    f"avec {prof} le {day} de {ex_start} à {ex_end}.",
+                )
+
+        return False, ""
+
     def _save_slot(self, values: dict):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
+                is_conflict, msg = self._check_conflict(conn, self._class_id, values)
+                if is_conflict:
+                    QMessageBox.critical(self, "Conflit d'horaire / تداخل في الجدول", msg)
+                    return
                 TimetableRepository(conn).insert_slot(
                     self._class_id,
                     values["day_of_week"],
@@ -507,6 +640,10 @@ class TimetableWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
+                is_conflict, msg = self._check_conflict(conn, self._class_id, values, exclude_slot_id=slot_id)
+                if is_conflict:
+                    QMessageBox.critical(self, "Conflit d'horaire / تداخل في الجدول", msg)
+                    return
                 TimetableRepository(conn).update_slot(
                     slot_id,
                     values["day_of_week"],
@@ -537,64 +674,131 @@ class TimetableWindow(QMainWindow):
 
     # ── Print ─────────────────────────────────────────────────
     def _print_timetable(self):
-        if not self._class_id:
-            QMessageBox.information(self, "Info", "Sélectionnez une classe avant d'imprimer.")
-            return
-        try:
-            from fpdf import FPDF
-        except ImportError:
-            QMessageBox.warning(self, "Erreur", "fpdf2 non installé.")
-            return
+        """Generate an official PDF timetable for the selected class or teacher."""
+        class_id = self._class_id
+        teacher_id = self.cmb_teacher.currentData()
 
-        class_name = self.cmb_class.currentText()
+        if not class_id and not teacher_id:
+            QMessageBox.information(self, "Info", "Sélectionnez une classe ou un professeur avant d'imprimer.")
+            return
 
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                rows = TimetableRepository(conn).list_slots_for_print(self._class_id)
+                repo = TimetableRepository(conn)
+                school_info = FinanceRepository(conn).get_school_info()
+
+                if class_id:
+                    entity_name = self.cmb_class.currentText()
+                    title = f"EMPLOI DU TEMPS — {entity_name.upper()}"
+                    col5_header = "Enseignant"
+                    rows = repo.list_slots_for_print(class_id)
+                else:
+                    entity_name = self.cmb_teacher.currentText()
+                    title = f"EMPLOI DU TEMPS — {entity_name.upper()}"
+                    col5_header = "Classe"
+                    rows = repo.list_slots_for_teacher_print(teacher_id)
         except Exception as e:
             QMessageBox.critical(self, "Erreur", str(e))
             return
 
+        if not rows:
+            QMessageBox.information(self, "Vide", "Aucune séance à imprimer pour cette sélection.")
+            return
+
+        # ── Build PDF ──────────────────────────────────────────
         pdf = FPDF(orientation="L", format="A4")
+        pdf.set_margins(10, 10, 10)
+        pdf.set_auto_page_break(auto=True, margin=12)
         pdf.add_page()
 
-        # Polices Unicode (Cairo) pour supporter Arabe + Latin/accents
-        import os as _os
+        # Register Cairo font for Unicode (Arabic class/teacher names)
+        _font_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Fonts", "Cairo", "static")
+        _font_ok = False
+        try:
+            pdf.add_font("Cairo", "", os.path.join(_font_dir, "Cairo-Regular.ttf"))
+            pdf.add_font("Cairo", "B", os.path.join(_font_dir, "Cairo-Bold.ttf"))
+            _font_ok = True
+        except Exception:
+            pass
+        font = "Cairo" if _font_ok else "Helvetica"
 
-        _font_dir = _os.path.join(_os.path.dirname(_os.path.abspath(__file__)), "Fonts", "Cairo", "static")
-        pdf.add_font("Cairo", "", _os.path.join(_font_dir, "Cairo-Regular.ttf"))
-        pdf.add_font("Cairo", "B", _os.path.join(_font_dir, "Cairo-Bold.ttf"))
+        # Official header (school info + title)
+        apply_grades_sheet_header(pdf, school_info, title)
 
-        pdf.set_font("Cairo", "B", 14)
-        pdf.cell(0, 10, f"Emploi du Temps \u2014 {class_name}", new_x="LMARGIN", new_y="NEXT", align="C")
-        pdf.set_font("Cairo", "", 10)
-        pdf.ln(4)
+        # Date subtitle
+        pdf.set_font(font, "", 9)
+        pdf.set_text_color(100, 116, 139)
+        pdf.cell(
+            0,
+            6,
+            f"Imprimé le : {datetime.now().strftime('%d/%m/%Y à %H:%M')}",
+            new_x="LMARGIN",
+            new_y="NEXT",
+            align="C",
+        )
+        pdf.ln(3)
 
-        col_w = [30, 22, 22, 60, 60, 30]
-        headers = ["Jour", "Début", "Fin", "Matière", "Enseignant", "Salle"]
-        pdf.set_fill_color(41, 98, 255)
-        pdf.set_text_color(255, 255, 255)
-        for w, h in zip(col_w, headers):
-            pdf.cell(w, 8, h, border=1, fill=True)
+        # ── Table ──────────────────────────────────────────────
+        col_w = [32, 20, 20, 65, 65, 26]
+        headers = ["Jour", "Début", "Fin", "Matière", col5_header, "Salle"]
+
+        apply_table_header_style(pdf, font, 10)
+        for w, h_text in zip(col_w, headers):
+            pdf.cell(w, 9, h_text, border=1, fill=True)
         pdf.ln()
 
-        pdf.set_text_color(0, 0, 0)
-        fill = False
+        apply_table_body_style(pdf, font, 9)
+        current_day = ""
+        row_idx = 0
+
         for row in rows:
-            pdf.set_fill_color(230, 240, 255) if fill else pdf.set_fill_color(255, 255, 255)
-            for w, val in zip(col_w, row):
-                pdf.cell(w, 7, str(val or ""), border=1, fill=True)
-            pdf.ln()
-            fill = not fill
+            day, start, end, subject, col5, room = (str(v or "") for v in row)
 
-        import tempfile
+            # Day group separator
+            if day != current_day:
+                current_day = day
+                day_ar = DAYS_FR_AR.get(day, "")
+                pdf.set_fill_color(30, 41, 59)
+                pdf.set_text_color(248, 250, 252)
+                pdf.set_font(font, "B", 9)
+                pdf.cell(
+                    sum(col_w),
+                    7,
+                    f"  {day}    {day_ar}",
+                    border=1,
+                    new_x="LMARGIN",
+                    new_y="NEXT",
+                    fill=True,
+                )
+                apply_table_body_style(pdf, font, 9)
 
-        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
-        pdf.output(tmp.name)
-        tmp.close()
-        _os.startfile(tmp.name)
-        AppLogger.info("Timetable", f"Emploi du temps imprimé: {tmp.name}")
+            set_zebra_row_fill(pdf, row_idx)
+            pdf.cell(col_w[0], 7, day, border=1, fill=True)
+            pdf.cell(col_w[1], 7, start, border=1, fill=True)
+            pdf.cell(col_w[2], 7, end, border=1, fill=True)
+            pdf.cell(col_w[3], 7, subject, border=1, fill=True)
+            pdf.cell(col_w[4], 7, col5, border=1, fill=True)
+            pdf.cell(col_w[5], 7, room, border=1, new_x="LMARGIN", new_y="NEXT", fill=True)
+            row_idx += 1
+
+        # Footer note
+        pdf.ln(3)
+        pdf.set_font(font, "", 8)
+        pdf.set_text_color(148, 163, 184)
+        pdf.cell(0, 5, "El Malick Gest — Gestion Scolaire", align="C")
+
+        safe_name = entity_name.replace(" ", "_").replace("/", "-")
+        output_pdf(
+            pdf,
+            self,
+            f"EmploiDuTemps_{safe_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
+            mode=TIMETABLE_PDF_MODE,
+            dialog_title="Sauvegarder l'Emploi du Temps",
+            success_save_message="Emploi du temps généré avec succès.",
+            success_print_message="Emploi du temps envoyé à l'imprimante.",
+        )
+        AppLogger.info("Timetable", f"PDF emploi du temps généré: {entity_name}")
 
     # Called by main_dashbord refresh system
     def refresh_data(self):
