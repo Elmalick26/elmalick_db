@@ -64,7 +64,6 @@ from login_window import LoginWindow
 try:
     from academic_settings import AcademicSettingsWindow
     from admin_documents import AdminDocsWindow
-    from advanced_reports import AdvancedReportsWindow
     from analytics_dashboard import AnalyticsDashboardWindow
     from bulletin_generation import BulletinGenerationWindow
     from communication_ui import CommunicationWindow
@@ -149,7 +148,6 @@ class MainWindow(QMainWindow):
                 "student_discipline",
                 "student_grades",
                 "bulletin_generation",
-                "advanced_reports",
             ],
             "Prof": ["student_attendance", "student_discipline", "student_grades"],
         }
@@ -807,8 +805,7 @@ class MainWindow(QMainWindow):
             ("inventory", "Gestion de Stock", "📦", InventoryWindow, "Finance"),
             ("admin_docs", "Documents Administratifs", "🗂️", AdminDocsWindow, "Outils & Rapports"),
             ("communication", "Centre de Messagerie", "📧", CommunicationWindow, "Outils & Rapports"),
-            ("advanced_reports", "Rapports Avancés (Excel)", "📊", AdvancedReportsWindow, "Outils & Rapports"),
-            ("analytics_dashboard", "Analytique & Statistiques", "📉", AnalyticsDashboardWindow, "Outils & Rapports"),
+            ("analytics_dashboard", "Analytics & Rapports", "📊", AnalyticsDashboardWindow, "Outils & Rapports"),
             ("timetable", "Emploi du Temps", "📅", TimetableWindow, "Scolarité & Pédagogie"),
         ]
 
@@ -838,7 +835,6 @@ class MainWindow(QMainWindow):
                 "student_discipline",
                 "student_grades",
                 "bulletin_generation",
-                "advanced_reports",
             ],
             "Prof": ["student_attendance", "student_discipline", "student_grades"],
         }

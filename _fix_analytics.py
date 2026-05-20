@@ -1,388 +1,26 @@
-"""
-analytics_dashboard.py — Phase 6.1+ (consolidé avec advanced_reports)
-لوحة تحليلات وتقارير متكاملة.
-
-• KPI: moyenne générale, assiduité, recouvrement, élèves en difficulté
-• Tab 1 — Notes par matière     (bar chart normalisé /20)
-• Tab 2 — Distribution des notes par classe  (histogramme)
-• Tab 3 — Évolution de la présence mensuelle (line chart)
-• Tab 4 — Tableau financier: recouvrement (pie) + évolution mensuelle (bar)
-• Tab 5 — Exports Excel (finances, étudiants, assiduité, notes) + PDF global
-"""
-
-from __future__ import annotations
+"""Helper script: rebuild analytics_dashboard.py cleanly."""
 
 import os
-import sys
-from datetime import datetime
 
-import matplotlib
-from fpdf import FPDF
-from openpyxl import Workbook
-from openpyxl.styles import Font, PatternFill
-from PyQt6.QtCore import Qt, QThread, pyqtSignal
-from PyQt6.QtGui import QColor, QFont
-from PyQt6.QtWidgets import (
-    QApplication,
-    QComboBox,
-    QFileDialog,
-    QFrame,
-    QGraphicsDropShadowEffect,
-    QGridLayout,
-    QHBoxLayout,
-    QLabel,
-    QMainWindow,
-    QMessageBox,
-    QProgressBar,
-    QPushButton,
-    QSplitter,
-    QTabWidget,
-    QVBoxLayout,
-    QWidget,
-)
+target = os.path.join(os.path.dirname(__file__), "analytics_dashboard.py")
 
-matplotlib.use("Qt5Agg")
-import matplotlib.pyplot as plt  # noqa: E402
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas  # noqa: E402
-from matplotlib.figure import Figure  # noqa: E402
+# Read current file and keep only lines 1-373 (new content before old section)
+with open(target, "r", encoding="utf-8") as f:
+    lines = f.readlines()
 
-from app_logger import AppLogger  # noqa: E402
-from database_setup import DatabaseManager  # noqa: E402
-from pdf_report_style import (  # noqa: E402
-    apply_grades_sheet_header,
-    apply_table_body_style,
-    apply_table_header_style,
-    get_school_info_row,
-    set_zebra_row_fill,
-)
-from print_export_service import get_report_output_mode, output_pdf  # noqa: E402
-from repositories.analytics_repo import AnalyticsRepository  # noqa: E402
-from repositories.finance_repo import FinanceRepository  # noqa: E402
-from services.grade_service import GradeService  # noqa: E402
-from ui_styles import Colors, ThemeManager  # noqa: E402
+# Keep the new content (lines 0-372 in 0-based = lines 1-373 in 1-based)
+new_head = "".join(lines[:373])
 
-COMPREHENSIVE_PDF_MODE = get_report_output_mode("advanced_comprehensive_pdf_mode", "save")
-
-# ── Dark palette (fixed throughout the window) ─────────────────────────────
-_BG = "#161b2e"
-_CARD = "#1e2433"
-_CARD2 = "#252b3b"
-_TEXT = "#e0e0e0"
-_MUTED = "#9ca3af"
-_BORDER = "#374151"
-_ACCENT = "#4fc3f7"
-
-
-def _drop_shadow(widget) -> None:
-    """Attach a subtle drop-shadow to *widget*."""
-    eff = QGraphicsDropShadowEffect()
-    eff.setBlurRadius(12)
-    eff.setColor(QColor(0, 0, 0, 55))
-    eff.setOffset(0, 3)
-    widget.setGraphicsEffect(eff)
-
-
-# ──────────────────────────────────────────────────────────────────────────
-# Worker: Excel report generation (runs in a background thread)
-# ──────────────────────────────────────────────────────────────────────────
-class ReportWorker(QThread):
-    progress = pyqtSignal(int)
-    finished = pyqtSignal(str)
-    error = pyqtSignal(str)
-
-    def __init__(self, report_type: str, params: dict):
-        super().__init__()
-        self.report_type = report_type
-        self.params = params
-
-    # -- helpers -----------------------------------------------------------
-
-    @staticmethod
-    def _name_expr(cols: set, alias: str = "s") -> str:
-        parts: list[str] = []
-        if {"first_name_fr", "last_name_fr"}.issubset(cols):
-            parts.append(f"TRIM(NULLIF({alias}.first_name_fr,'') || ' ' || NULLIF({alias}.last_name_fr,''))")
-        if "student_name" in cols:
-            parts.append(f"NULLIF({alias}.student_name,'')")
-        if "first_name_fr" in cols:
-            parts.append(f"NULLIF({alias}.first_name_fr,'')")
-        if "last_name_fr" in cols:
-            parts.append(f"NULLIF({alias}.last_name_fr,'')")
-        return f"COALESCE({', '.join(parts)}, 'N/A')" if parts else "'N/A'"
-
-    @staticmethod
-    def _hdr_fill() -> PatternFill:
-        return PatternFill(start_color="1E293B", end_color="1E293B", fill_type="solid")
-
-    @staticmethod
-    def _hdr_font() -> Font:
-        return Font(color="FFFFFF", bold=True)
-
-    def _save(self, wb: Workbook, name: str) -> str:
-        fp = self.params.get("output_path") or os.path.join(os.getcwd(), name)
-        wb.save(fp)
-        return fp
-
-    # -- run dispatcher ----------------------------------------------------
-
-    def run(self) -> None:
-        try:
-            dispatch = {
-                "excel_financial": self._gen_financial,
-                "excel_students": self._gen_students,
-                "excel_attendance": self._gen_attendance,
-                "excel_grades": self._gen_grades,
-            }
-            fn = dispatch.get(self.report_type)
-            if fn:
-                self.finished.emit(fn())
-            else:
-                self.error.emit(f"Type de rapport inconnu: {self.report_type}")
-        except Exception as exc:
-            AppLogger.error("ReportWorker", f"{self.report_type}: {exc}")
-            self.error.emit(str(exc))
-
-    # -- generators --------------------------------------------------------
-
-    def _gen_financial(self) -> str:
-        period = self.params.get("period", "12 derniers mois")
-        wb = Workbook()
-        ws = wb.active
-        ws.title = "Rapport Financier"
-        hf, hfont = self._hdr_fill(), self._hdr_font()
-
-        ws["A1"] = "RAPPORT FINANCIER COMPLET"
-        ws["A1"].font = Font(bold=True, size=16, color="1E293B")
-        ws.merge_cells("A1:F1")
-        ws["A2"] = f"Généré le: {datetime.now().strftime('%d/%m/%Y %H:%M')}"
-        ws.merge_cells("A2:F2")
-        ws["A3"] = f"Période: {period}"
-        ws.merge_cells("A3:F3")
-        self.progress.emit(10)
-
-        db = DatabaseManager()
-        with db.get_connection() as conn:
-            repo = AnalyticsRepository(conn)
-            income_rows = repo.get_monthly_income_totals(period)
-            expense_rows = repo.get_monthly_expense_totals(period)
-
-        # Recettes
-        ws["A4"] = "RECETTES"
-        ws["A4"].font = Font(bold=True, size=12)
-        for col, hdr in enumerate(["Mois", "Nb Paiements", "Montant Total"], 1):
-            c = ws.cell(row=5, column=col, value=hdr)
-            c.fill = hf
-            c.font = hfont
-        row, total_inc = 6, 0
-        for month, cnt, total in income_rows:
-            ws[f"A{row}"] = month
-            ws[f"B{row}"] = cnt
-            ws[f"C{row}"] = f"{total or 0:,.0f} FCFA"
-            total_inc += total or 0
-            row += 1
-        ws[f"A{row}"] = "TOTAL RECETTES"
-        ws[f"A{row}"].font = Font(bold=True)
-        ws[f"C{row}"] = f"{total_inc:,.0f} FCFA"
-        ws[f"C{row}"].font = Font(bold=True, color="10B981")
-        self.progress.emit(50)
-
-        # Dépenses
-        r0 = row + 2
-        ws[f"A{r0}"] = "DÉPENSES"
-        ws[f"A{r0}"].font = Font(bold=True, size=12)
-        for col, hdr in enumerate(["Mois", "Nb Dépenses", "Montant Total"], 1):
-            c = ws.cell(row=r0 + 1, column=col, value=hdr)
-            c.fill = hf
-            c.font = hfont
-        r, total_exp = r0 + 2, 0
-        for month, cnt, total in expense_rows:
-            ws[f"A{r}"] = month
-            ws[f"B{r}"] = cnt
-            ws[f"C{r}"] = f"{total or 0:,.0f} FCFA"
-            total_exp += total or 0
-            r += 1
-        ws[f"A{r}"] = "TOTAL DÉPENSES"
-        ws[f"A{r}"].font = Font(bold=True)
-        ws[f"C{r}"] = f"{total_exp:,.0f} FCFA"
-        ws[f"C{r}"].font = Font(bold=True, color="EF4444")
-        bal = total_inc - total_exp
-        ws[f"A{r + 2}"] = "SOLDE NET"
-        ws[f"A{r + 2}"].font = Font(bold=True, size=13)
-        ws[f"C{r + 2}"] = f"{bal:,.0f} FCFA"
-        ws[f"C{r + 2}"].font = Font(bold=True, size=13, color="10B981" if bal >= 0 else "EF4444")
-        for col, w in zip("ABC", [15, 15, 22]):
-            ws.column_dimensions[col].width = w
-        self.progress.emit(100)
-        safe = period.encode("ascii", "ignore").decode("ascii").replace(" ", "_").replace("'", "") or "periode"
-        return self._save(wb, f"Rapport_Financier_{safe}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx")
-
-    def _gen_students(self) -> str:
-        wb = Workbook()
-        ws = wb.active
-        ws.title = "Étudiants"
-        hf, hfont = self._hdr_fill(), self._hdr_font()
-
-        db = DatabaseManager()
-        with db.get_connection() as conn:
-            repo = AnalyticsRepository(conn)
-            year_id, year_label = repo.get_active_year_context()
-            cols = repo.get_student_columns()
-            name_expr = self._name_expr(cols)
-            bp = "s.birth_place" if "birth_place" in cols else "''"
-            pr = "s.parent_name" if "parent_name" in cols else "''"
-            ph = "s.phone" if "phone" in cols else "''"
-            ad = "s.address" if "address" in cols else "''"
-            en = "s.registration_date" if "registration_date" in cols else "''"
-
-        ws["A1"] = "LISTE DES ÉTUDIANTS"
-        ws["A1"].font = Font(bold=True, size=16, color="1E293B")
-        ws.merge_cells("A1:L1")
-        ws["A2"] = f"Année scolaire: {year_label}"
-        ws.merge_cells("A2:L2")
-        hdrs = [
-            "ID",
-            "N°",
-            "Nom Complet",
-            "Classe",
-            "Sexe",
-            "Naissance",
-            "Lieu",
-            "Parent",
-            "Tél.",
-            "Adresse",
-            "Inscription",
-            "Statut",
-        ]
-        for col, h in enumerate(hdrs, 1):
-            c = ws.cell(row=4, column=col, value=h)
-            c.fill = hf
-            c.font = hfont
-        self.progress.emit(25)
-
-        with db.get_connection() as conn:
-            cur = conn.cursor()
-            if year_id:
-                cur.execute(
-                    f"""SELECT s.id,COALESCE(CAST(scn.class_number AS VARCHAR),''),
-                    {name_expr} AS n,c.class_name_fr,
-                    CASE WHEN s.gender IN ('0','M') THEN 'M' ELSE 'F' END,
-                    CAST(s.birth_date AS VARCHAR),{bp},{pr},{ph},{ad},
-                    CAST({en} AS VARCHAR),s.status
-                    FROM Students s
-                    JOIN StudentClassNumbers scn ON scn.student_id=s.id AND scn.year_id=%s
-                    JOIN Classes c ON scn.class_id=c.id
-                    WHERE s.status='Active'
-                    ORDER BY c.sort_order,COALESCE(scn.class_number,9999),n""",
-                    (year_id,),
-                )
-            else:
-                cur.execute(
-                    f"""SELECT s.id,'',{name_expr} AS n,'N/A',
-                    CASE WHEN s.gender IN ('0','M') THEN 'M' ELSE 'F' END,
-                    CAST(s.birth_date AS VARCHAR),{bp},{pr},{ph},{ad},
-                    CAST({en} AS VARCHAR),s.status
-                    FROM Students s WHERE s.status='Active' ORDER BY n"""
-                )
-            rows = cur.fetchall()
-
-        for i, student in enumerate(rows, 5):
-            for col, val in enumerate(student, 1):
-                ws.cell(row=i, column=col, value=val)
-        for col, w in zip("ABCDEFGHIJKL", [8, 10, 28, 18, 8, 14, 18, 22, 14, 24, 14, 10]):
-            ws.column_dimensions[col].width = w
-        self.progress.emit(100)
-        return self._save(wb, f"Liste_Etudiants_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx")
-
-    def _gen_attendance(self) -> str:
-        wb = Workbook()
-        ws = wb.active
-        ws.title = "Assiduité"
-        hf, hfont = self._hdr_fill(), self._hdr_font()
-        ws["A1"] = "RAPPORT D'ASSIDUITÉ"
-        ws["A1"].font = Font(bold=True, size=16, color="1E293B")
-        ws.merge_cells("A1:G1")
-        ws["A2"] = f"Généré le: {datetime.now().strftime('%d/%m/%Y %H:%M')}"
-        ws.merge_cells("A2:G2")
-        for col, h in enumerate(["Classe", "Étudiants", "Présents", "Absents", "Retards", "Total", "Taux Abs%"], 1):
-            c = ws.cell(row=4, column=col, value=h)
-            c.fill = hf
-            c.font = hfont
-        self.progress.emit(20)
-
-        db = DatabaseManager()
-        with db.get_connection() as conn:
-            repo = AnalyticsRepository(conn)
-            year_id, year_label = repo.get_active_year_context()
-            ws["A3"] = f"Année: {year_label}"
-            ws.merge_cells("A3:G3")
-            data = repo.get_attendance_summary_by_class(year_id) if year_id else []
-
-        for i, row in enumerate(data, 5):
-            cls, cnt, pres, abs_, late, total = row
-            rate = (abs_ or 0) / max(total or 1, 1) * 100
-            for col, val in enumerate(
-                [cls or "-", cnt or 0, pres or 0, abs_ or 0, late or 0, total or 0, round(rate, 2)],
-                1,
-            ):
-                ws.cell(row=i, column=col, value=val)
-
-        for col, w in zip("ABCDEFG", [24, 12, 12, 12, 12, 12, 16]):
-            ws.column_dimensions[col].width = w
-        self.progress.emit(100)
-        return self._save(wb, f"Rapport_Assiduite_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx")
-
-    def _gen_grades(self) -> str:
-        wb = Workbook()
-        ws = wb.active
-        ws.title = "Notes"
-        hf, hfont = self._hdr_fill(), self._hdr_font()
-        ws["A1"] = "RAPPORT GLOBAL DES NOTES"
-        ws["A1"].font = Font(bold=True, size=16, color="1E293B")
-        ws.merge_cells("A1:F1")
-        ws["A2"] = f"Généré le: {datetime.now().strftime('%d/%m/%Y %H:%M')}"
-        ws.merge_cells("A2:F2")
-        for col, h in enumerate(["Classe", "Étudiants", "Nb Notes", "Min", "Moyenne", "Max"], 1):
-            c = ws.cell(row=4, column=col, value=h)
-            c.fill = hf
-            c.font = hfont
-        self.progress.emit(20)
-
-        db = DatabaseManager()
-        with db.get_connection() as conn:
-            repo = AnalyticsRepository(conn)
-            year_id, year_label = repo.get_active_year_context()
-            ws["A3"] = f"Année: {year_label}"
-            ws.merge_cells("A3:F3")
-            data = repo.get_grades_summary_by_class(year_id) if year_id else []
-
-        for i, row in enumerate(data, 5):
-            cls, cnt, nb, mn, avg, mx = row
-            for col, val in enumerate(
-                [
-                    cls or "-",
-                    cnt or 0,
-                    nb or 0,
-                    round(mn, 2) if mn is not None else "-",
-                    round(avg, 2) if avg is not None else "-",
-                    round(mx, 2) if mx is not None else "-",
-                ],
-                1,
-            ):
-                ws.cell(row=i, column=col, value=val)
-
-        for col, w in zip("ABCDEF", [24, 12, 12, 10, 12, 10]):
-            ws.column_dimensions[col].width = w
-        self.progress.emit(100)
-        return self._save(wb, f"Rapport_Notes_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx")
-
+# New tail: AnalyticsWorker + charts + KpiCard + AnalyticsDashboardWindow + __main__
+new_tail = r'''
 
 # ──────────────────────────────────────────────────────────────────────────
 # Worker: KPI + chart data (runs in background thread)
 # ──────────────────────────────────────────────────────────────────────────
 class AnalyticsWorker(QThread):
-    grades_ready = pyqtSignal(list, list, list)  # (names, normalized_avgs, coefficients)
-    attendance_ready = pyqtSignal(dict)  # {"YYYY-MM": rate_pct}
-    finance_ready = pyqtSignal(float, float)  # (total_paid, total_due)
+    grades_ready = pyqtSignal(list, list, list)   # (names, normalized_avgs, coefficients)
+    attendance_ready = pyqtSignal(dict)            # {"YYYY-MM": rate_pct}
+    finance_ready = pyqtSignal(float, float)       # (total_paid, total_due)
     error_signal = pyqtSignal(str)
 
     def __init__(self, year_id: int, class_id: int | None = None):
@@ -443,16 +81,8 @@ class GradesBarChart(QWidget):
     def _draw_empty(self) -> None:
         self.ax.clear()
         self.ax.set_facecolor(_CARD)
-        self.ax.text(
-            0.5,
-            0.5,
-            "En attente de données…",
-            ha="center",
-            va="center",
-            color=_MUTED,
-            fontsize=12,
-            transform=self.ax.transAxes,
-        )
+        self.ax.text(0.5, 0.5, "En attente de données…", ha="center", va="center",
+                     color=_MUTED, fontsize=12, transform=self.ax.transAxes)
         self.ax.axis("off")
         self.canvas.draw()
 
@@ -472,14 +102,8 @@ class GradesBarChart(QWidget):
         for spine in self.ax.spines.values():
             spine.set_edgecolor(_BORDER)
         for bar, avg in zip(bars, averages):
-            self.ax.text(
-                bar.get_width() + 0.2,
-                bar.get_y() + bar.get_height() / 2,
-                f"{avg:.1f}",
-                va="center",
-                color=_TEXT,
-                fontsize=9,
-            )
+            self.ax.text(bar.get_width() + 0.2, bar.get_y() + bar.get_height() / 2,
+                         f"{avg:.1f}", va="center", color=_TEXT, fontsize=9)
         self.canvas.draw()
 
 
@@ -497,25 +121,16 @@ class AttendanceLineChart(QWidget):
     def _draw_empty(self) -> None:
         self.ax.clear()
         self.ax.set_facecolor(_CARD)
-        self.ax.text(
-            0.5, 0.5, "Chargement…", ha="center", va="center", color=_MUTED, fontsize=12, transform=self.ax.transAxes
-        )
+        self.ax.text(0.5, 0.5, "Chargement…", ha="center", va="center",
+                     color=_MUTED, fontsize=12, transform=self.ax.transAxes)
         self.ax.axis("off")
         self.canvas.draw()
 
     def update_data(self, monthly: dict) -> None:
         self.ax.clear()
         if not monthly:
-            self.ax.text(
-                0.5,
-                0.5,
-                "Aucune donnée de présence",
-                ha="center",
-                va="center",
-                color=_MUTED,
-                fontsize=11,
-                transform=self.ax.transAxes,
-            )
+            self.ax.text(0.5, 0.5, "Aucune donnée de présence", ha="center", va="center",
+                         color=_MUTED, fontsize=11, transform=self.ax.transAxes)
             self.ax.axis("off")
             self.canvas.draw()
             return
@@ -551,9 +166,8 @@ class FinancePieChart(QWidget):
     def _draw_empty(self) -> None:
         self.ax.clear()
         self.ax.set_facecolor(_CARD)
-        self.ax.text(
-            0.5, 0.5, "Chargement…", ha="center", va="center", color=_MUTED, fontsize=12, transform=self.ax.transAxes
-        )
+        self.ax.text(0.5, 0.5, "Chargement…", ha="center", va="center",
+                     color=_MUTED, fontsize=12, transform=self.ax.transAxes)
         self.ax.axis("off")
         self.canvas.draw()
 
@@ -561,16 +175,8 @@ class FinancePieChart(QWidget):
         self.ax.clear()
         remaining = max(0.0, total_due - paid)
         if total_due <= 0:
-            self.ax.text(
-                0.5,
-                0.5,
-                "Aucune donnée financière",
-                ha="center",
-                va="center",
-                color=_MUTED,
-                fontsize=11,
-                transform=self.ax.transAxes,
-            )
+            self.ax.text(0.5, 0.5, "Aucune donnée financière", ha="center", va="center",
+                         color=_MUTED, fontsize=11, transform=self.ax.transAxes)
             self.ax.axis("off")
             self.canvas.draw()
             return
@@ -595,7 +201,8 @@ class FinancePieChart(QWidget):
 # KPI Card widget
 # ──────────────────────────────────────────────────────────────────────────
 class KpiCard(QFrame):
-    def __init__(self, title: str, value: str = "—", icon: str = "📊", color: str = _ACCENT, parent=None):
+    def __init__(self, title: str, value: str = "—", icon: str = "📊",
+                 color: str = _ACCENT, parent=None):
         super().__init__(parent)
         self.setFrameShape(QFrame.Shape.StyledPanel)
         self.setMinimumHeight(82)
@@ -985,7 +592,8 @@ class AnalyticsDashboardWindow(QMainWindow):
         ax = self.hist_fig.add_subplot(111)
         ax.set_facecolor(_CARD2)
         if not class_id:
-            ax.text(0.5, 0.5, "Sélectionnez une classe", ha="center", va="center", fontsize=13, color=_MUTED)
+            ax.text(0.5, 0.5, "Sélectionnez une classe", ha="center", va="center",
+                    fontsize=13, color=_MUTED)
             ax.axis("off")
             self.hist_canvas.draw()
             return
@@ -1001,7 +609,8 @@ class AnalyticsDashboardWindow(QMainWindow):
         except Exception as exc:
             AppLogger.error("AnalyticsDashboard", f"histogram: {exc}")
         if not grades:
-            ax.text(0.5, 0.5, "Aucune note disponible", ha="center", va="center", fontsize=13, color=_MUTED)
+            ax.text(0.5, 0.5, "Aucune note disponible", ha="center", va="center",
+                    fontsize=13, color=_MUTED)
             ax.axis("off")
             self.hist_canvas.draw()
             return
@@ -1013,11 +622,11 @@ class AnalyticsDashboardWindow(QMainWindow):
         ax.set_xlabel(f"Notes sur {int(max_score)}", fontsize=10, color=_MUTED)
         ax.set_ylabel("Nombre d\'élèves", fontsize=10, color=_MUTED)
         class_name = self.cmb_hist.currentText()
-        ax.set_title(
-            f"Distribution des Notes — {class_name}\nAnnée: {year_label}", fontsize=12, fontweight="bold", color=_TEXT
-        )
+        ax.set_title(f"Distribution des Notes — {class_name}\nAnnée: {year_label}",
+                     fontsize=12, fontweight="bold", color=_TEXT)
         avg = sum(grades) / len(grades)
-        ax.axvline(avg, color="#ef5350", linestyle="--", linewidth=2, label=f"Moyenne: {avg:.1f}/{int(max_score)}")
+        ax.axvline(avg, color="#ef5350", linestyle="--", linewidth=2,
+                   label=f"Moyenne: {avg:.1f}/{int(max_score)}")
         ax.legend(facecolor=_CARD, labelcolor=_MUTED)
         ax.grid(axis="y", alpha=0.25, linestyle="--")
         ax.tick_params(colors=_MUTED)
@@ -1041,7 +650,8 @@ class AnalyticsDashboardWindow(QMainWindow):
                 expense_data = repo.get_monthly_expense_totals(period)
         except Exception as exc:
             AppLogger.error("AnalyticsDashboard", f"finance bar: {exc}")
-            ax.text(0.5, 0.5, "Erreur de chargement", ha="center", va="center", color="#ef5350", fontsize=12)
+            ax.text(0.5, 0.5, "Erreur de chargement", ha="center", va="center",
+                    color="#ef5350", fontsize=12)
             ax.axis("off")
             self.fin_bar_canvas.draw()
             return
@@ -1049,7 +659,8 @@ class AnalyticsDashboardWindow(QMainWindow):
         exp_dict = {r[0]: r[1] or 0 for r in expense_data}
         months = sorted(set(inc_dict) | set(exp_dict))
         if not months:
-            ax.text(0.5, 0.5, "Aucune donnée financière", ha="center", va="center", color=_MUTED, fontsize=12)
+            ax.text(0.5, 0.5, "Aucune donnée financière", ha="center", va="center",
+                    color=_MUTED, fontsize=12)
             ax.axis("off")
             self.fin_bar_canvas.draw()
             return
@@ -1083,7 +694,9 @@ class AnalyticsDashboardWindow(QMainWindow):
 
         pdf.set_font("Arial", "", 10)
         pdf.set_text_color(51, 65, 85)
-        pdf.cell(0, 7, _lat(f"Période: {period} | Généré le: {datetime.now().strftime('%d/%m/%Y %H:%M')}"), 0, 1, "C")
+        pdf.cell(0, 7,
+                 _lat(f"Période: {period} | Généré le: {datetime.now().strftime('%d/%m/%Y %H:%M')}"),
+                 0, 1, "C")
         pdf.ln(2)
         db = DatabaseManager()
         with db.get_connection() as conn:
@@ -1096,13 +709,11 @@ class AnalyticsDashboardWindow(QMainWindow):
         apply_table_header_style(pdf, "Arial", 10)
         pdf.cell(0, 8, _lat("Résumé Financier"), 1, 1, "L", True)
         apply_table_body_style(pdf, "Arial", 10)
-        for idx, (lbl, val) in enumerate(
-            [
-                ("Total Recettes", f"{total_inc:,.0f} FCFA"),
-                ("Total Dépenses", f"{total_exp:,.0f} FCFA"),
-                ("Solde Net", f"{balance:,.0f} FCFA"),
-            ]
-        ):
+        for idx, (lbl, val) in enumerate([
+            ("Total Recettes", f"{total_inc:,.0f} FCFA"),
+            ("Total Dépenses", f"{total_exp:,.0f} FCFA"),
+            ("Solde Net", f"{balance:,.0f} FCFA"),
+        ]):
             set_zebra_row_fill(pdf, idx)
             pdf.cell(110, 8, _lat(lbl), 1, 0, "L", True)
             pdf.cell(80, 8, _lat(val), 1, 1, "R", True)
@@ -1110,16 +721,14 @@ class AnalyticsDashboardWindow(QMainWindow):
         apply_table_header_style(pdf, "Arial", 10)
         pdf.cell(0, 8, _lat("Résumé Académique"), 1, 1, "L", True)
         apply_table_body_style(pdf, "Arial", 10)
-        for idx, (lbl, val) in enumerate(
-            [
-                ("Année scolaire active", year_label),
-                ("Classes", str(stats.get("total_classes", "—"))),
-                ("Étudiants actifs", str(stats.get("active_students", "—"))),
-                ("Présences", str(stats.get("presents", "—"))),
-                ("Absences", str(stats.get("absents", "—"))),
-                ("Retards", str(stats.get("lates", "—"))),
-            ]
-        ):
+        for idx, (lbl, val) in enumerate([
+            ("Année scolaire active", year_label),
+            ("Classes", str(stats.get("total_classes", "—"))),
+            ("Étudiants actifs", str(stats.get("active_students", "—"))),
+            ("Présences", str(stats.get("presents", "—"))),
+            ("Absences", str(stats.get("absents", "—"))),
+            ("Retards", str(stats.get("lates", "—"))),
+        ]):
             set_zebra_row_fill(pdf, idx)
             pdf.cell(110, 8, _lat(lbl), 1, 0, "L", True)
             pdf.cell(80, 8, _lat(val), 1, 1, "R", True)
@@ -1155,8 +764,7 @@ class AnalyticsDashboardWindow(QMainWindow):
         try:
             pdf = self._build_comprehensive_pdf(period)
             output_pdf(
-                pdf,
-                self,
+                pdf, self,
                 f"Rapport_Complet_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
                 mode=COMPREHENSIVE_PDF_MODE,
                 dialog_title="Enregistrer le rapport PDF",
@@ -1174,8 +782,7 @@ class AnalyticsDashboardWindow(QMainWindow):
         self.status_lbl.setStyleSheet("color:#10b981; font-weight:bold;")
         AppLogger.info("AnalyticsDashboard", f"Export terminé: {filepath}")
         reply = QMessageBox.question(
-            self,
-            "Export Réussi",
+            self, "Export Réussi",
             f"Fichier généré:\n{filepath}\n\nVoulez-vous l\'ouvrir?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
@@ -1202,3 +809,13 @@ if __name__ == "__main__":
     window = AnalyticsDashboardWindow()
     window.show()
     sys.exit(app.exec())
+'''
+
+# Write the clean new file
+with open(target, "w", encoding="utf-8") as f:
+    f.write(new_head + new_tail)
+
+with open(target, "r", encoding="utf-8") as f:
+    final_lines = f.readlines()
+print(f"Done! File now has {len(final_lines)} lines.")
+print(f"Last 3 lines: {repr(''.join(final_lines[-3:]))}")

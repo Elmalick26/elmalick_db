@@ -2,7 +2,7 @@
 -- PostgreSQL database dump
 --
 
-\restrict PipeJpBbM3IWXSfRVViFmmm7TSupJDCps9W1d98wUIYwOcVPErP66SVQNdPwyhR
+\restrict NTDk5FJIipaGd2ELinY4QWWFtqdtum0hznhEFW5efGus1VlrNhXcxr47aGM5M0M
 
 -- Dumped from database version 16.13
 -- Dumped by pg_dump version 16.13
@@ -439,6 +439,20 @@ ALTER SEQUENCE public.inventorylog_id_seq OWNER TO postgres;
 
 ALTER SEQUENCE public.inventorylog_id_seq OWNED BY public.inventorylog.id;
 
+
+--
+-- Name: loginattempts; Type: TABLE; Schema: public; Owner: postgres
+--
+
+CREATE TABLE public.loginattempts (
+    username text NOT NULL,
+    attempt_count integer DEFAULT 0,
+    lockout_until timestamp without time zone,
+    last_attempt timestamp without time zone DEFAULT CURRENT_TIMESTAMP
+);
+
+
+ALTER TABLE public.loginattempts OWNER TO postgres;
 
 --
 -- Name: monthlyfeeschedule; Type: TABLE; Schema: public; Owner: postgres
@@ -1481,6 +1495,13 @@ COPY public.auditlogs (id, actor, action, target, "timestamp") FROM stdin;
 16	admin	LOGIN_FAILED	admin	2026-05-16 21:24:59.993085
 17	admin	LOGIN	admin	2026-05-16 21:25:20.911331
 18	Admin	DELETE_USER	Com	2026-05-16 21:27:45.162598
+19	system	EDIT_STUDENT	Loukhman Diouf (id=3)	2026-05-16 21:29:49.059464
+20	system	EDIT_STAFF	Bouba Diouf (id=1)	2026-05-16 21:40:20.046263
+21	wizard	ADMIN_SETUP	admin	2026-05-16 22:12:03.256609
+22	admin	LOGIN	admin	2026-05-16 22:12:28.502318
+23	admin	LOGIN	admin	2026-05-16 22:39:15.16839
+24	admin	LOGIN	admin	2026-05-17 10:12:42.695475
+25	admin	LOGIN	admin	2026-05-17 10:28:11.996552
 \.
 
 
@@ -1551,6 +1572,14 @@ COPY public.inventoryitems (id, name_fr, name_ar, category, quantity, min_quanti
 COPY public.inventorylog (id, item_id, transaction_type, quantity, transaction_date, notes, performed_by, expense_id) FROM stdin;
 1	1	IN	5	2026-04-26 11:24:02	Stock Initial	\N	\N
 2	1	OUT	1	2026-04-26 11:24:44	CI	\N	\N
+\.
+
+
+--
+-- Data for Name: loginattempts; Type: TABLE DATA; Schema: public; Owner: postgres
+--
+
+COPY public.loginattempts (username, attempt_count, lockout_until, last_attempt) FROM stdin;
 \.
 
 
@@ -1644,7 +1673,7 @@ COPY public.schools (id, name, code, is_active, created_at) FROM stdin;
 --
 
 COPY public.staff (id, first_name, last_name, role, specialty, phone, email, address, hire_date, contract_type, salary_base, hourly_rate, photo_path, status, school_id) FROM stdin;
-1	Bouba	Diouf	Professeur			elmalickdiouf26@gmail.com		2026-04-06	Hourly	0	500	staff_photos\\staff_20260407220349.jpg	Actif	1
+1	Bouba	Diouf	Professeur	Ar	771234567	elmalickdiouf26@gmail.com	Boune	2026-04-05	Hourly	0	500	staff_photos\\staff_20260516214020.jpg	Actif	1
 \.
 
 
@@ -1750,7 +1779,7 @@ COPY public.studentdues (id, student_id, year_id, fee_type, fee_description, ori
 COPY public.students (id, first_name_fr, last_name_fr, first_name_ar, last_name_ar, birth_date, birth_place, gender, address, parent_name, parent_phone, parent_email, parent_address, registration_date, status, photo_path, parent_pin, school_id, student_code, parent_pin_hash) FROM stdin;
 1	Malick	Diouf	مالك	جوف	2020-04-04	Boune	M	Boune	Issa Thiaw	77 042 92 05	malikdiouf868@gmail.com	Mboul	2026-04-04	Active	school_data/photos/student_1_1775599350.4276.jpg	\N	1	EMG-0001	$2b$10$xWRMAavj9dby8yZTdUHDf.WujdQkRHfGFztvJDGapTPv.YkO2b7OS
 2	Babou	Diop			2020-04-06	Mboul	M	Mboul			malikdiouf868@gmail.com		2026-04-06	Active	\N	\N	1	EMG-0002	$2b$10$MwLe1nXMCyoW3l7Prr8xNOvYaU9kPEdkH3YdjGFWTL16DGy1yWz2q
-3	Loukhman	Diouf	لقمان	جوف	2020-04-26	Mboul	M	Boune	Chaiba Diouf	77 000 88 99	loukh@gimail.com	Boune	2026-04-26	Active	school_data/photos/student_1777200705.682989.jpg	\N	1	EMG-0003	$2b$10$.Hiheo1g/jUpVWbFqTkUGuNxi7kgyhg5NbPvUUX1oTwy7hr7d9Iam
+3	Loukhman	Diouf	لقمان	جوف	2020-04-26	Mboul B	M	Boune	Chaiba Diouf	77 000 88 99	loukh@gimail.com	Boune	2026-04-26	Diplômé	school_data/photos/student_1777200705.682989.jpg	\N	1	EMG-0003	$2b$10$.Hiheo1g/jUpVWbFqTkUGuNxi7kgyhg5NbPvUUX1oTwy7hr7d9Iam
 \.
 
 
@@ -1770,6 +1799,7 @@ COPY public.subjects (id, cycle_id, subject_name_ar, subject_name_fr, coefficien
 
 COPY public.timetable (id, class_id, day_of_week, start_time, end_time, subject_id, teacher_id, room) FROM stdin;
 1	1	Lundi	08:00	10:00	1	1	\N
+2	2	Mardi	08:00	12:00	2	1	\N
 \.
 
 
@@ -1778,7 +1808,7 @@ COPY public.timetable (id, class_id, day_of_week, start_time, end_time, subject_
 --
 
 COPY public.users (id, staff_id, username, email, password_hash, role, status, created_date) FROM stdin;
-1	\N	admin	admin@school.local	$2b$12$HObFSnvl71bXW0dd0aGA3..D9g30IwZpWtLqmX2JVZ3BoQEmvpz36	Admin	Actif	2026-04-04 00:26:50.481467
+1	\N	admin	admin@school.local	$2b$12$OZcRSYUKs7PJ8v0dRAPAZOMk3RqG4YDcfAB4dQECcC2tBS5ULjxoC	Admin	Actif	2026-04-04 00:26:50.481467
 \.
 
 
@@ -1807,7 +1837,7 @@ SELECT pg_catalog.setval('public.assessmenttypes_id_seq', 6, true);
 -- Name: auditlogs_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
 --
 
-SELECT pg_catalog.setval('public.auditlogs_id_seq', 18, true);
+SELECT pg_catalog.setval('public.auditlogs_id_seq', 25, true);
 
 
 --
@@ -1982,7 +2012,7 @@ SELECT pg_catalog.setval('public.subjects_id_seq', 2, true);
 -- Name: timetable_id_seq; Type: SEQUENCE SET; Schema: public; Owner: postgres
 --
 
-SELECT pg_catalog.setval('public.timetable_id_seq', 1, true);
+SELECT pg_catalog.setval('public.timetable_id_seq', 2, true);
 
 
 --
@@ -2086,6 +2116,14 @@ ALTER TABLE ONLY public.inventoryitems
 
 ALTER TABLE ONLY public.inventorylog
     ADD CONSTRAINT inventorylog_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: loginattempts loginattempts_pkey; Type: CONSTRAINT; Schema: public; Owner: postgres
+--
+
+ALTER TABLE ONLY public.loginattempts
+    ADD CONSTRAINT loginattempts_pkey PRIMARY KEY (username);
 
 
 --
@@ -2295,6 +2333,13 @@ CREATE INDEX idx_assessment_period ON public.assessmenttypes USING btree (period
 
 
 --
+-- Name: idx_attendance_student_date; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_attendance_student_date ON public.studentattendance USING btree (student_id, date);
+
+
+--
 -- Name: idx_attendance_student_year_status; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -2372,6 +2417,13 @@ CREATE INDEX idx_grades_student_subject ON public.grades USING btree (student_id
 
 
 --
+-- Name: idx_grades_student_year; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_grades_student_year ON public.grades USING btree (student_id, year_id);
+
+
+--
 -- Name: idx_grades_year; Type: INDEX; Schema: public; Owner: postgres
 --
 
@@ -2404,6 +2456,13 @@ CREATE INDEX idx_payments_student ON public.payments USING btree (student_id);
 --
 
 CREATE INDEX idx_payments_student_date ON public.payments USING btree (student_id, transaction_date);
+
+
+--
+-- Name: idx_scn_class_year; Type: INDEX; Schema: public; Owner: postgres
+--
+
+CREATE INDEX idx_scn_class_year ON public.studentclassnumbers USING btree (class_id, year_id);
 
 
 --
@@ -2737,4 +2796,4 @@ ALTER TABLE ONLY public.timetable
 -- PostgreSQL database dump complete
 --
 
-\unrestrict PipeJpBbM3IWXSfRVViFmmm7TSupJDCps9W1d98wUIYwOcVPErP66SVQNdPwyhR
+\unrestrict NTDk5FJIipaGd2ELinY4QWWFtqdtum0hznhEFW5efGus1VlrNhXcxr47aGM5M0M
