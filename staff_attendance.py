@@ -1,30 +1,53 @@
-import sys
-import psycopg2
 import os
-from datetime import datetime
-from database_setup import DatabaseManager
-from app_logger import AppLogger
-from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
-                             QHBoxLayout, QTableWidget, QTableWidgetItem,
-                             QPushButton, QLabel, QComboBox, QMessageBox,
-                             QHeaderView, QGroupBox, QDateEdit, QTimeEdit,
-                             QTabWidget, QGridLayout, QLineEdit,
-                             QFrame, QGraphicsDropShadowEffect)
-from PyQt6.QtCore import Qt, QDate, QTime
-from PyQt6.QtGui import QFont, QColor
+import sys
+from datetime import date, datetime
+
+import psycopg2
 from fpdf import FPDF
+from PyQt6.QtCore import QDate, Qt, QTime
+from PyQt6.QtWidgets import (
+    QApplication,
+    QComboBox,
+    QDateEdit,
+    QFrame,
+    QGridLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QLineEdit,
+    QMainWindow,
+    QMessageBox,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QTabWidget,
+    QTimeEdit,
+    QVBoxLayout,
+    QWidget,
+)
 
-from ui_styles import ThemeManager, Colors, get_card_style, apply_shadow_to_widget, get_table_style, get_tabs_style
-from print_export_service import output_pdf, get_report_output_mode
+from app_logger import AppLogger
+from database_setup import DatabaseManager
+from pdf_report_style import apply_table_body_style, apply_table_header_style, set_zebra_row_fill
+from print_export_service import get_report_output_mode, output_pdf
 from repositories.staff_repo import StaffRepository
-from pdf_report_style import apply_table_header_style, apply_table_body_style, set_zebra_row_fill
+from ui_styles import (
+    Colors,
+    ModuleHeaderWidget,
+    ThemeManager,
+    apply_shadow_to_widget,
+    get_card_style,
+    get_table_style,
+    get_tabs_style,
+)
 
-THEME_AVAILABLE = True
 STAFF_ATTENDANCE_REPORT_OUTPUT_MODE = get_report_output_mode("staff_attendance_mode", "save")
 
 try:
     import arabic_reshaper
     from bidi.algorithm import get_display
+
     ARABIC_SUPPORT = True
 except ModuleNotFoundError:
     ARABIC_SUPPORT = False
@@ -51,10 +74,7 @@ def _contains_arabic(text):
         return False
     if not isinstance(text, str):
         text = str(text)
-    return any(
-        "\u0600" <= ch <= "\u06FF" or "\u0750" <= ch <= "\u077F" or "\u08A0" <= ch <= "\u08FF"
-        for ch in text
-    )
+    return any("\u0600" <= ch <= "\u06FF" or "\u0750" <= ch <= "\u077F" or "\u08A0" <= ch <= "\u08FF" for ch in text)
 
 
 def _prepare_pdf_text(text):
@@ -91,6 +111,7 @@ def _register_arabic_font(pdf):
         return True
     except Exception:
         return False
+
 
 # --- فئة تقارير PDF للحضور ---
 
@@ -166,23 +187,12 @@ class StaffAttendanceWindow(QMainWindow):
         self.setMinimumSize(1100, 700)
 
         # تطبيق المظهر باستخدام ThemeManager
-        if THEME_AVAILABLE:
-            ThemeManager.apply_theme(self)
-        else:
-            colors = Colors()
-            self.setStyleSheet(f"""
-                QMainWindow {{ background-color: {colors.BG_MAIN}; }}
-                QLabel {{ font-family: 'Segoe UI', 'Cairo', sans-serif; color: {colors.TEXT_PRIMARY}; }}
-                QGroupBox {{
-                    border: 1px solid {colors.BORDER}; border-radius: 8px; margin-top: 10px;
-                    background-color: {colors.BG_CARD}; font-weight: bold; color: {colors.TEXT_SECONDARY};
-                }}
-            """)
-
+        ThemeManager.apply_theme(self)
         self.init_ui()
         self.load_staff_combo()
         self.load_attendance_list()
         self.load_report_records()
+        self._load_kpi_stats()
 
     def init_ui(self):
         self.central_widget = QWidget()
@@ -191,58 +201,23 @@ class StaffAttendanceWindow(QMainWindow):
         self.main_layout.setContentsMargins(20, 20, 20, 20)
         self.main_layout.setSpacing(15)
 
-        # 1. Header Frame
-        header_frame = QFrame()
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-        bg_header = colors.BG_HEADER
-        header_text = colors.HEADER_TEXT
-        sub_text = colors.TEXT_SECONDARY
+        # 1. En-tête unifié
+        header = ModuleHeaderWidget(
+            icon="📅",
+            title="POINTAGE PERSONNEL",
+            subtitle="تسجيل الحضور والانصراف للموظفين",
+        )
+        self.main_layout.addWidget(header)
+        self._stat_present = header.add_stat("✅", "Présents Aujourd'hui", "—", "#22C55E")
+        self._stat_absent = header.add_stat("❌", "Absents", "—", "#EF4444")
+        self._stat_late = header.add_stat("⏰", "Retards", "—", "#F59E0B")
+        self._stat_total_staff = header.add_stat("👥", "Total Personnel", "—", "#3B82F6")
 
-        header_frame.setStyleSheet(f"QFrame {{ background-color: {bg_header}; border-radius: 10px; }}")
-        header_frame.setMaximumHeight(80)
+        # 2. KPI Cards
 
-        shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(15)
-        shadow.setColor(QColor(15, 23, 42, 40))
-        shadow.setOffset(0, 4)
-        header_frame.setGraphicsEffect(shadow)
-
-        hl = QHBoxLayout(header_frame)
-        hl.setContentsMargins(20, 15, 20, 15)
-
-        icon_lbl = QLabel("📅")
-        icon_lbl.setStyleSheet("font-size: 32px; background: transparent;")
-
-        title_layout = QVBoxLayout()
-        header_lbl = QLabel("POINTAGE PERSONNEL")
-        header_lbl.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
-        header_lbl.setStyleSheet(f"color: {header_text}; background: transparent;")
-
-        sub_lbl = QLabel("تسجيل الحضور والانصراف للموظفين")
-        sub_lbl.setFont(QFont("Cairo", 11))
-        sub_lbl.setStyleSheet(f"color: {sub_text}; background: transparent;")
-
-        title_layout.addWidget(header_lbl)
-        title_layout.addWidget(sub_lbl)
-
-        hl.addWidget(icon_lbl)
-        hl.addSpacing(15)
-        hl.addLayout(title_layout)
-        hl.addStretch()
-
-        self.main_layout.addWidget(header_frame)
-
-        # 2. Tabs
+        # 3. Onglets
         self.tabs = QTabWidget()
-        if THEME_AVAILABLE:
-            self.tabs.setStyleSheet(get_tabs_style())
-        else:
-            self.tabs.setStyleSheet(f"""
-                QTabWidget::pane {{ border: 1px solid {colors.BORDER}; background: {colors.BG_CARD}; border-radius: 12px; margin-top: 15px; }}
-                QTabBar::tab {{ background: {colors.BG_MAIN}; color: {colors.TEXT_SECONDARY}; padding: 12px 30px; margin-right: 6px; border-top-left-radius: 8px; border-top-right-radius: 8px; font-weight: bold; font-family: 'Segoe UI', 'Cairo'; }}
-                QTabBar::tab:selected {{ background: {colors.BG_HEADER}; color: {colors.HEADER_TEXT}; }}
-                QTabBar::tab:hover {{ background: {colors.BORDER}; }}
-            """)
+        self.tabs.setStyleSheet(get_tabs_style())
 
         self.setup_daily_tab()
         self.setup_reports_tab()
@@ -251,32 +226,26 @@ class StaffAttendanceWindow(QMainWindow):
 
     def create_card(self):
         frame = QFrame()
-        if THEME_AVAILABLE:
-            frame.setStyleSheet(get_card_style())
-            apply_shadow_to_widget(frame)
-        else:
-            colors = Colors()
-            frame.setStyleSheet(f"QFrame {{ background-color: {colors.BG_CARD}; border-radius: 12px; border: 1px solid {colors.BORDER}; }}")
-            shadow = QGraphicsDropShadowEffect()
-            shadow.setBlurRadius(20)
-            shadow.setColor(QColor(15, 23, 42, 15))
-            shadow.setOffset(0, 4)
-            frame.setGraphicsEffect(shadow)
+        frame.setStyleSheet(get_card_style())
         return frame
 
     def styled_date(self):
         de = QDateEdit()
         de.setCalendarPopup(True)
         de.setMinimumHeight(38)
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-        de.setStyleSheet(f"QDateEdit {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }}")
+        colors = ThemeManager.get_colors()
+        de.setStyleSheet(
+            f"QDateEdit {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }}"
+        )
         return de
 
     def styled_combo(self):
         combo = QComboBox()
         combo.setMinimumHeight(38)
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-        combo.setStyleSheet(f"QComboBox {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }}")
+        colors = ThemeManager.get_colors()
+        combo.setStyleSheet(
+            f"QComboBox {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }}"
+        )
         return combo
 
     def style_table(self, table):
@@ -284,16 +253,40 @@ class StaffAttendanceWindow(QMainWindow):
         table.setAlternatingRowColors(True)
         table.verticalHeader().setVisible(False)
         table.verticalHeader().setDefaultSectionSize(40)
-        if THEME_AVAILABLE:
-            table.setStyleSheet(get_table_style())
-        else:
-            colors = Colors()
-            table.setStyleSheet(f"""
-                QTableWidget {{ background-color: {colors.BG_CARD}; border: 1px solid {colors.BORDER}; border-radius: 8px; gridline-color: {colors.BORDER}; font-size: 13px; color: {colors.TEXT_PRIMARY}; }}
-                QTableWidget::item {{ padding: 6px; border-bottom: 1px solid {colors.BG_MAIN}; }}
-                QTableWidget::item:selected {{ background-color: {colors.PRIMARY}; color: white; }}
-                QHeaderView::section {{ background-color: {colors.BG_HEADER}; color: {colors.HEADER_TEXT}; padding: 10px; border: none; font-weight: bold; }}
-            """)
+        table.setStyleSheet(get_table_style())
+
+    def _load_kpi_stats(self):
+        """Charge les KPI du pointage du jour."""
+        try:
+            today = date.today().isoformat()
+            db = DatabaseManager()
+            with db.get_connection() as conn:
+                cursor = conn.cursor()
+                # Total personnel
+                cursor.execute("SELECT COUNT(*) FROM Staff WHERE is_active = TRUE")
+                total_staff = cursor.fetchone()[0] or 0
+                # Présents aujourd'hui
+                cursor.execute(
+                    "SELECT COUNT(*) FROM StaffAttendance WHERE attendance_date = %s AND status = 'present'", (today,)
+                )
+                present = cursor.fetchone()[0] or 0
+                # Absents aujourd'hui
+                cursor.execute(
+                    "SELECT COUNT(*) FROM StaffAttendance WHERE attendance_date = %s AND status = 'absent'", (today,)
+                )
+                absent = cursor.fetchone()[0] or 0
+                # Retards aujourd'hui
+                cursor.execute(
+                    "SELECT COUNT(*) FROM StaffAttendance WHERE attendance_date = %s AND status = 'late'", (today,)
+                )
+                late = cursor.fetchone()[0] or 0
+
+            self._stat_present.set_value(str(present))
+            self._stat_absent.set_value(str(absent))
+            self._stat_late.set_value(str(late))
+            self._stat_total_staff.set_value(str(total_staff))
+        except Exception as e:
+            AppLogger.error("StaffAttendanceWindow", f"Erreur KPI stats: {e}")
 
     # ---------------------------------------------------------
     # TAB 1: Daily Entry
@@ -314,16 +307,20 @@ class StaffAttendanceWindow(QMainWindow):
         self.date_picker.dateChanged.connect(self.load_attendance_list)
 
         self.combo_role_filter = self.styled_combo()
-        self.combo_role_filter.addItems(["Tous / الكل", "Professeur", "Administration", "Comptabilité", "Agent", "Sécurité", "Autre"])
+        self.combo_role_filter.addItems(
+            ["Tous / الكل", "Professeur", "Administration", "Comptabilité", "Agent", "Sécurité", "Autre"]
+        )
         self.combo_role_filter.currentIndexChanged.connect(self.load_attendance_list)
 
         btn_refresh = QPushButton("Actualiser / تحديث")
         btn_refresh.setCursor(Qt.CursorShape.PointingHandCursor)
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-        btn_refresh.setStyleSheet(f"""
+        colors = ThemeManager.get_colors()
+        btn_refresh.setStyleSheet(
+            f"""
             QPushButton {{ background-color: {colors.PRIMARY}; color: white; font-weight: bold; padding: 8px 15px; border-radius: 6px; border: none; }}
             QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}
-        """)
+        """
+        )
         btn_refresh.clicked.connect(self.load_attendance_list)
 
         h_layout.addWidget(QLabel("Date:"))
@@ -339,9 +336,9 @@ class StaffAttendanceWindow(QMainWindow):
         self.table_attendance = QTableWidget()
         self.style_table(self.table_attendance)
         self.table_attendance.setColumnCount(7)
-        self.table_attendance.setHorizontalHeaderLabels([
-            "ID", "Nom & Prénom", "Rôle", "Statut", "Entrée (الدخول)", "Sortie (الخروج)", "Note"
-        ])
+        self.table_attendance.setHorizontalHeaderLabels(
+            ["ID", "Nom & Prénom", "Rôle", "Statut", "Entrée (الدخول)", "Sortie (الخروج)", "Note"]
+        )
         self.table_attendance.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.table_attendance.setColumnWidth(0, 50)
         self.table_attendance.verticalHeader().setDefaultSectionSize(40)
@@ -351,10 +348,12 @@ class StaffAttendanceWindow(QMainWindow):
         # Save Button
         btn_save = QPushButton("💾 ENREGISTRER LE POINTAGE / حفظ السجل")
         btn_save.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_save.setStyleSheet(f"""
+        btn_save.setStyleSheet(
+            f"""
             QPushButton {{ background-color: {colors.SUCCESS}; color: white; padding: 12px; font-weight: bold; font-size: 14px; border-radius: 8px; border: none; }}
             QPushButton:hover {{ background-color: {colors.SUCCESS_HOVER}; }}
-        """)
+        """
+        )
         btn_save.clicked.connect(self.save_all_attendance)
         layout.addWidget(btn_save)
 
@@ -375,7 +374,7 @@ class StaffAttendanceWindow(QMainWindow):
         glay.setSpacing(15)
 
         card_title = QLabel("Rapport Mensuel / تقرير شهري")
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+        colors = ThemeManager.get_colors()
         card_title.setStyleSheet(f"font-weight: bold; color: {colors.TEXT_PRIMARY}; font-size: 14px;")
         glay.addWidget(card_title, 0, 0, 1, 4)
 
@@ -389,10 +388,12 @@ class StaffAttendanceWindow(QMainWindow):
 
         btn_gen_report = QPushButton("🖨️ Générer PDF")
         btn_gen_report.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_gen_report.setStyleSheet(f"""
+        btn_gen_report.setStyleSheet(
+            f"""
             QPushButton {{ background-color: {colors.WARNING}; color: white; font-weight: bold; padding: 10px; border-radius: 6px; border: none; }}
             QPushButton:hover {{ background-color: {colors.WARNING}; }}
-        """)
+        """
+        )
         btn_gen_report.clicked.connect(self.generate_monthly_report)
 
         glay.addWidget(QLabel("Employé:"), 1, 0)
@@ -405,9 +406,7 @@ class StaffAttendanceWindow(QMainWindow):
 
         self.table_report = QTableWidget(0, 6)
         self.style_table(self.table_report)
-        self.table_report.setHorizontalHeaderLabels([
-            "Employé", "Date", "Statut", "Entrée", "Sortie", "Note"
-        ])
+        self.table_report.setHorizontalHeaderLabels(["Employé", "Date", "Statut", "Entrée", "Sortie", "Note"])
         self.table_report.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.table_report.setColumnWidth(1, 90)
         layout.addWidget(self.table_report)
@@ -484,12 +483,15 @@ class StaffAttendanceWindow(QMainWindow):
 
                     if existing:
                         status_combo.setCurrentText(existing[0])
-                        if existing[1]: time_in.setTime(QTime.fromString(existing[1], "HH:mm"))
-                        if existing[2]: time_out.setTime(QTime.fromString(existing[2], "HH:mm"))
-                        if existing[3]: note_item.setText(existing[3])
+                        if existing[1]:
+                            time_in.setTime(QTime.fromString(existing[1], "HH:mm"))
+                        if existing[2]:
+                            time_out.setTime(QTime.fromString(existing[2], "HH:mm"))
+                        if existing[3]:
+                            note_item.setText(existing[3])
 
                         if existing[0] == "Absent":
-                            colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+                            colors = ThemeManager.get_colors()
                             status_combo.setStyleSheet(f"QComboBox {{ color: {colors.DANGER}; font-weight: bold; }}")
         except Exception as e:
             AppLogger.error("StaffAttendance", f"Error loading attendance list: {e}")
@@ -508,9 +510,7 @@ class StaffAttendanceWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                rows = StaffRepository(conn).get_attendance_report_for_display(
-                    start_date, end_date, staff_id
-                )
+                rows = StaffRepository(conn).get_attendance_report_for_display(start_date, end_date, staff_id)
 
             for row in rows:
                 idx = self.table_report.rowCount()
@@ -545,16 +545,15 @@ class StaffAttendanceWindow(QMainWindow):
                     check_in = self.table_attendance.cellWidget(row, 4).time().toString("HH:mm")
                     check_out = self.table_attendance.cellWidget(row, 5).time().toString("HH:mm")
                     note = self.table_attendance.cellWidget(row, 6).text()
-                    repo.upsert_staff_attendance(
-                        staff_id, selected_date, check_in, check_out, status, note
-                    )
+                    repo.upsert_staff_attendance(staff_id, selected_date, check_in, check_out, status, note)
                 conn.commit()
             QMessageBox.information(self, "Succès", "Pointage enregistré avec succès.")
         except Exception as e:
             QMessageBox.critical(self, "Erreur", f"Erreur de sauvegarde: {str(e)}")
 
     def sanitize_filename(self, text):
-        if not text: return ""
+        if not text:
+            return ""
         cleaned = str(text).strip().replace(" ", "_").replace("/", "-")
         return "".join(ch for ch in cleaned if ch.isalnum() or ch in "-_")
 
@@ -564,7 +563,8 @@ class StaffAttendanceWindow(QMainWindow):
         month = self.date_report_month.date().toString("yyyy-MM")
         start_date, end_date = self._month_bounds(month)
 
-        if not start_date: return
+        if not start_date:
+            return
 
         default_name = f"Pointage_{self.sanitize_filename(staff_name)}_{month}.pdf"
 
@@ -573,9 +573,7 @@ class StaffAttendanceWindow(QMainWindow):
             with db.get_connection() as conn:
                 repo = StaffRepository(conn)
                 school_info = repo.get_school_info()
-                records = repo.get_attendance_report(
-                    start_date, end_date, staff_id or None
-                )
+                records = repo.get_attendance_report(start_date, end_date, staff_id or None)
                 is_all = staff_id is None
 
             pdf = StaffAttendancePDF(school_info)
@@ -630,11 +628,15 @@ class StaffAttendanceWindow(QMainWindow):
                     note = record[4]
 
                 date_fmt = datetime.strptime(date_val, '%Y-%m-%d').strftime('%d/%m/%Y') if date_val else ""
-                if status == "Présent": present_cnt += 1
+                if status == "Présent":
+                    present_cnt += 1
 
-                if status == "Absent": pdf.set_text_color(200, 0, 0)
-                elif status == "Retard": pdf.set_text_color(200, 150, 0)
-                else: pdf.set_text_color(0, 0, 0)
+                if status == "Absent":
+                    pdf.set_text_color(200, 0, 0)
+                elif status == "Retard":
+                    pdf.set_text_color(200, 150, 0)
+                else:
+                    pdf.set_text_color(0, 0, 0)
 
                 if is_all:
                     pdf.cell(col_widths[0], 6, pdf.sanitize(emp_name), 1, 0, 'L', True)

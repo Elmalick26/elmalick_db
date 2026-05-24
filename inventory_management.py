@@ -12,7 +12,6 @@ from PyQt6.QtWidgets import (
     QDateEdit,
     QDoubleSpinBox,
     QFrame,
-    QGraphicsDropShadowEffect,
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
@@ -42,9 +41,15 @@ from pdf_report_style import (
 )
 from print_export_service import get_report_output_mode, output_pdf
 from repositories.inventory_repo import InventoryRepository
-from ui_styles import Colors, ThemeManager, apply_shadow_to_widget, get_card_style, get_table_style, get_tabs_style
-
-THEME_AVAILABLE = True
+from ui_styles import (
+    Colors,
+    ModuleHeaderWidget,
+    ThemeManager,
+    apply_shadow_to_widget,
+    get_card_style,
+    get_table_style,
+    get_tabs_style,
+)
 
 
 class InventoryWindow(QMainWindow):
@@ -57,17 +62,7 @@ class InventoryWindow(QMainWindow):
         self.current_inventory_report_title = ""
 
         # تطبيق المظهر
-        if THEME_AVAILABLE:
-            ThemeManager.apply_theme(self)
-        else:
-            colors = Colors()
-            self.setStyleSheet(
-                f"""
-                QMainWindow {{ background-color: {colors.BG_MAIN}; }}
-                QLabel {{ font-family: 'Segoe UI', 'Cairo', sans-serif; color: {colors.TEXT_PRIMARY}; }}
-            """
-            )
-
+        ThemeManager.apply_theme(self)
         self.init_ui()
         self.load_inventory()
         self.load_history()
@@ -79,61 +74,16 @@ class InventoryWindow(QMainWindow):
         self.main_layout.setContentsMargins(20, 20, 20, 20)
         self.main_layout.setSpacing(15)
 
-        # 1. Header Frame
-        header_frame = QFrame()
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-
-        header_frame.setStyleSheet(
-            f"""
-            QFrame {{ background-color: {colors.BG_HEADER}; border-radius: 10px; }}
-        """
-        )
-        header_frame.setMaximumHeight(80)
-
-        shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(15)
-        shadow.setColor(QColor(15, 23, 42, 40))
-        shadow.setOffset(0, 4)
-        header_frame.setGraphicsEffect(shadow)
-
-        hl = QHBoxLayout(header_frame)
-        hl.setContentsMargins(20, 10, 20, 10)
-
-        icon_lbl = QLabel("📦")
-        icon_lbl.setStyleSheet("font-size: 32px; background: transparent;")
-
-        title_layout = QVBoxLayout()
-        header_lbl = QLabel("GESTION DE STOCK")
-        header_lbl.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
-        header_lbl.setStyleSheet(f"color: {colors.HEADER_TEXT}; background: transparent;")
-
-        sub_lbl = QLabel("متابعة المخزون، المشتريات، والاستهلاك")
-        sub_lbl.setFont(QFont("Cairo", 11))
-        sub_lbl.setStyleSheet(f"color: {colors.TEXT_SECONDARY}; background: transparent;")
-
-        title_layout.addWidget(header_lbl)
-        title_layout.addWidget(sub_lbl)
-
-        hl.addWidget(icon_lbl)
-        hl.addSpacing(15)
-        hl.addLayout(title_layout)
-        hl.addStretch()
-
-        self.main_layout.addWidget(header_frame)
+        # 1. Header
+        header = ModuleHeaderWidget("📦", "GESTION DE STOCK", "متابعة المخزون، المشتريات، والاستهلاك")
+        self._stat_items = header.add_stat("📊", "Articles", "0", "#3B82F6")
+        self._stat_alerts = header.add_stat("⚠️", "Alertes Stock", "0", "#EF4444")
+        self._stat_value = header.add_stat("💰", "Valeur Totale", "—", "#22C55E")
+        self.main_layout.addWidget(header)
 
         # 2. Tabs
         self.tabs = QTabWidget()
-        if THEME_AVAILABLE:
-            self.tabs.setStyleSheet(get_tabs_style())
-        else:
-            self.tabs.setStyleSheet(
-                f"""
-                QTabWidget::pane {{ border: 1px solid {colors.BORDER}; background: {colors.BG_CARD}; border-radius: 12px; margin-top: 15px; }}
-                QTabBar::tab {{ background: {colors.BG_MAIN}; color: {colors.TEXT_SECONDARY}; padding: 12px 30px; margin-right: 6px; border-top-left-radius: 8px; border-top-right-radius: 8px; font-weight: bold; font-family: 'Segoe UI', 'Cairo'; }}
-                QTabBar::tab:selected {{ background: {colors.BG_HEADER}; color: {colors.HEADER_TEXT}; }}
-                QTabBar::tab:hover {{ background: {colors.BORDER}; }}
-            """
-            )
+        self.tabs.setStyleSheet(get_tabs_style())
 
         self.setup_stock_tab()
         self.setup_movement_tab()
@@ -145,25 +95,14 @@ class InventoryWindow(QMainWindow):
     # --- Helper Methods ---
     def create_card(self):
         frame = QFrame()
-        if THEME_AVAILABLE:
-            frame.setStyleSheet(get_card_style())
-            apply_shadow_to_widget(frame)
-        else:
-            colors = Colors()
-            frame.setStyleSheet(
-                f"QFrame {{ background-color: {colors.BG_CARD}; border-radius: 12px; border: 1px solid {colors.BORDER}; }}"
-            )
-            shadow = QGraphicsDropShadowEffect()
-            shadow.setBlurRadius(20)
-            shadow.setColor(QColor(15, 23, 42, 15))
-            shadow.setOffset(0, 4)
-            frame.setGraphicsEffect(shadow)
+        frame.setStyleSheet(get_card_style())
+        apply_shadow_to_widget(frame)
         return frame
 
     def styled_input(self, placeholder):
         le = QLineEdit()
         le.setPlaceholderText(placeholder)
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+        colors = ThemeManager.get_colors()
         le.setStyleSheet(
             f"""
             QLineEdit {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }}
@@ -175,7 +114,7 @@ class InventoryWindow(QMainWindow):
 
     def styled_combo(self):
         combo = QComboBox()
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+        colors = ThemeManager.get_colors()
         combo.setStyleSheet(
             f"""
             QComboBox {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }}
@@ -189,7 +128,7 @@ class InventoryWindow(QMainWindow):
         sb = QSpinBox()
         sb.setRange(0, 100000)
         sb.setSuffix(suffix)
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+        colors = ThemeManager.get_colors()
         sb.setStyleSheet(
             f"""
             QSpinBox {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }}
@@ -204,7 +143,7 @@ class InventoryWindow(QMainWindow):
         spin.setRange(0, 1000000)
         spin.setPrefix(prefix)
         spin.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+        colors = ThemeManager.get_colors()
         spin.setStyleSheet(
             f"QDoubleSpinBox {{ padding: 8px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }}"
         )
@@ -214,7 +153,7 @@ class InventoryWindow(QMainWindow):
     def styled_date(self):
         date_edit = QDateEdit()
         date_edit.setCalendarPopup(True)
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+        colors = ThemeManager.get_colors()
         date_edit.setStyleSheet(
             f"QDateEdit {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }}"
         )
@@ -225,18 +164,7 @@ class InventoryWindow(QMainWindow):
         table.setShowGrid(False)
         table.setAlternatingRowColors(True)
         table.verticalHeader().setVisible(False)
-        if THEME_AVAILABLE:
-            table.setStyleSheet(get_table_style())
-        else:
-            colors = Colors()
-            table.setStyleSheet(
-                f"""
-                QTableWidget {{ background-color: {colors.BG_CARD}; border: 1px solid {colors.BORDER}; border-radius: 8px; gridline-color: {colors.BORDER}; font-size: 13px; color: {colors.TEXT_PRIMARY}; }}
-                QTableWidget::item {{ padding: 6px; border-bottom: 1px solid {colors.BG_MAIN}; }}
-                QTableWidget::item:selected {{ background-color: {colors.PRIMARY}; color: white; }}
-                QHeaderView::section {{ background-color: {colors.BG_HEADER}; color: {colors.HEADER_TEXT}; padding: 10px; border: none; font-weight: bold; }}
-            """
-            )
+        table.setStyleSheet(get_table_style())
 
     # ---------------------------------------------------------
     # TAB 1: Stock Overview
@@ -246,7 +174,7 @@ class InventoryWindow(QMainWindow):
         layout = QHBoxLayout(tab)
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(20)
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+        colors = ThemeManager.get_colors()
 
         # --- Form Card (Left) ---
         form_card = self.create_card()
@@ -345,7 +273,7 @@ class InventoryWindow(QMainWindow):
         layout = QVBoxLayout(tab)
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(15)
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+        colors = ThemeManager.get_colors()
 
         move_card = self.create_card()
         vlay = QVBoxLayout(move_card)
@@ -421,7 +349,7 @@ class InventoryWindow(QMainWindow):
         toolbar = QHBoxLayout()
         btn_refresh = QPushButton("Actualiser")
         btn_refresh.setCursor(Qt.CursorShape.PointingHandCursor)
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+        colors = ThemeManager.get_colors()
         btn_refresh.setStyleSheet(
             f"""
             QPushButton {{ background-color: {colors.PRIMARY}; color: white; font-weight: bold; border-radius: 6px; padding: 8px 15px; border: none; }}
@@ -452,7 +380,7 @@ class InventoryWindow(QMainWindow):
         layout = QVBoxLayout(tab)
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(15)
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+        colors = ThemeManager.get_colors()
 
         controls_card = self.create_card()
         controls_layout = QHBoxLayout(controls_card)
@@ -703,17 +631,15 @@ class InventoryWindow(QMainWindow):
 
                 qty_item = QTableWidgetItem(str(qty))
                 if qty <= min_qty:  # Low Stock Alert
-                    if THEME_AVAILABLE:
-                        colors = ThemeManager.get_colors()
-                        qty_item.setForeground(QColor(colors.DANGER))
-                        bg_color = QColor(colors.DANGER)
-                        bg_color.setAlpha(40)
-                        qty_item.setBackground(bg_color)
+                    colors = ThemeManager.get_colors()
+                    qty_item.setForeground(QColor(colors.DANGER))
+                    bg_color = QColor(colors.DANGER)
+                    bg_color.setAlpha(40)
+                    qty_item.setBackground(bg_color)
                     qty_item.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
                     alert_count += 1
                 else:
-                    if THEME_AVAILABLE:
-                        qty_item.setForeground(QColor(ThemeManager.get_colors().SUCCESS))
+                    qty_item.setForeground(QColor(ThemeManager.get_colors().SUCCESS))
 
                 self.table_stock.setItem(idx, 4, qty_item)
                 self.table_stock.setItem(idx, 5, QTableWidgetItem(str(min_qty)))
@@ -721,6 +647,11 @@ class InventoryWindow(QMainWindow):
                 self.table_stock.setItem(idx, 7, QTableWidgetItem(f"{row_total:.2f}"))
 
             self.lbl_stats.setText(f"💰 Valeur Totale: {total_val:,.2f} FCFA   |   ⚠️ Alertes Rupture: {alert_count}")
+
+            # Update stat chips
+            self._stat_items.set_value(str(len(rows)))
+            self._stat_alerts.set_value(str(alert_count))
+            self._stat_value.set_value(f"{total_val/1000:.0f}k")
         except Exception as e:
             AppLogger.error("InventoryManagement", f"Error loading inventory: {e}")
 
@@ -782,12 +713,10 @@ class InventoryWindow(QMainWindow):
                 movement_type = str(r[1] or "")
                 type_item = QTableWidgetItem(movement_type)
                 if movement_type == "IN":
-                    if THEME_AVAILABLE:
-                        type_item.setForeground(QColor(ThemeManager.get_colors().SUCCESS))
+                    type_item.setForeground(QColor(ThemeManager.get_colors().SUCCESS))
                     type_item.setText("ENTRÉE")
                 else:
-                    if THEME_AVAILABLE:
-                        type_item.setForeground(QColor(ThemeManager.get_colors().DANGER))
+                    type_item.setForeground(QColor(ThemeManager.get_colors().DANGER))
                     type_item.setText("SORTIE")
 
                 self.table_log.setItem(idx, 1, type_item)

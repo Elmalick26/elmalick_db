@@ -100,7 +100,12 @@ def upgrade() -> None:
             id SERIAL PRIMARY KEY,
             year_label TEXT UNIQUE NOT NULL,
             is_active INTEGER DEFAULT 0,
-            school_id INTEGER DEFAULT 1
+            start_date DATE,
+            end_date DATE,
+            school_id INTEGER DEFAULT 1,
+            CONSTRAINT ck_academic_year_dates CHECK (
+                start_date IS NULL OR end_date IS NULL OR start_date <= end_date
+            )
         )
         """
     )
@@ -138,6 +143,11 @@ def upgrade() -> None:
             period_name_ar TEXT,
             period_name_fr TEXT,
             sort_order INTEGER,
+            start_date DATE,
+            end_date DATE,
+            CONSTRAINT ck_academic_period_dates CHECK (
+                start_date IS NULL OR end_date IS NULL OR start_date <= end_date
+            ),
             FOREIGN KEY (year_id) REFERENCES AcademicYears(id),
             FOREIGN KEY (cycle_id) REFERENCES Cycles(id)
         )

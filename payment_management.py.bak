@@ -1,4 +1,4 @@
-import os
+﻿import os
 import sys
 from datetime import datetime
 
@@ -32,7 +32,7 @@ from database_setup import DatabaseManager
 from pdf_report_style import apply_grades_sheet_header
 from print_export_service import get_report_output_mode, output_pdf
 from repositories.finance_repo import FinanceRepository
-from ui_styles import Colors, ModuleHeaderWidget, ThemeManager, apply_shadow_to_widget, get_card_style, get_table_style
+from ui_styles import Colors, ThemeManager, ModuleHeaderWidget, apply_shadow_to_widget, get_card_style, get_table_style
 
 STUDENT_DUES_REPORT_OUTPUT_MODE = get_report_output_mode("student_dues_report_mode", "save")
 
@@ -48,18 +48,18 @@ class StudentDuesReportPDF(FPDF):
 class StudentDuesWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Gestion des Factures / إدارة الفواتير والمطالبات")
+        self.setWindowTitle("Gestion des Factures / Ø¥Ø¯Ø§Ø±Ø© Ø§Ù„ÙÙˆØ§ØªÙŠØ± ÙˆØ§Ù„Ù…Ø·Ø§Ù„Ø¨Ø§Øª")
         self.setMinimumSize(1100, 700)
         self._ensure_student_dues_schema()
 
-        # تطبيق المظهر
+        # ØªØ·Ø¨ÙŠÙ‚ Ø§Ù„Ù…Ø¸Ù‡Ø±
         ThemeManager.apply_theme(self)
 
         self.init_ui()
         self.load_classes()
         self._load_kpi_stats()
 
-    # ===== تم التعديل: التوافق مع PostgreSQL في قراءة أسماء الأعمدة =====
+    # ===== ØªÙ… Ø§Ù„ØªØ¹Ø¯ÙŠÙ„: Ø§Ù„ØªÙˆØ§ÙÙ‚ Ù…Ø¹ PostgreSQL ÙÙŠ Ù‚Ø±Ø§Ø¡Ø© Ø£Ø³Ù…Ø§Ø¡ Ø§Ù„Ø£Ø¹Ù…Ø¯Ø© =====
     def _ensure_student_dues_schema(self):
         try:
             db = DatabaseManager()
@@ -88,21 +88,21 @@ class StudentDuesWindow(QMainWindow):
         self.main_layout.setContentsMargins(20, 20, 20, 20)
         self.main_layout.setSpacing(15)
 
-        # En-tête unifié
+        # En-tÃªte unifiÃ©
         header = ModuleHeaderWidget(
-            icon="🧾",
+            icon="ðŸ§¾",
             title="GESTION DES FACTURES & ENGAGEMENTS",
-            subtitle="إدارة المطالبات، الفواتير، والخصومات الاستثنائية",
+            subtitle="Ø¥Ø¯Ø§Ø±Ø© Ø§Ù„Ù…Ø·Ø§Ù„Ø¨Ø§ØªØŒ Ø§Ù„ÙÙˆØ§ØªÙŠØ±ØŒ ÙˆØ§Ù„Ø®ØµÙˆÙ…Ø§Øª Ø§Ù„Ø§Ø³ØªØ«Ù†Ø§Ø¦ÙŠØ©",
         )
         self.main_layout.addWidget(header)
-        self._stat_total_dues = header.add_stat("📊", "Total Factures", "—", "#3B82F6")
-        self._stat_paid = header.add_stat("✅", "Payées", "—", "#22C55E")
-        self._stat_unpaid = header.add_stat("⏳", "En Attente", "—", "#F59E0B")
-        self._stat_discounts = header.add_stat("🎁", "Remises Accordées", "—", "#8B5CF6")
+        self._stat_total_dues = header.add_stat("ðŸ“Š", "Total Factures", "â€”", "#3B82F6")
+        self._stat_paid = header.add_stat("âœ…", "PayÃ©es", "â€”", "#22C55E")
+        self._stat_unpaid = header.add_stat("â³", "En Attente", "â€”", "#F59E0B")
+        self._stat_discounts = header.add_stat("ðŸŽ", "Remises AccordÃ©es", "â€”", "#8B5CF6")
 
         # KPI Cards
 
-        # ================= 2. Filtre classe/élève =================
+        # ================= 2. Filtre classe/Ã©lÃ¨ve =================
         colors = ThemeManager.get_colors()
         sel_card = self.create_card()
         slay = QHBoxLayout(sel_card)
@@ -115,17 +115,17 @@ class StudentDuesWindow(QMainWindow):
         self.combo_students = self.styled_combo()
         self.combo_students.currentIndexChanged.connect(self.load_student_dues)
 
-        slay.addWidget(QLabel("📂 Classe (الفصل):"))
+        slay.addWidget(QLabel("ðŸ“‚ Classe (Ø§Ù„ÙØµÙ„):"))
         slay.addWidget(self.combo_classes, 1)
-        slay.addWidget(QLabel("👤 Élève (الطالب):"))
+        slay.addWidget(QLabel("ðŸ‘¤ Ã‰lÃ¨ve (Ø§Ù„Ø·Ø§Ù„Ø¨):"))
         slay.addWidget(self.combo_students, 2)
 
         self.main_layout.addWidget(sel_card)
 
-        # ================= 3. منطقة العمل (تقسيم الشاشة لجزئين) =================
+        # ================= 3. Ù…Ù†Ø·Ù‚Ø© Ø§Ù„Ø¹Ù…Ù„ (ØªÙ‚Ø³ÙŠÙ… Ø§Ù„Ø´Ø§Ø´Ø© Ù„Ø¬Ø²Ø¦ÙŠÙ†) =================
         work_layout = QHBoxLayout()
 
-        # --- الجزء الأيسر: لوحة التحكميات (إضافة فاتورة / تطبيق خصم) ---
+        # --- Ø§Ù„Ø¬Ø²Ø¡ Ø§Ù„Ø£ÙŠØ³Ø±: Ù„ÙˆØ­Ø© Ø§Ù„ØªØ­ÙƒÙ…ÙŠØ§Øª (Ø¥Ø¶Ø§ÙØ© ÙØ§ØªÙˆØ±Ø© / ØªØ·Ø¨ÙŠÙ‚ Ø®ØµÙ…) ---
         control_panel = self.create_card()
         control_panel.setFixedWidth(350)
         c_layout = QVBoxLayout(control_panel)
@@ -140,70 +140,70 @@ class StudentDuesWindow(QMainWindow):
         """
         )
 
-        # التبويب 1: إضافة فاتورة مخصصة
+        # Ø§Ù„ØªØ¨ÙˆÙŠØ¨ 1: Ø¥Ø¶Ø§ÙØ© ÙØ§ØªÙˆØ±Ø© Ù…Ø®ØµØµØ©
         tab_add = QWidget()
         tab_add_layout = QVBoxLayout(tab_add)
         tab_add_layout.setSpacing(12)
 
-        self.txt_fee_title = self.styled_input("Ex: Frais de Transport (وصف الرسوم)")
+        self.txt_fee_title = self.styled_input("Ex: Frais de Transport (ÙˆØµÙ Ø§Ù„Ø±Ø³ÙˆÙ…)")
         self.spin_fee_amount = self.styled_spinbox("Montant: ")
         self.date_fee_due = self.styled_date()
         self.date_fee_due.setDate(QDate.currentDate())
 
-        btn_add_fee = QPushButton("➕ Ajouter la Facture (إضافة)")
+        btn_add_fee = QPushButton("âž• Ajouter la Facture (Ø¥Ø¶Ø§ÙØ©)")
         self.style_action_button(btn_add_fee, colors.SUCCESS)
         btn_add_fee.clicked.connect(self.add_custom_due)
 
         tab_add_layout.addWidget(QLabel("Type / Description:"))
         tab_add_layout.addWidget(self.txt_fee_title)
-        tab_add_layout.addWidget(QLabel("Montant (المبلغ):"))
+        tab_add_layout.addWidget(QLabel("Montant (Ø§Ù„Ù…Ø¨Ù„Øº):"))
         tab_add_layout.addWidget(self.spin_fee_amount)
-        tab_add_layout.addWidget(QLabel("Date d'échéance (تاريخ الاستحقاق):"))
+        tab_add_layout.addWidget(QLabel("Date d'Ã©chÃ©ance (ØªØ§Ø±ÙŠØ® Ø§Ù„Ø§Ø³ØªØ­Ù‚Ø§Ù‚):"))
         tab_add_layout.addWidget(self.date_fee_due)
         tab_add_layout.addStretch()
         tab_add_layout.addWidget(btn_add_fee)
 
-        # التبويب 2: تطبيق خصم (Remise)
+        # Ø§Ù„ØªØ¨ÙˆÙŠØ¨ 2: ØªØ·Ø¨ÙŠÙ‚ Ø®ØµÙ… (Remise)
         tab_discount = QWidget()
         tab_disc_layout = QVBoxLayout(tab_discount)
         tab_disc_layout.setSpacing(12)
 
-        self.lbl_selected_due = QLabel("Sélectionnez une facture dans le tableau\n(اختر فاتورة من الجدول أولاً)")
+        self.lbl_selected_due = QLabel("SÃ©lectionnez une facture dans le tableau\n(Ø§Ø®ØªØ± ÙØ§ØªÙˆØ±Ø© Ù…Ù† Ø§Ù„Ø¬Ø¯ÙˆÙ„ Ø£ÙˆÙ„Ø§Ù‹)")
         self.lbl_selected_due.setStyleSheet(f"color: {colors.WARNING}; font-style: italic;")
         self.lbl_selected_due.setWordWrap(True)
 
         self.spin_discount_val = self.styled_spinbox("Remise: ")
 
-        btn_apply_disc = QPushButton("🎁 Appliquer Remise (تطبيق الخصم)")
+        btn_apply_disc = QPushButton("ðŸŽ Appliquer Remise (ØªØ·Ø¨ÙŠÙ‚ Ø§Ù„Ø®ØµÙ…)")
         self.style_action_button(btn_apply_disc, colors.PRIMARY)
         btn_apply_disc.clicked.connect(self.apply_discount)
 
         tab_disc_layout.addWidget(self.lbl_selected_due)
-        tab_disc_layout.addWidget(QLabel("Montant de la remise (قيمة الخصم):"))
+        tab_disc_layout.addWidget(QLabel("Montant de la remise (Ù‚ÙŠÙ…Ø© Ø§Ù„Ø®ØµÙ…):"))
         tab_disc_layout.addWidget(self.spin_discount_val)
         tab_disc_layout.addStretch()
         tab_disc_layout.addWidget(btn_apply_disc)
 
-        self.tabs.addTab(tab_add, "➕ Nouvelle")
-        self.tabs.addTab(tab_discount, "🎁 Remise")
+        self.tabs.addTab(tab_add, "âž• Nouvelle")
+        self.tabs.addTab(tab_discount, "ðŸŽ Remise")
 
         c_layout.addWidget(self.tabs)
 
-        # زر توليد الرسوم التلقائية للصف (اختياري)
-        btn_generate_auto = QPushButton("⚙️ Générer Mensualités (توليد أقساط)")
+        # Ø²Ø± ØªÙˆÙ„ÙŠØ¯ Ø§Ù„Ø±Ø³ÙˆÙ… Ø§Ù„ØªÙ„Ù‚Ø§Ø¦ÙŠØ© Ù„Ù„ØµÙ (Ø§Ø®ØªÙŠØ§Ø±ÙŠ)
+        btn_generate_auto = QPushButton("âš™ï¸ GÃ©nÃ©rer MensualitÃ©s (ØªÙˆÙ„ÙŠØ¯ Ø£Ù‚Ø³Ø§Ø·)")
         self.style_action_button(btn_generate_auto, ThemeManager.get_colors().PRIMARY_DARK)
         btn_generate_auto.clicked.connect(self.generate_auto_dues)
         c_layout.addWidget(btn_generate_auto)
 
-        # --- الجزء الأيمن: جدول الفواتير (Ledger) ---
+        # --- Ø§Ù„Ø¬Ø²Ø¡ Ø§Ù„Ø£ÙŠÙ…Ù†: Ø¬Ø¯ÙˆÙ„ Ø§Ù„ÙÙˆØ§ØªÙŠØ± (Ledger) ---
         table_panel = self.create_card()
         t_layout = QVBoxLayout(table_panel)
 
-        table_title = QLabel("📄 Relevé de Compte (كشف حساب المطالبات)")
+        table_title = QLabel("ðŸ“„ RelevÃ© de Compte (ÙƒØ´Ù Ø­Ø³Ø§Ø¨ Ø§Ù„Ù…Ø·Ø§Ù„Ø¨Ø§Øª)")
         table_title.setFont(QFont("Segoe UI", 12, QFont.Weight.Bold))
         table_title.setStyleSheet(f"color: {colors.TEXT_PRIMARY};")
 
-        btn_export = QPushButton("🖨️ Exporter Rapport Factures")
+        btn_export = QPushButton("ðŸ–¨ï¸ Exporter Rapport Factures")
         self.style_action_button(btn_export, colors.PRIMARY)
         btn_export.setMinimumHeight(38)
         btn_export.clicked.connect(self.export_student_dues_report)
@@ -246,7 +246,6 @@ class StudentDuesWindow(QMainWindow):
         )
         combo.setMinimumHeight(40)
         return combo
-
     def _load_kpi_stats(self):
         """Charge les statistiques globales des factures."""
         try:
@@ -256,13 +255,13 @@ class StudentDuesWindow(QMainWindow):
                 # Total factures
                 cursor.execute("SELECT COUNT(*) FROM StudentDues")
                 total = cursor.fetchone()[0] or 0
-                # Payées
-                cursor.execute("SELECT COUNT(*) FROM StudentDues WHERE LOWER(status) IN ('paid', 'payé', 'paye')")
+                # PayÃ©es
+                cursor.execute("SELECT COUNT(*) FROM StudentDues WHERE LOWER(status) IN ('paid', 'payÃ©', 'paye')")
                 paid = cursor.fetchone()[0] or 0
                 # En attente
-                cursor.execute("SELECT COUNT(*) FROM StudentDues WHERE LOWER(status) NOT IN ('paid', 'payé', 'paye')")
+                cursor.execute("SELECT COUNT(*) FROM StudentDues WHERE LOWER(status) NOT IN ('paid', 'payÃ©', 'paye')")
                 unpaid = cursor.fetchone()[0] or 0
-                # Remises accordées
+                # Remises accordÃ©es
                 cursor.execute("SELECT COUNT(*) FROM StudentDues WHERE discount_amount > 0")
                 discounts = cursor.fetchone()[0] or 0
 
@@ -272,7 +271,6 @@ class StudentDuesWindow(QMainWindow):
             self._stat_discounts.set_value(str(discounts))
         except Exception as e:
             AppLogger.error("PaymentManagementWindow", f"Erreur KPI stats: {e}")
-
     def styled_input(self, placeholder):
         le = QLineEdit()
         le.setPlaceholderText(placeholder)
@@ -339,7 +337,7 @@ class StudentDuesWindow(QMainWindow):
     def load_students(self):
         cid = self.combo_classes.currentData()
         self.combo_students.clear()
-        self.combo_students.addItem("- Tous les élèves (الكل) -", None)
+        self.combo_students.addItem("- Tous les Ã©lÃ¨ves (Ø§Ù„ÙƒÙ„) -", None)
         if not cid:
             return
 
@@ -351,13 +349,13 @@ class StudentDuesWindow(QMainWindow):
             db = DatabaseManager()
             with db.get_connection() as conn:
                 for s in FinanceRepository(conn).list_students_by_class(cid, active_year):
-                    self.combo_students.addItem((str(s[1] or "").strip() or "[Élève]"), s[0])
+                    self.combo_students.addItem((str(s[1] or "").strip() or "[Ã‰lÃ¨ve]"), s[0])
         except Exception as e:
             AppLogger.error("PaymentManagement", f"Error loading students: {e}")
 
     def load_student_dues(self):
         self.table_dues.setRowCount(0)
-        self.lbl_selected_due.setText("Sélectionnez une facture dans le tableau")
+        self.lbl_selected_due.setText("SÃ©lectionnez une facture dans le tableau")
         self.spin_discount_val.setValue(0)
 
         sid = self.combo_students.currentData()
@@ -402,7 +400,7 @@ class StudentDuesWindow(QMainWindow):
                     net_item.setFont(QFont("Arial", 10, QFont.Weight.Bold))
                     self.table_dues.setItem(idx, 5, net_item)
 
-                    status_txt = "✅ Réglé (مدفوع)" if row[7] else "⏳ En attente (مستحق)"
+                    status_txt = "âœ… RÃ©glÃ© (Ù…Ø¯ÙÙˆØ¹)" if row[7] else "â³ En attente (Ù…Ø³ØªØ­Ù‚)"
                     status_item = QTableWidgetItem(status_txt)
                     status_item.setForeground(QColor(colors.SUCCESS if row[7] else colors.WARNING))
                     self.table_dues.setItem(idx, 6, status_item)
@@ -410,8 +408,8 @@ class StudentDuesWindow(QMainWindow):
                     container = QWidget()
                     btn_layout = QHBoxLayout(container)
                     btn_layout.setContentsMargins(2, 2, 2, 2)
-                    if not row[7]:  # إذا لم تكن مدفوعة
-                        btn_del = QPushButton("✕")
+                    if not row[7]:  # Ø¥Ø°Ø§ Ù„Ù… ØªÙƒÙ† Ù…Ø¯ÙÙˆØ¹Ø©
+                        btn_del = QPushButton("âœ•")
                         btn_del.setFixedSize(28, 28)
                         btn_del.setStyleSheet(f"background: {colors.DANGER}; color: white; border-radius: 4px;")
                         btn_del.clicked.connect(lambda ch, fid=row[0]: self.delete_due(fid))
@@ -431,7 +429,7 @@ class StudentDuesWindow(QMainWindow):
         original = float(self.table_dues.item(r, 3).text().replace(',', ''))
         discount = float(self.table_dues.item(r, 4).text().replace(',', ''))
 
-        self.lbl_selected_due.setText(f"Facture sélectionnée:\n[{due_id}] {desc}\nOriginal: {original:,.0f}")
+        self.lbl_selected_due.setText(f"Facture sÃ©lectionnÃ©e:\n[{due_id}] {desc}\nOriginal: {original:,.0f}")
         self.spin_discount_val.setMaximum(original)
         self.spin_discount_val.setValue(discount)
 
@@ -440,7 +438,7 @@ class StudentDuesWindow(QMainWindow):
     def add_custom_due(self):
         sid = self.combo_students.currentData()
         if not sid:
-            QMessageBox.warning(self, "Erreur", "Veuillez sélectionner un élève d'abord.")
+            QMessageBox.warning(self, "Erreur", "Veuillez sÃ©lectionner un Ã©lÃ¨ve d'abord.")
             return
 
         desc = self.txt_fee_title.text().strip()
@@ -461,7 +459,7 @@ class StudentDuesWindow(QMainWindow):
                 FinanceRepository(conn).add_due(sid, active_year, 'Custom', desc, amt, amt, date_d)
                 conn.commit()
 
-            QMessageBox.information(self, "Succès", "Facture ajoutée avec succès.")
+            QMessageBox.information(self, "SuccÃ¨s", "Facture ajoutÃ©e avec succÃ¨s.")
             self.txt_fee_title.clear()
             self.spin_fee_amount.setValue(0)
             self.load_student_dues()
@@ -472,7 +470,7 @@ class StudentDuesWindow(QMainWindow):
     def apply_discount(self):
         rows = self.table_dues.selectedItems()
         if not rows:
-            QMessageBox.warning(self, "Erreur", "Veuillez sélectionner une facture.")
+            QMessageBox.warning(self, "Erreur", "Veuillez sÃ©lectionner une facture.")
             return
 
         r = rows[0].row()
@@ -481,7 +479,7 @@ class StudentDuesWindow(QMainWindow):
         new_discount = self.spin_discount_val.value()
 
         if new_discount > original_amt:
-            QMessageBox.warning(self, "Erreur", "La remise ne peut pas dépasser le montant original.")
+            QMessageBox.warning(self, "Erreur", "La remise ne peut pas dÃ©passer le montant original.")
             return
 
         new_net = original_amt - new_discount
@@ -491,12 +489,12 @@ class StudentDuesWindow(QMainWindow):
             with db.get_connection() as conn:
                 repo = FinanceRepository(conn)
                 if repo.get_due_is_paid(due_id):
-                    QMessageBox.warning(self, "Erreur", "Impossible de modifier une facture déjà payée.")
+                    QMessageBox.warning(self, "Erreur", "Impossible de modifier une facture dÃ©jÃ  payÃ©e.")
                     return
                 repo.update_due_discount(due_id, new_discount, new_net)
                 conn.commit()
 
-            QMessageBox.information(self, "Succès", "Remise appliquée avec succès.")
+            QMessageBox.information(self, "SuccÃ¨s", "Remise appliquÃ©e avec succÃ¨s.")
             self.load_student_dues()
 
         except Exception as e:
@@ -522,7 +520,7 @@ class StudentDuesWindow(QMainWindow):
     def generate_auto_dues(self):
         cid = self.combo_classes.currentData()
         if not cid:
-            QMessageBox.warning(self, "Attention", "Veuillez sélectionner une classe pour générer les factures.")
+            QMessageBox.warning(self, "Attention", "Veuillez sÃ©lectionner une classe pour gÃ©nÃ©rer les factures.")
             return
 
         active_year = self.get_active_year_id()
@@ -532,7 +530,7 @@ class StudentDuesWindow(QMainWindow):
         reply = QMessageBox.question(
             self,
             "Confirmation",
-            "Cette action va générer les factures (Inscription et Mensualités) pour TOUS les élèves de cette classe qui n'en ont pas encore. Continuer ?",
+            "Cette action va gÃ©nÃ©rer les factures (Inscription et MensualitÃ©s) pour TOUS les Ã©lÃ¨ves de cette classe qui n'en ont pas encore. Continuer ?",
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         )
 
@@ -565,13 +563,13 @@ class StudentDuesWindow(QMainWindow):
                                 due_y += 1
                             due_d = f"{due_y}-{m_idx:02d}-05"
                             repo.add_due(
-                                sid, active_year, f'Month_{m_idx}', f'Mensualité {m_name}', m_amt, m_amt, due_d
+                                sid, active_year, f'Month_{m_idx}', f'MensualitÃ© {m_name}', m_amt, m_amt, due_d
                             )
                             generated_count += 1
 
                 conn.commit()
 
-            QMessageBox.information(self, "Terminé", f"Opération terminée. {generated_count} factures générées.")
+            QMessageBox.information(self, "TerminÃ©", f"OpÃ©ration terminÃ©e. {generated_count} factures gÃ©nÃ©rÃ©es.")
             self.load_student_dues()
 
         except Exception as e:
@@ -585,12 +583,12 @@ class StudentDuesWindow(QMainWindow):
     def export_student_dues_report(self):
         student_id = self.combo_students.currentData()
         if not student_id:
-            QMessageBox.warning(self, "Erreur", "Veuillez sélectionner un élève d'abord.")
+            QMessageBox.warning(self, "Erreur", "Veuillez sÃ©lectionner un Ã©lÃ¨ve d'abord.")
             return
 
         active_year = self.get_active_year_id()
         if active_year == -1:
-            QMessageBox.warning(self, "Erreur", "Aucune année scolaire active trouvée.")
+            QMessageBox.warning(self, "Erreur", "Aucune annÃ©e scolaire active trouvÃ©e.")
             return
 
         try:
@@ -602,7 +600,7 @@ class StudentDuesWindow(QMainWindow):
                 dues_rows = repo.get_dues_for_export(student_id, active_year)
 
             if not dues_rows:
-                QMessageBox.information(self, "Aucune donnée", "Aucune facture à exporter pour cet élève.")
+                QMessageBox.information(self, "Aucune donnÃ©e", "Aucune facture Ã  exporter pour cet Ã©lÃ¨ve.")
                 return
 
             student_name = student_meta[0] if student_meta else self.combo_students.currentText()

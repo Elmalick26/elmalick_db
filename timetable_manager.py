@@ -52,7 +52,7 @@ from pdf_report_style import (
 from print_export_service import get_report_output_mode, output_pdf
 from repositories.finance_repo import FinanceRepository
 from repositories.timetable_repo import TimetableRepository
-from ui_styles import Colors, ThemeManager
+from ui_styles import Colors, ModuleHeaderWidget, ThemeManager
 
 try:
     import arabic_reshaper
@@ -82,7 +82,22 @@ def _ar_text(text: str) -> str:
 
 
 # خلفيات الحصص حسب المادة
-SLOT_PALETTE = [
+SLOT_PALETTE_LIGHT = [
+    "#dbeafe",
+    "#dcfce7",
+    "#fef3c7",
+    "#fee2e2",
+    "#ede9fe",
+    "#ccfbf1",
+    "#ffedd5",
+    "#e0f2fe",
+    "#f3e8ff",
+    "#fef9c3",
+    "#cffafe",
+    "#ffe4e6",
+]
+
+SLOT_PALETTE_DARK = [
     "#1e3a5f",
     "#1e5f3a",
     "#5f3a1e",
@@ -106,16 +121,19 @@ class SlotCell(QFrame):
 
     def __init__(self, slot_data: dict, color: str, on_edit, on_delete, parent=None):
         super().__init__(parent)
+        c = ThemeManager.get_colors()
+        text_color = c.TEXT_PRIMARY if not ThemeManager.is_dark_mode() else c.HEADER_TEXT
+        muted_color = c.TEXT_SECONDARY if not ThemeManager.is_dark_mode() else "#ccc"
         self.slot_id = slot_data.get("id")
         self.setFrameShape(QFrame.Shape.StyledPanel)
         self.setStyleSheet(
             f"""
             QFrame {{
                 background: {color}; border-radius: 6px;
-                border: 1px solid rgba(255,255,255,0.15);
+                border: 1px solid {c.BORDER};
                 margin: 2px;
             }}
-            QFrame:hover {{ border: 1px solid #4fc3f7; }}
+            QFrame:hover {{ border: 1px solid {c.PRIMARY}; }}
         """
         )
         self.setMinimumHeight(70)
@@ -134,21 +152,23 @@ class SlotCell(QFrame):
 
         lbl_subject = QLabel(subject)
         lbl_subject.setFont(QFont("Cairo", 10, QFont.Weight.Bold))
-        lbl_subject.setStyleSheet("color: white;")
+        lbl_subject.setStyleSheet(f"color: {text_color};")
         lbl_subject.setWordWrap(True)
 
         lbl_info = QLabel(f"👤 {teacher}" if teacher else "")
-        lbl_info.setStyleSheet("color: #ccc; font-size: 10px;")
+        lbl_info.setStyleSheet(f"color: {muted_color}; font-size: 10px;")
 
         lbl_time = QLabel(f"⏱ {start}–{end}" if start else "")
-        lbl_time.setStyleSheet("color: #aaa; font-size: 9px;")
+        lbl_time.setStyleSheet(f"color: {muted_color}; font-size: 9px;")
 
         if class_name:
             lbl_extra = QLabel(f"🏫 {class_name}")
-            lbl_extra.setStyleSheet("color: #80cbc4; font-size: 9px;")
+            lbl_extra.setStyleSheet(
+                f"color: {c.SUCCESS if ThemeManager.is_dark_mode() else c.PRIMARY}; font-size: 9px;"
+            )
         elif room:
             lbl_extra = QLabel(f"🚪 {room}")
-            lbl_extra.setStyleSheet("color: #aaa; font-size: 9px;")
+            lbl_extra.setStyleSheet(f"color: {muted_color}; font-size: 9px;")
         else:
             lbl_extra = None
 
@@ -165,13 +185,17 @@ class SlotCell(QFrame):
         btn_edit = QToolButton()
         btn_edit.setText("✏️")
         btn_edit.setToolTip("Modifier")
-        btn_edit.setStyleSheet("QToolButton { background: transparent; color: white; font-size: 12px; border: none; }")
+        btn_edit.setStyleSheet(
+            f"QToolButton {{ background: transparent; color: {text_color}; font-size: 12px; border: none; }}"
+        )
         btn_edit.clicked.connect(lambda: on_edit(slot_data))
 
         btn_del = QToolButton()
         btn_del.setText("🗑️")
         btn_del.setToolTip("Supprimer")
-        btn_del.setStyleSheet("QToolButton { background: transparent; color: #ef5350; font-size: 12px; border: none; }")
+        btn_del.setStyleSheet(
+            f"QToolButton {{ background: transparent; color: {c.DANGER}; font-size: 12px; border: none; }}"
+        )
         btn_del.clicked.connect(lambda: on_delete(slot_data))
 
         btn_row.addWidget(btn_edit)
@@ -186,16 +210,17 @@ class SlotCell(QFrame):
 class SlotDialog(QDialog):
     def __init__(self, classes: list, subjects: list, staff: list, slot_data: dict | None = None, parent=None):
         super().__init__(parent)
+        c = ThemeManager.get_colors()
         self.setWindowTitle("Ajouter une Heure" if slot_data is None else "Modifier l'Heure")
         self.setMinimumWidth(420)
         self.setStyleSheet(
-            """
-            QDialog { background: #1e2433; color: #e0e0e0; }
-            QLabel  { color: #ccc; }
-            QComboBox, QTimeEdit, QLineEdit {
-                background: #252b3b; color: white; border: 1px solid #444;
+            f"""
+            QDialog {{ background: {c.BG_MAIN}; color: {c.TEXT_PRIMARY}; }}
+            QLabel  {{ color: {c.TEXT_PRIMARY}; }}
+            QComboBox, QTimeEdit, QLineEdit {{
+                background: {c.INPUT_BG}; color: {c.TEXT_PRIMARY}; border: 1px solid {c.BORDER};
                 border-radius: 4px; padding: 5px 8px;
-            }
+            }}
         """
         )
 
@@ -285,6 +310,7 @@ class TimetableGrid(QScrollArea):
 
     def __init__(self, on_add_slot, on_edit_slot, on_delete_slot, parent=None):
         super().__init__(parent)
+        c = ThemeManager.get_colors()
         self.on_add = on_add_slot
         self.on_edit = on_edit_slot
         self.on_delete = on_delete_slot
@@ -294,18 +320,20 @@ class TimetableGrid(QScrollArea):
         self.setWidget(self._container)
         self._grid_layout = QVBoxLayout(self._container)
         self._grid_layout.setContentsMargins(0, 0, 0, 0)
-        self.setStyleSheet("background: #161b2e;")
+        self.setStyleSheet(f"background: {c.BG_MAIN};")
         self._subject_color_map: dict[int, str] = {}
         self._color_idx = 0
 
     def _get_subject_color(self, subject_id: int) -> str:
+        palette = SLOT_PALETTE_DARK if ThemeManager.is_dark_mode() else SLOT_PALETTE_LIGHT
         if subject_id not in self._subject_color_map:
-            self._subject_color_map[subject_id] = SLOT_PALETTE[self._color_idx % len(SLOT_PALETTE)]
+            self._subject_color_map[subject_id] = palette[self._color_idx % len(palette)]
             self._color_idx += 1
         return self._subject_color_map[subject_id]
 
     def render(self, slots: list[dict]):
         """إعادة رسم الشبكة الكاملة."""
+        c = ThemeManager.get_colors()
         # Clear
         while self._grid_layout.count():
             item = self._grid_layout.takeAt(0)
@@ -323,8 +351,8 @@ class TimetableGrid(QScrollArea):
             day_frame = QFrame()
             day_frame.setStyleSheet(
                 f"""
-                QFrame {{ background: #1a1f30; border-radius: 8px;
-                          border-left: 4px solid {DAY_COLORS[day_idx]}; margin-bottom: 4px; }}
+                QFrame {{ background: {c.BG_CARD}; border-radius: 8px;
+                          border: 1px solid {c.BORDER}; border-left: 4px solid {DAY_COLORS[day_idx]}; margin-bottom: 4px; }}
             """
             )
             day_layout = QVBoxLayout(day_frame)
@@ -335,14 +363,14 @@ class TimetableGrid(QScrollArea):
             hdr = QHBoxLayout()
             lbl_day = QLabel(f"  {day}  /  {DAYS_AR[day_idx]}")
             lbl_day.setFont(QFont("Cairo", 12, QFont.Weight.Bold))
-            lbl_day.setStyleSheet("color: white;")
+            lbl_day.setStyleSheet(f"color: {c.TEXT_PRIMARY};")
             hdr.addWidget(lbl_day)
             hdr.addStretch()
 
             btn_add = QPushButton("+ Ajouter")
             btn_add.setStyleSheet(
-                "QPushButton { background:#2962ff; color:white; border-radius:4px; "
-                "padding:4px 10px; font-size:11px; } QPushButton:hover { background:#1565c0; }"
+                f"QPushButton {{ background:{c.PRIMARY}; color:white; border-radius:4px; "
+                f"padding:4px 10px; font-size:11px; }} QPushButton:hover {{ background:{c.PRIMARY_HOVER}; }}"
             )
             btn_add.clicked.connect(lambda checked, d=day: self.on_add(d))
             hdr.addWidget(btn_add)
@@ -361,7 +389,7 @@ class TimetableGrid(QScrollArea):
                 day_layout.addLayout(row)
             else:
                 empty = QLabel("Aucune heure programmée — cliquez « + Ajouter »")
-                empty.setStyleSheet("color: #555; font-style: italic; padding: 8px;")
+                empty.setStyleSheet(f"color: {c.TEXT_SECONDARY}; font-style: italic; padding: 8px;")
                 day_layout.addWidget(empty)
 
             self._grid_layout.addWidget(day_frame)
@@ -380,6 +408,7 @@ class TimetableWindow(QMainWindow):
         self._classes: list[tuple] = []
         self._subjects: list[tuple] = []
         self._staff: list[tuple] = []
+        ThemeManager.apply_theme(self)
         self._setup_ui()
         self._load_filters()
 
@@ -387,48 +416,41 @@ class TimetableWindow(QMainWindow):
     def _setup_ui(self):
         central = QWidget()
         self.setCentralWidget(central)
-        central.setStyleSheet("background: #161b2e; color: #e0e0e0;")
         root = QVBoxLayout(central)
         root.setContentsMargins(14, 10, 14, 10)
         root.setSpacing(10)
 
         # Header
-        hdr = QHBoxLayout()
-        title = QLabel("📅 Emploi du Temps / جدول الحصص")
-        title.setFont(QFont("Cairo", 15, QFont.Weight.Bold))
-        title.setStyleSheet("color: #4fc3f7;")
-        hdr.addWidget(title)
-        hdr.addStretch()
+        header = ModuleHeaderWidget("📅", "EMPLOI DU TEMPS", "جدول الحصص الأسبوعي")
+        self._stat_classes = header.add_stat("🏫", "Classes", "0", "#3B82F6")
+        self._stat_teachers = header.add_stat("👤", "Enseignants", "0", "#22C55E")
+        self._stat_slots = header.add_stat("📌", "Créneaux", "0", "#8B5CF6")
+        root.addWidget(header)
 
-        hdr.addWidget(QLabel("Classe:"))
+        # Filter row
+        filter_row = QHBoxLayout()
+        filter_row.setSpacing(8)
+        lbl_class = QLabel("Classe:")
+        lbl_class.setStyleSheet("font-weight: bold;")
         self.cmb_class = QComboBox()
         self.cmb_class.setMinimumWidth(160)
-        self.cmb_class.setStyleSheet(
-            "QComboBox { background:#252b3b; color:white; border:1px solid #444; "
-            "border-radius:4px; padding:5px 8px; } QComboBox::drop-down { border: none; }"
-        )
         self.cmb_class.currentIndexChanged.connect(self._on_class_changed)
-        hdr.addWidget(self.cmb_class)
+        filter_row.addWidget(lbl_class)
+        filter_row.addWidget(self.cmb_class)
 
-        hdr.addWidget(QLabel("Professeur:"))
+        lbl_teacher = QLabel("Professeur:")
+        lbl_teacher.setStyleSheet("font-weight: bold;")
         self.cmb_teacher = QComboBox()
         self.cmb_teacher.setMinimumWidth(160)
-        self.cmb_teacher.setStyleSheet(
-            "QComboBox { background:#252b3b; color:white; border:1px solid #444; "
-            "border-radius:4px; padding:5px 8px; } QComboBox::drop-down { border: none; }"
-        )
         self.cmb_teacher.currentIndexChanged.connect(self._on_teacher_changed)
-        hdr.addWidget(self.cmb_teacher)
+        filter_row.addWidget(lbl_teacher)
+        filter_row.addWidget(self.cmb_teacher)
 
+        filter_row.addStretch()
         btn_print = QPushButton("🖨️ Imprimer")
-        btn_print.setStyleSheet(
-            "QPushButton { background:#37474f; color:white; border-radius:6px; padding:6px 14px; }"
-            "QPushButton:hover { background:#263238; }"
-        )
         btn_print.clicked.connect(self._print_timetable)
-        hdr.addWidget(btn_print)
-
-        root.addLayout(hdr)
+        filter_row.addWidget(btn_print)
+        root.addLayout(filter_row)
 
         # Timetable grid
         self.grid = TimetableGrid(
@@ -467,6 +489,10 @@ class TimetableWindow(QMainWindow):
                 for tid, name in self._staff:
                     self.cmb_teacher.addItem(name, tid)
                 self.cmb_teacher.blockSignals(False)
+
+            # Update stat chips
+            self._stat_classes.set_value(str(len(self._classes)))
+            self._stat_teachers.set_value(str(len(self._staff)))
 
         except Exception as e:
             AppLogger.error("Timetable", f"_load_filters error: {e}")
@@ -516,6 +542,7 @@ class TimetableWindow(QMainWindow):
                 for r in rows
             ]
             self.grid.render(slots)
+            self._stat_slots.set_value(str(len(slots)))
 
         except Exception as e:
             AppLogger.error("Timetable", f"_load_grid error: {e}")
@@ -544,6 +571,7 @@ class TimetableWindow(QMainWindow):
                 for r in rows
             ]
             self.grid.render(slots)
+            self._stat_slots.set_value(str(len(slots)))
 
         except Exception as e:
             AppLogger.error("Timetable", f"_load_grid_teacher error: {e}")

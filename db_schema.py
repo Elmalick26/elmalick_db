@@ -128,7 +128,12 @@ def initialize_schema(db_manager) -> None:  # noqa: C901
             CREATE TABLE IF NOT EXISTS AcademicYears (
                 id SERIAL PRIMARY KEY,
                 year_label TEXT UNIQUE NOT NULL,
-                is_active INTEGER DEFAULT 0
+                is_active INTEGER DEFAULT 0,
+                start_date DATE,
+                end_date DATE,
+                CONSTRAINT ck_academic_year_dates CHECK (
+                    start_date IS NULL OR end_date IS NULL OR start_date <= end_date
+                )
             )
         """
         )
@@ -165,6 +170,11 @@ def initialize_schema(db_manager) -> None:  # noqa: C901
                 period_name_ar TEXT,
                 period_name_fr TEXT,
                 sort_order INTEGER,
+                start_date DATE,
+                end_date DATE,
+                CONSTRAINT ck_academic_period_dates CHECK (
+                    start_date IS NULL OR end_date IS NULL OR start_date <= end_date
+                ),
                 FOREIGN KEY (year_id) REFERENCES AcademicYears(id),
                 FOREIGN KEY (cycle_id) REFERENCES Cycles(id)
             )
@@ -212,7 +222,8 @@ def initialize_schema(db_manager) -> None:  # noqa: C901
                 parent_name TEXT, parent_phone TEXT, parent_email TEXT, parent_address TEXT,
                 registration_date DATE DEFAULT CURRENT_DATE,
                 status TEXT DEFAULT 'Active',
-                photo_path TEXT
+                photo_path TEXT,
+                is_active BOOLEAN DEFAULT TRUE
             )
         """
         )
@@ -597,6 +608,10 @@ def initialize_schema(db_manager) -> None:  # noqa: C901
         _ensure_column("Students", "parent_address", "TEXT")
         _ensure_column("Students", "registration_date", "DATE")
         _ensure_column("Students", "photo_path", "TEXT")
+        # is_active: علامة لتحديد ما إذا كان الطالب مسجَّلاً بشكل نشط — مستخدم في إحصاءات KPI
+        _ensure_column("Students", "is_active", "BOOLEAN DEFAULT TRUE")
+        # ضمان أن السجلات القديمة لها قيمة افتراضية TRUE
+        _safe_execute("UPDATE Students SET is_active = TRUE WHERE is_active IS NULL")
 
         student_cols = _table_columns("Students")
         if "student_name" in student_cols:
@@ -747,6 +762,38 @@ def initialize_schema(db_manager) -> None:  # noqa: C901
             )
 
         _ensure_column("AcademicPeriods", "year_id", "INTEGER")
+        _ensure_column("AcademicPeriods", "start_date", "DATE")
+        _ensure_column("AcademicPeriods", "end_date", "DATE")
+        _ensure_column("AcademicYears", "start_date", "DATE")
+        _ensure_column("AcademicYears", "end_date", "DATE")
+        _safe_execute(
+            """
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint WHERE conname = 'ck_academic_year_dates'
+                ) THEN
+                    ALTER TABLE AcademicYears
+                    ADD CONSTRAINT ck_academic_year_dates
+                    CHECK (start_date IS NULL OR end_date IS NULL OR start_date <= end_date);
+                END IF;
+            END$$;
+        """
+        )
+        _safe_execute(
+            """
+            DO $$
+            BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM pg_constraint WHERE conname = 'ck_academic_period_dates'
+                ) THEN
+                    ALTER TABLE AcademicPeriods
+                    ADD CONSTRAINT ck_academic_period_dates
+                    CHECK (start_date IS NULL OR end_date IS NULL OR start_date <= end_date);
+                END IF;
+            END$$;
+        """
+        )
         _ensure_column("Grades", "year_id", "INTEGER")
         _ensure_column("StudentAttendance", "year_id", "INTEGER")
         _ensure_column("StudentAttendance", "period_id", "INTEGER")
@@ -905,7 +952,7 @@ def initialize_schema(db_manager) -> None:  # noqa: C901
         )
 
         # --- حفظ التغييرات ---
-        conn.commit()
+        # ملاحظة: context manager في db_manager.py يقوم بالـ commit تلقائياً بعد الانتهاء
         _logger.info("✅ قاعدة البيانات جاهزة ومحدثة (PostgreSQL Structures verified).")
 
 

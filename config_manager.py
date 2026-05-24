@@ -7,13 +7,23 @@ from __future__ import annotations
 
 import configparser
 import os
+import sys
 from pathlib import Path
 
 import db_path
 from app_logger import AppLogger
 
-# Keyring service name — مُعرِّف ثابت لتخزين البيانات في Windows Credential Manager
+# Keyring service name — مُعرِّف ثابت لتخزين البيانات في Windows Credential Manager
 _KEYRING_SERVICE = "ElMalickGest"
+
+# محاولة واحدة فقط لاستيراد keyring — ليس حزمة إلزامية
+try:
+    import keyring as _keyring_lib
+
+    _KEYRING_AVAILABLE = True
+except ImportError:
+    _keyring_lib = None  # type: ignore[assignment]
+    _KEYRING_AVAILABLE = False
 
 
 class ConfigManager:
@@ -155,13 +165,10 @@ class ConfigManager:
         القيم: 'disable' (تطوير) | 'require' | 'verify-ca' | 'verify-full' (إنتاج)
         يُعيَّن تلقائياً: 'disable' في بيئة التطوير، 'require' في بيئة الإنتاج.
         """
-        # قراءة القيمة من config.ini إن وُجدت
         explicit = self.get('DATABASE', 'ssl_mode', '').strip()
         if explicit:
             return explicit
-        # اكتشاف تلقائي: التطبيق مُجمَّع (PyInstaller) = إنتاج
-        import sys
-
+        # اكتشاف تلقائي: التطبيق مُجَمَّع (PyInstaller) = إنتاج
         return 'require' if getattr(sys, 'frozen', False) else 'disable'
 
     @property
@@ -170,14 +177,13 @@ class ConfigManager:
         الحصول على كلمة مرور قاعدة البيانات.
         الأولوية: 1) keyring  2) متغير البيئة  3) config.ini (للتطوير فقط)
         """
-        try:
-            import keyring as _keyring
-
-            stored = _keyring.get_password(_KEYRING_SERVICE, self.db_user)
-            if stored:
-                return stored
-        except Exception:
-            pass  # keyring غير متاح في بعض البيئات — نتجاهل الخطأ
+        if _KEYRING_AVAILABLE:
+            try:
+                stored = _keyring_lib.get_password(_KEYRING_SERVICE, self.db_user)
+                if stored:
+                    return stored
+            except Exception:
+                pass  # keyring غير متاح في بعض البيئات — نتجاهل الخطأ
 
         # متغير البيئة (مفيد في بيئات CI/Docker)
         env_pass = os.environ.get("ELMALICK_DB_PASSWORD", "")
@@ -193,10 +199,11 @@ class ConfigManager:
         وحذفها من config.ini لأمان أفضل.
         العائد: True إذا نجح التخزين.
         """
+        if not _KEYRING_AVAILABLE:
+            AppLogger.error("ConfigManager", "مكتبة keyring غير مثبتة — تعذّر تخزين كلمة المرور")
+            return False
         try:
-            import keyring as _keyring
-
-            _keyring.set_password(_KEYRING_SERVICE, self.db_user, password)
+            _keyring_lib.set_password(_KEYRING_SERVICE, self.db_user, password)
             # حذف كلمة المرور من config.ini بعد نقلها لـ keyring
             if self._config is not None and self._config.has_option('DATABASE', 'password'):
                 self._config.remove_option('DATABASE', 'password')
@@ -213,15 +220,15 @@ class ConfigManager:
         تُستدعى مرة واحدة عند الإعداد الأول أو من first_run_wizard.
         العائد: True إذا تمّ الترحيل أو لم يكن ضرورياً.
         """
+        if not _KEYRING_AVAILABLE:
+            return False  # keyring غير متاح
         try:
-            import keyring as _keyring
-
             # تحقق أولاً: إذا كانت keyring تحتوي بالفعل على كلمة مرور نتوقف
-            existing = _keyring.get_password(_KEYRING_SERVICE, self.db_user)
+            existing = _keyring_lib.get_password(_KEYRING_SERVICE, self.db_user)
             if existing:
                 return True  # لا شيء يجب ترحيله
         except Exception:
-            return False  # keyring غير متاح
+            return False
 
         # اقرأ من config.ini
         plain_pass = self.get('DATABASE', 'password', '')

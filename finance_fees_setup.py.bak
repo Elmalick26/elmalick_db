@@ -1,4 +1,4 @@
-import sys
+﻿import sys
 from datetime import datetime
 
 import psycopg2
@@ -35,15 +35,7 @@ from pdf_report_style import (
 )
 from print_export_service import get_report_output_mode, output_pdf
 from repositories.finance_repo import FinanceRepository
-from ui_styles import (
-    Colors,
-    ModuleHeaderWidget,
-    ThemeManager,
-    apply_shadow_to_widget,
-    get_card_style,
-    get_table_style,
-    get_tabs_style,
-)
+from ui_styles import Colors, ModuleHeaderWidget, ThemeManager, apply_shadow_to_widget, get_card_style, get_table_style, get_tabs_style
 
 FEES_REPORT_OUTPUT_MODE = get_report_output_mode("fees_report_mode", "save")
 
@@ -51,13 +43,13 @@ FEES_REPORT_OUTPUT_MODE = get_report_output_mode("fees_report_mode", "save")
 class FeesSetupWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Configuration Financière / الإعداد المالي")
+        self.setWindowTitle("Configuration FinanciÃ¨re / Ø§Ù„Ø¥Ø¹Ø¯Ø§Ø¯ Ø§Ù„Ù…Ø§Ù„ÙŠ")
         self.setMinimumSize(1100, 700)
         self.current_fees_report_rows = []
         self.current_fees_report_headers = []
         self.current_fees_report_title = ""
 
-        # تطبيق المظهر (Dark Mode أو Light Mode)
+        # ØªØ·Ø¨ÙŠÙ‚ Ø§Ù„Ù…Ø¸Ù‡Ø± (Dark Mode Ø£Ùˆ Light Mode)
         ThemeManager.apply_theme(self)
 
         self.init_ui()
@@ -65,7 +57,7 @@ class FeesSetupWindow(QMainWindow):
         self._load_kpi_stats()
 
     def get_active_year_id(self):
-        """جلب معرف السنة الدراسية النشطة حالياً لاستخدامه في التقارير"""
+        """Ø¬Ù„Ø¨ Ù…Ø¹Ø±Ù Ø§Ù„Ø³Ù†Ø© Ø§Ù„Ø¯Ø±Ø§Ø³ÙŠØ© Ø§Ù„Ù†Ø´Ø·Ø© Ø­Ø§Ù„ÙŠØ§Ù‹ Ù„Ø§Ø³ØªØ®Ø¯Ø§Ù…Ù‡ ÙÙŠ Ø§Ù„ØªÙ‚Ø§Ø±ÙŠØ±"""
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
@@ -80,17 +72,17 @@ class FeesSetupWindow(QMainWindow):
         self.main_layout.setContentsMargins(20, 20, 20, 20)
         self.main_layout.setSpacing(15)
 
-        # 1. En-tête unifié
+        # 1. En-tÃªte unifiÃ©
         header = ModuleHeaderWidget(
-            icon="⚙️",
-            title="CONFIGURATION FINANCIÈRE",
-            subtitle="إعداد رسوم التسجيل وجدولة الأقساط الشهرية",
+            icon="âš™ï¸",
+            title="CONFIGURATION FINANCIÃˆRE",
+            subtitle="Ø¥Ø¹Ø¯Ø§Ø¯ Ø±Ø³ÙˆÙ… Ø§Ù„ØªØ³Ø¬ÙŠÙ„ ÙˆØ¬Ø¯ÙˆÙ„Ø© Ø§Ù„Ø£Ù‚Ø³Ø§Ø· Ø§Ù„Ø´Ù‡Ø±ÙŠØ©",
         )
         self.main_layout.addWidget(header)
-        self._stat_classes = header.add_stat("🏫", "Classes Config", "—", "#3B82F6")
-        self._stat_fees = header.add_stat("💰", "Types de Frais", "—", "#22C55E")
-        self._stat_total_month = header.add_stat("📅", "Total Mensualité", "—", "#8B5CF6")
-        self._stat_total_reg = header.add_stat("📝", "Frais Inscription", "—", "#F59E0B")
+        self._stat_classes = header.add_stat("ðŸ«", "Classes Config", "â€”", "#3B82F6")
+        self._stat_fees = header.add_stat("ðŸ’°", "Types de Frais", "â€”", "#22C55E")
+        self._stat_total_month = header.add_stat("ðŸ“…", "Total MensualitÃ©", "â€”", "#8B5CF6")
+        self._stat_total_reg = header.add_stat("ðŸ“", "Frais Inscription", "â€”", "#F59E0B")
 
         # 2. KPI Cards
 
@@ -143,34 +135,21 @@ class FeesSetupWindow(QMainWindow):
         table.setStyleSheet(get_table_style())
 
     def _load_kpi_stats(self):
-        """Charge les statistiques de configuration financière."""
+        """Charge les statistiques de configuration financiÃ¨re."""
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
                 cursor = conn.cursor()
-                # Classes configurées
+                # Classes configurÃ©es
                 cursor.execute("SELECT COUNT(*) FROM Classes")
                 classes = cursor.fetchone()[0] or 0
-                # Types de frais (fallback cross-schema: fee_type when present, otherwise count rows)
-                cursor.execute(
-                    "SELECT column_name FROM information_schema.columns WHERE table_name = 'registrationfees'"
-                )
-                reg_cols = {r[0].lower() for r in cursor.fetchall()}
-                if "fee_type" in reg_cols:
-                    cursor.execute("SELECT COUNT(DISTINCT fee_type) FROM RegistrationFees")
-                else:
-                    cursor.execute("SELECT COUNT(*) FROM RegistrationFees")
+                # Types de frais distincts
+                cursor.execute("SELECT COUNT(DISTINCT fee_type) FROM RegistrationFees")
                 fee_types = cursor.fetchone()[0] or 0
-
-                # Total mensualité moyenne (MonthlyFeeSchedule is the active table in current schema)
-                cursor.execute("SELECT to_regclass('public.monthlyfeeschedule')")
-                has_schedule = cursor.fetchone()[0] is not None
-                if has_schedule:
-                    cursor.execute("SELECT COALESCE(AVG(amount), 0) FROM MonthlyFeeSchedule")
-                    avg_monthly = cursor.fetchone()[0] or 0
-                else:
-                    avg_monthly = 0
-
+                # Total mensualitÃ© moyenne
+                cursor.execute("SELECT AVG(monthly_amount) FROM MonthlyFees")
+                avg_monthly_row = cursor.fetchone()
+                avg_monthly = avg_monthly_row[0] if avg_monthly_row and avg_monthly_row[0] else 0
                 # Total frais d'inscription moyen
                 cursor.execute("SELECT AVG(amount) FROM RegistrationFees")
                 avg_reg_row = cursor.fetchone()
@@ -221,11 +200,11 @@ class FeesSetupWindow(QMainWindow):
 
         self.table_reg = QTableWidget(0, 2)
         self.style_table(self.table_reg)
-        self.table_reg.setHorizontalHeaderLabels(["Classe / الفصل", "Montant Inscription / مبلغ التسجيل"])
+        self.table_reg.setHorizontalHeaderLabels(["Classe / Ø§Ù„ÙØµÙ„", "Montant Inscription / Ù…Ø¨Ù„Øº Ø§Ù„ØªØ³Ø¬ÙŠÙ„"])
         self.table_reg.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         layout.addWidget(self.table_reg)
 
-        self.tabs.addTab(tab, "  📝 Inscription / التسجيل  ")
+        self.tabs.addTab(tab, "  ðŸ“ Inscription / Ø§Ù„ØªØ³Ø¬ÙŠÙ„  ")
 
     # ============================================
     # TAB 2: MONTHLY FEE SCHEDULE
@@ -257,7 +236,7 @@ class FeesSetupWindow(QMainWindow):
         )
         tool_layout = QVBoxLayout(tool_frame)
 
-        tool_header = QLabel("⚡ Outil de Calcul Rapide / أداة الحساب السريع")
+        tool_header = QLabel("âš¡ Outil de Calcul Rapide / Ø£Ø¯Ø§Ø© Ø§Ù„Ø­Ø³Ø§Ø¨ Ø§Ù„Ø³Ø±ÙŠØ¹")
         tool_layout.addWidget(tool_header)
 
         tlay = QHBoxLayout()
@@ -270,7 +249,7 @@ class FeesSetupWindow(QMainWindow):
         """
         )
 
-        btn_apply_smart = QPushButton("Répartition 4+4 (Smart)")
+        btn_apply_smart = QPushButton("RÃ©partition 4+4 (Smart)")
         btn_apply_smart.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_apply_smart.setStyleSheet(
             f"""
@@ -300,20 +279,20 @@ class FeesSetupWindow(QMainWindow):
 
         self.table_months = QTableWidget(9, 2)
         self.style_table(self.table_months)
-        self.table_months.setHorizontalHeaderLabels(["Mois / الشهر", "Montant à Payer (FCFA)"])
+        self.table_months.setHorizontalHeaderLabels(["Mois / Ø§Ù„Ø´Ù‡Ø±", "Montant Ã  Payer (FCFA)"])
         self.table_months.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.table_months.verticalHeader().setDefaultSectionSize(40)
 
         self.academic_months = [
-            (10, "Octobre / أكتوبر"),
-            (11, "Novembre / نوفمبر"),
-            (12, "Décembre / ديسمبر"),
-            (1, "Janvier / يناير"),
-            (2, "Février / فبراير"),
-            (3, "Mars / مارس"),
-            (4, "Avril / أبريل"),
-            (5, "Mai / مايو"),
-            (6, "Juin / يونيو"),
+            (10, "Octobre / Ø£ÙƒØªÙˆØ¨Ø±"),
+            (11, "Novembre / Ù†ÙˆÙÙ…Ø¨Ø±"),
+            (12, "DÃ©cembre / Ø¯ÙŠØ³Ù…Ø¨Ø±"),
+            (1, "Janvier / ÙŠÙ†Ø§ÙŠØ±"),
+            (2, "FÃ©vrier / ÙØ¨Ø±Ø§ÙŠØ±"),
+            (3, "Mars / Ù…Ø§Ø±Ø³"),
+            (4, "Avril / Ø£Ø¨Ø±ÙŠÙ„"),
+            (5, "Mai / Ù…Ø§ÙŠÙˆ"),
+            (6, "Juin / ÙŠÙˆÙ†ÙŠÙˆ"),
         ]
 
         for i, (idx, name) in enumerate(self.academic_months):
@@ -326,7 +305,7 @@ class FeesSetupWindow(QMainWindow):
 
         layout.addWidget(self.table_months)
 
-        btn_save_schedule = QPushButton("💾 ENREGISTRER L'ÉCHÉANCIER")
+        btn_save_schedule = QPushButton("ðŸ’¾ ENREGISTRER L'Ã‰CHÃ‰ANCIER")
         btn_save_schedule.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_save_schedule.setMinimumHeight(50)
         btn_save_schedule.setStyleSheet(
@@ -338,7 +317,7 @@ class FeesSetupWindow(QMainWindow):
         btn_save_schedule.clicked.connect(self.save_monthly_schedule)
         layout.addWidget(btn_save_schedule)
 
-        self.tabs.addTab(tab, "  📅 Mensualités / الأقساط الشهرية  ")
+        self.tabs.addTab(tab, "  ðŸ“… MensualitÃ©s / Ø§Ù„Ø£Ù‚Ø³Ø§Ø· Ø§Ù„Ø´Ù‡Ø±ÙŠØ©  ")
 
     # ============================================
     # TAB 3: FEES REPORTS
@@ -360,7 +339,7 @@ class FeesSetupWindow(QMainWindow):
 
         colors = ThemeManager.get_colors()
 
-        btn_generate = QPushButton("Générer Rapport")
+        btn_generate = QPushButton("GÃ©nÃ©rer Rapport")
         btn_generate.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_generate.setMinimumHeight(40)
         btn_generate.setStyleSheet(
@@ -394,7 +373,7 @@ class FeesSetupWindow(QMainWindow):
 
         layout.addWidget(controls_card)
         layout.addWidget(self.table_fees_report)
-        self.tabs.addTab(tab, "  📊 Rapports Frais / التقارير  ")
+        self.tabs.addTab(tab, "  ðŸ“Š Rapports Frais / Ø§Ù„ØªÙ‚Ø§Ø±ÙŠØ±  ")
 
     # --- Database / Logic Methods ---
     def load_classes(self):
@@ -429,7 +408,7 @@ class FeesSetupWindow(QMainWindow):
                 FinanceRepository(conn).upsert_registration_fee(class_id, amount)
                 conn.commit()
             self.load_reg_table()
-            QMessageBox.information(self, "Succès", "Frais d'inscription mis à jour.")
+            QMessageBox.information(self, "SuccÃ¨s", "Frais d'inscription mis Ã  jour.")
         except Exception as e:
             QMessageBox.critical(self, "Erreur", f"Erreur lors de l'enregistrement: {e}")
 
@@ -468,7 +447,7 @@ class FeesSetupWindow(QMainWindow):
     def save_monthly_schedule(self):
         class_id = self.combo_class_month.currentData()
         if not class_id:
-            QMessageBox.warning(self, "Erreur", "Veuillez sélectionner une classe.")
+            QMessageBox.warning(self, "Erreur", "Veuillez sÃ©lectionner une classe.")
             return
 
         try:
@@ -480,9 +459,9 @@ class FeesSetupWindow(QMainWindow):
                 ]
                 FinanceRepository(conn).save_monthly_fee_schedule(class_id, entries)
                 conn.commit()
-            QMessageBox.information(self, "Succès", "Échéancier enregistré avec succès.")
+            QMessageBox.information(self, "SuccÃ¨s", "Ã‰chÃ©ancier enregistrÃ© avec succÃ¨s.")
         except Exception as e:
-            QMessageBox.critical(self, "Erreur", f"Erreur lors de la sauvegarde de l'échéancier: {e}")
+            QMessageBox.critical(self, "Erreur", f"Erreur lors de la sauvegarde de l'Ã©chÃ©ancier: {e}")
 
     def load_monthly_schedule(self):
         class_id = self.combo_class_month.currentData()
@@ -505,7 +484,7 @@ class FeesSetupWindow(QMainWindow):
         except Exception as e:
             AppLogger.error("FinanceFeesSetup", f"Error loading monthly schedule: {e}")
 
-    # ================== تعديل جوهري للتقارير بناءً على قاعدة البيانات ==================
+    # ================== ØªØ¹Ø¯ÙŠÙ„ Ø¬ÙˆÙ‡Ø±ÙŠ Ù„Ù„ØªÙ‚Ø§Ø±ÙŠØ± Ø¨Ù†Ø§Ø¡Ù‹ Ø¹Ù„Ù‰ Ù‚Ø§Ø¹Ø¯Ø© Ø§Ù„Ø¨ÙŠØ§Ù†Ø§Øª ==================
     def run_fees_report(self):
         report_key = self.combo_fees_report.currentData() or "comparison"
 
@@ -520,7 +499,7 @@ class FeesSetupWindow(QMainWindow):
 
                 if report_key == "comparison":
                     title = "Rapport Comparatif des Frais par Classe"
-                    headers = ["Classe", "Inscription", "Total Mensualités", "Frais Annuels (1 élève)"]
+                    headers = ["Classe", "Inscription", "Total MensualitÃ©s", "Frais Annuels (1 Ã©lÃ¨ve)"]
                     for class_name, registration_fee, monthly_total in FinanceRepository(
                         conn
                     ).get_fees_comparison_report():
@@ -536,11 +515,11 @@ class FeesSetupWindow(QMainWindow):
                 else:
                     if active_year == -1:
                         QMessageBox.warning(
-                            self, "Attention", "Aucune année scolaire active n'a été trouvée pour la projection."
+                            self, "Attention", "Aucune annÃ©e scolaire active n'a Ã©tÃ© trouvÃ©e pour la projection."
                         )
                         return
                     title = "Rapport Projection du Revenu Annuel"
-                    headers = ["Classe", "Élèves Actifs", "Frais Annuels (1 élève)", "Projection Totale"]
+                    headers = ["Classe", "Ã‰lÃ¨ves Actifs", "Frais Annuels (1 Ã©lÃ¨ve)", "Projection Totale"]
                     for class_name, active_students, registration_fee, monthly_total in FinanceRepository(
                         conn
                     ).get_fees_projection_report(active_year):
@@ -560,7 +539,7 @@ class FeesSetupWindow(QMainWindow):
             self.current_fees_report_rows = rows
 
             self.table_fees_report.setColumnCount(len(headers) if headers else 1)
-            self.table_fees_report.setHorizontalHeaderLabels(headers or ["Données"])
+            self.table_fees_report.setHorizontalHeaderLabels(headers or ["DonnÃ©es"])
             self.table_fees_report.setRowCount(0)
 
             for row_values in rows:
@@ -570,13 +549,13 @@ class FeesSetupWindow(QMainWindow):
                     self.table_fees_report.setItem(idx, col_idx, QTableWidgetItem(str(value)))
 
             if not rows:
-                QMessageBox.information(self, "Information", "Aucune donnée trouvée pour ce rapport.")
+                QMessageBox.information(self, "Information", "Aucune donnÃ©e trouvÃ©e pour ce rapport.")
         except Exception as e:
-            QMessageBox.critical(self, "Erreur", f"Erreur lors de la génération du rapport : {e}")
+            QMessageBox.critical(self, "Erreur", f"Erreur lors de la gÃ©nÃ©ration du rapport : {e}")
 
     def export_fees_report_pdf(self):
         if not self.current_fees_report_rows:
-            QMessageBox.warning(self, "Attention", "Générez d'abord un rapport avec des données.")
+            QMessageBox.warning(self, "Attention", "GÃ©nÃ©rez d'abord un rapport avec des donnÃ©es.")
             return
 
         orientation = 'L' if len(self.current_fees_report_headers) >= 5 else 'P'
@@ -588,7 +567,7 @@ class FeesSetupWindow(QMainWindow):
 
         pdf.set_font("Arial", '', 10)
         pdf.set_text_color(51, 65, 85)
-        pdf.cell(0, 7, f"Généré le: {datetime.now().strftime('%Y-%m-%d %H:%M')}", 0, 1, 'C')
+        pdf.cell(0, 7, f"GÃ©nÃ©rÃ© le: {datetime.now().strftime('%Y-%m-%d %H:%M')}", 0, 1, 'C')
         pdf.ln(2)
 
         table_width = pdf.w - 20
@@ -615,8 +594,8 @@ class FeesSetupWindow(QMainWindow):
             default_name=f"Rapport_Frais_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
             mode=mode,
             dialog_title="Exporter Rapport Frais",
-            success_save_message="Rapport des frais exporté.",
-            success_print_message="Rapport des frais envoyé à l'imprimante.",
+            success_save_message="Rapport des frais exportÃ©.",
+            success_print_message="Rapport des frais envoyÃ© Ã  l'imprimante.",
         )
 
 

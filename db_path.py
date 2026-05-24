@@ -6,7 +6,9 @@ Gère les chemins pour les logs, sauvegardes et ressources (polices).
 يدير مسارات الملحقات (النسخ الاحتياطي، السجلات، والخطوط).
 (تم إزالة مسار قاعدة البيانات لأن PostgreSQL يعمل كخادم مستقل)
 """
+import glob
 import os
+import shutil
 import sys
 from pathlib import Path
 
@@ -43,12 +45,10 @@ def get_backup_dir():
     if getattr(sys, 'frozen', False):
         appdata = os.getenv('APPDATA') or os.path.expanduser('~')
         backup_dir = Path(appdata) / 'SchoolManagement' / 'backups'
-        backup_dir.mkdir(parents=True, exist_ok=True)
-        return str(backup_dir)
     else:
-        backup_dir = Path('backups')
-        backup_dir.mkdir(parents=True, exist_ok=True)
-        return str(backup_dir)
+        backup_dir = Path(__file__).resolve().parent / 'backups'
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    return str(backup_dir)
 
 
 def get_logs_dir():
@@ -56,12 +56,10 @@ def get_logs_dir():
     if getattr(sys, 'frozen', False):
         appdata = os.getenv('APPDATA') or os.path.expanduser('~')
         logs_dir = Path(appdata) / 'SchoolManagement' / 'logs'
-        logs_dir.mkdir(parents=True, exist_ok=True)
-        return str(logs_dir)
     else:
-        logs_dir = Path('logs')
-        logs_dir.mkdir(parents=True, exist_ok=True)
-        return str(logs_dir)
+        logs_dir = Path(__file__).resolve().parent / 'logs'
+    logs_dir.mkdir(parents=True, exist_ok=True)
+    return str(logs_dir)
 
 
 def find_pg_tool(tool_name: str) -> str:
@@ -70,9 +68,6 @@ def find_pg_tool(tool_name: str) -> str:
     Searches PATH first, then common Windows installation directories.
     Raises FileNotFoundError if not found.
     """
-    import shutil
-    import glob
-
     # 1. Try PATH first
     found = shutil.which(tool_name)
     if found:

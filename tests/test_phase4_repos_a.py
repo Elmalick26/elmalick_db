@@ -79,16 +79,16 @@ class TestAcademicRepository:
 
     def test_list_years(self):
         conn, cur = _conn()
-        cur.fetchall.return_value = [(1, "2024-2025", 1)]
+        cur.fetchall.return_value = [(1, "2024-2025", 1, "2024-09-01", "2025-07-31")]
         repo = AcademicRepository(conn)
         rows = repo.list_years()
-        assert rows == [(1, "2024-2025", 1)]
+        assert rows == [(1, "2024-2025", 1, "2024-09-01", "2025-07-31")]
 
     def test_get_year_found(self):
         conn, cur = _conn()
-        cur.fetchone.return_value = ("2024-2025",)
+        cur.fetchone.return_value = ("2024-2025", "2024-09-01", "2025-07-31")
         repo = AcademicRepository(conn)
-        assert repo.get_year(1) == ("2024-2025",)
+        assert repo.get_year(1) == ("2024-2025", "2024-09-01", "2025-07-31")
 
     def test_get_year_not_found(self):
         conn, cur = _conn()
@@ -267,7 +267,13 @@ class TestAcademicRepository:
         cur.fetchone.return_value = (99,)  # RETURNING id
         conn.cursor.return_value = cur
         repo = AcademicRepository(conn)
-        repo.generate_periods_and_assessments(1, 1, is_elementary=True)
+        repo.generate_periods_and_assessments(
+            1,
+            1,
+            is_elementary=True,
+            year_start_date="2024-09-01",
+            year_end_date="2025-07-31",
+        )
         # Must have DELETE × 2, then INSERT AcademicPeriods × 3 + INSERT AssessmentTypes × 3
         assert cur.execute.call_count >= 8
 
@@ -278,8 +284,29 @@ class TestAcademicRepository:
         cur.fetchone.return_value = (99,)
         conn.cursor.return_value = cur
         repo = AcademicRepository(conn)
-        repo.generate_periods_and_assessments(1, 2, is_elementary=False)
+        repo.generate_periods_and_assessments(
+            1,
+            2,
+            is_elementary=False,
+            year_start_date="2024-09-01",
+            year_end_date="2025-07-31",
+        )
         assert cur.execute.call_count >= 9
+
+    def test_list_periods_for_year_cycle(self):
+        conn, cur = _conn()
+        cur.fetchall.return_value = [(1, "Trimestre 1", "الفصل الأول", 1, "2024-09-01", "2024-12-01")]
+        repo = AcademicRepository(conn)
+        rows = repo.list_periods_for_year_cycle(1, 2)
+        assert len(rows) == 1
+        assert rows[0][0] == 1
+
+    def test_update_period_dates(self):
+        conn, cur = _conn()
+        repo = AcademicRepository(conn)
+        repo.update_period_dates(10, "2024-09-01", "2024-12-01")
+        assert "UPDATE AcademicPeriods" in cur.execute.call_args[0][0]
+        assert cur.execute.call_args[0][1] == ("2024-09-01", "2024-12-01", 10)
 
 
 # ════════════════════════════════════════════════════════════════════════════

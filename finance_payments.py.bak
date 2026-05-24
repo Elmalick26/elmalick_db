@@ -1,6 +1,6 @@
 import os
 import sys
-from datetime import date, datetime
+from datetime import datetime, date
 
 import psycopg2
 from fpdf import FPDF
@@ -44,15 +44,8 @@ from pdf_report_style import (
 from print_export_service import get_report_output_mode, output_pdf
 from repositories.finance_repo import FinanceRepository
 from ui_styles import (
-    Colors,
-    ModuleHeaderWidget,
-    ThemeManager,
-    ToastNotification,
-    apply_shadow_to_widget,
-    get_card_style,
-    get_module_caps,
-    get_table_style,
-    get_tabs_style,
+    Colors, ModuleHeaderWidget, ThemeManager, ToastNotification,
+    apply_shadow_to_widget, get_card_style, get_module_caps, get_table_style, get_tabs_style,
 )
 
 LATE_PAYERS_OUTPUT_MODE = get_report_output_mode("late_payers_mode", "print")
@@ -73,7 +66,7 @@ def sanitize(text):
 class LatePayersDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Retardataires / المتأخرين")
+        self.setWindowTitle("Retardataires / Ø§Ù„Ù…ØªØ£Ø®Ø±ÙŠÙ†")
         self.setMinimumSize(800, 500)
 
         ThemeManager.apply_theme(self)
@@ -89,19 +82,19 @@ class LatePayersDialog(QDialog):
         self.layout.setContentsMargins(20, 20, 20, 20)
         self.layout.setSpacing(15)
 
-        title = QLabel("⚠️ Retardataires / المتأخرين")
+        title = QLabel("âš ï¸ Retardataires / Ø§Ù„Ù…ØªØ£Ø®Ø±ÙŠÙ†")
         title.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
         title.setStyleSheet(f"color: {ThemeManager.get_colors().TEXT_PRIMARY};")
         self.layout.addWidget(title)
 
         self.table = QTableWidget()
         self.table.setColumnCount(4)
-        self.table.setHorizontalHeaderLabels(["Eleve", "Classe", "Factures Non Payées", "Dette"])
+        self.table.setHorizontalHeaderLabels(["Eleve", "Classe", "Factures Non PayÃ©es", "Dette"])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.table.setStyleSheet(get_table_style())
         self.layout.addWidget(self.table)
 
-        btn_print = QPushButton("🖨️ Imprimer la Liste (PDF)")
+        btn_print = QPushButton("ðŸ–¨ï¸ Imprimer la Liste (PDF)")
         btn_print.setCursor(Qt.CursorShape.PointingHandCursor)
         colors = ThemeManager.get_colors()
         btn_print.setStyleSheet(
@@ -187,16 +180,16 @@ class LatePayersDialog(QDialog):
             default_name,
             mode=LATE_PAYERS_OUTPUT_MODE,
             dialog_title="Enregistrer PDF",
-            success_save_message="Liste PDF générée.",
-            success_print_message="Liste envoyée à l'imprimante.",
+            success_save_message="Liste PDF gÃ©nÃ©rÃ©e.",
+            success_print_message="Liste envoyÃ©e Ã  l'imprimante.",
         )
 
 
-# --- النافذة الرئيسية للمدفوعات ---
+# --- Ø§Ù„Ù†Ø§ÙØ°Ø© Ø§Ù„Ø±Ø¦ÙŠØ³ÙŠØ© Ù„Ù„Ù…Ø¯ÙÙˆØ¹Ø§Øª ---
 class StudentPaymentWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Caisse & Paiements / الصندوق والمدفوعات")
+        self.setWindowTitle("Caisse & Paiements / Ø§Ù„ØµÙ†Ø¯ÙˆÙ‚ ÙˆØ§Ù„Ù…Ø¯ÙÙˆØ¹Ø§Øª")
         self.setMinimumSize(1100, 700)
 
         ThemeManager.apply_theme(self)
@@ -215,7 +208,7 @@ class StudentPaymentWindow(QMainWindow):
         with db.get_connection() as conn:
             cursor = conn.cursor()
             try:
-                # إضافة SAVEPOINT لضمان عدم توقف البرنامج إذا كان الفهرس موجوداً
+                # Ø¥Ø¶Ø§ÙØ© SAVEPOINT Ù„Ø¶Ù…Ø§Ù† Ø¹Ø¯Ù… ØªÙˆÙ‚Ù Ø§Ù„Ø¨Ø±Ù†Ø§Ù…Ø¬ Ø¥Ø°Ø§ ÙƒØ§Ù† Ø§Ù„ÙÙ‡Ø±Ø³ Ù…ÙˆØ¬ÙˆØ¯Ø§Ù‹
                 cursor.execute("SAVEPOINT sp_idx;")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_payments_student ON Payments(student_id)")
                 cursor.execute("CREATE INDEX IF NOT EXISTS idx_payments_date ON Payments(transaction_date)")
@@ -237,7 +230,7 @@ class StudentPaymentWindow(QMainWindow):
             return -1
 
     def apply_rbac(self, role: str) -> None:
-        """تطبيق صلاحيات الأزرار بناءً على دور المستخدم — يُستدعى من MainWindow."""
+        """ØªØ·Ø¨ÙŠÙ‚ ØµÙ„Ø§Ø­ÙŠØ§Øª Ø§Ù„Ø£Ø²Ø±Ø§Ø± Ø¨Ù†Ø§Ø¡Ù‹ Ø¹Ù„Ù‰ Ø¯ÙˆØ± Ø§Ù„Ù…Ø³ØªØ®Ø¯Ù… â€” ÙŠÙØ³ØªØ¯Ø¹Ù‰ Ù…Ù† MainWindow."""
         caps = get_module_caps(role, "finance_payments")
         self.btn_validate_payment.setEnabled(caps["can_write"])
 
@@ -250,12 +243,12 @@ class StudentPaymentWindow(QMainWindow):
 
         # 1. Header
         header = ModuleHeaderWidget(
-            icon="💰",
+            icon="ðŸ’°",
             title="GESTION DE CAISSE",
-            subtitle="تحصيل الرسوم والفواتير المستحقة",
+            subtitle="ØªØ­ØµÙŠÙ„ Ø§Ù„Ø±Ø³ÙˆÙ… ÙˆØ§Ù„ÙÙˆØ§ØªÙŠØ± Ø§Ù„Ù…Ø³ØªØ­Ù‚Ø©",
         )
         colors = ThemeManager.get_colors()
-        btn_late = QPushButton("⚠️ Retardataires / المتأخرين")
+        btn_late = QPushButton("âš ï¸ Retardataires / Ø§Ù„Ù…ØªØ£Ø®Ø±ÙŠÙ†")
         btn_late.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_late.setStyleSheet(
             f"""QPushButton {{ background-color: {colors.DANGER}; color: white;
@@ -266,10 +259,10 @@ class StudentPaymentWindow(QMainWindow):
         header.layout().addWidget(btn_late)
         header.layout().addSpacing(10)
         self.main_layout.addWidget(header)
-        self._stat_total = header.add_stat("💳", "Paiements Total", "—", "#3B82F6")
-        self._stat_month = header.add_stat("📅", "Ce Mois", "—", "#22C55E")
-        self._stat_late = header.add_stat("⚠️", "En Retard", "—", "#EF4444")
-        self._stat_amount = header.add_stat("💰", "Montant Annuel", "—", "#8B5CF6")
+        self._stat_total = header.add_stat("ðŸ’³", "Paiements Total", "â€”", "#3B82F6")
+        self._stat_month = header.add_stat("ðŸ“…", "Ce Mois", "â€”", "#22C55E")
+        self._stat_late = header.add_stat("âš ï¸", "En Retard", "â€”", "#EF4444")
+        self._stat_amount = header.add_stat("ðŸ’°", "Montant Annuel", "â€”", "#8B5CF6")
 
         # 2. KPI Cards
 
@@ -279,8 +272,10 @@ class StudentPaymentWindow(QMainWindow):
         slay.setContentsMargins(20, 20, 20, 20)
         slay.setSpacing(15)
 
-        sel_title = QLabel("Sélection de l'élève / اختيار الطالب")
-        sel_title.setStyleSheet(f"font-weight: bold; color: {ThemeManager.get_colors().TEXT_PRIMARY}; font-size: 14px;")
+        sel_title = QLabel("SÃ©lection de l'Ã©lÃ¨ve / Ø§Ø®ØªÙŠØ§Ø± Ø§Ù„Ø·Ø§Ù„Ø¨")
+        sel_title.setStyleSheet(
+            f"font-weight: bold; color: {ThemeManager.get_colors().TEXT_PRIMARY}; font-size: 14px;"
+        )
 
         self.combo_classes = self.styled_combo()
         self.combo_classes.currentIndexChanged.connect(self.load_students)
@@ -291,7 +286,7 @@ class StudentPaymentWindow(QMainWindow):
         slay.addWidget(sel_title)
         slay.addWidget(QLabel("Classe:"))
         slay.addWidget(self.combo_classes, 1)
-        slay.addWidget(QLabel("Élève:"))
+        slay.addWidget(QLabel("Ã‰lÃ¨ve:"))
         slay.addWidget(self.combo_students, 2)
 
         self.main_layout.addWidget(sel_card)
@@ -310,7 +305,7 @@ class StudentPaymentWindow(QMainWindow):
         mlay = QVBoxLayout(self.dues_frame)
         mlay.setContentsMargins(20, 20, 20, 20)
 
-        lbl_month_title = QLabel("Factures à payer / الفواتير والمطالبات المستحقة")
+        lbl_month_title = QLabel("Factures Ã  payer / Ø§Ù„ÙÙˆØ§ØªÙŠØ± ÙˆØ§Ù„Ù…Ø·Ø§Ù„Ø¨Ø§Øª Ø§Ù„Ù…Ø³ØªØ­Ù‚Ø©")
         colors = ThemeManager.get_colors()
         lbl_month_title.setStyleSheet(
             f"font-weight: bold; color: {colors.TEXT_PRIMARY}; border-bottom: 1px solid {colors.BORDER}; padding-bottom: 5px;"
@@ -340,13 +335,13 @@ class StudentPaymentWindow(QMainWindow):
         alay.setContentsMargins(20, 15, 20, 15)
         alay.setSpacing(20)
 
-        self.lbl_total_due = QLabel("Total Sélectionné: 0")
+        self.lbl_total_due = QLabel("Total SÃ©lectionnÃ©: 0")
         self.lbl_total_due.setStyleSheet(f"font-size: 16px; color: {ThemeManager.get_colors().HEADER_TEXT};")
 
-        self.spin_paid_amount = self.styled_spinbox("Montant Reçu: ")
+        self.spin_paid_amount = self.styled_spinbox("Montant ReÃ§u: ")
         self.spin_paid_amount.valueChanged.connect(self.recalc_totals)
 
-        self.lbl_balance = QLabel("Rendu (باقي للصرف): 0")
+        self.lbl_balance = QLabel("Rendu (Ø¨Ø§Ù‚ÙŠ Ù„Ù„ØµØ±Ù): 0")
         self.lbl_balance.setStyleSheet(f"font-size: 16px; color: {ThemeManager.get_colors().WARNING};")
 
         self.btn_validate_payment = QPushButton("VALIDER L'ENCAISSEMENT")
@@ -381,12 +376,12 @@ class StudentPaymentWindow(QMainWindow):
         self.table_history = QTableWidget()
         self.style_table(self.table_history)
         self.table_history.setColumnCount(6)
-        self.table_history.setHorizontalHeaderLabels(["ID", "Date", "Description", "Montant Total", "Versé", "Reçu"])
+        self.table_history.setHorizontalHeaderLabels(["ID", "Date", "Description", "Montant Total", "VersÃ©", "ReÃ§u"])
         self.table_history.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         history_layout.addWidget(self.table_history)
 
-        self.main_tabs.addTab(tab_collect, "💳 Encaissement")
-        self.main_tabs.addTab(tab_history, "📚 Registre Paiements")
+        self.main_tabs.addTab(tab_collect, "ðŸ’³ Encaissement")
+        self.main_tabs.addTab(tab_history, "ðŸ“š Registre Paiements")
         self.main_layout.addWidget(self.main_tabs, 1)
 
         # Init Data
@@ -460,19 +455,23 @@ class StudentPaymentWindow(QMainWindow):
             with db.get_connection() as conn:
                 cursor = conn.cursor()
                 year_id = FinanceRepository(conn).get_active_year_id()
-                cursor.execute("SELECT COUNT(*) FROM Payments WHERE year_id = %s", (year_id,))
+                cursor.execute(
+                    "SELECT COUNT(*) FROM Payments WHERE academic_year_id = %s", (year_id,)
+                )
                 total = cursor.fetchone()[0] or 0
-                cursor.execute("SELECT COALESCE(SUM(amount_paid), 0) FROM Payments WHERE year_id = %s", (year_id,))
+                cursor.execute(
+                    "SELECT COALESCE(SUM(amount_paid), 0) FROM Payments WHERE academic_year_id = %s", (year_id,)
+                )
                 amount = cursor.fetchone()[0] or 0
                 cursor.execute(
                     "SELECT COALESCE(SUM(amount_paid), 0) FROM Payments "
-                    "WHERE year_id = %s AND transaction_date >= %s",
+                    "WHERE academic_year_id = %s AND transaction_date >= %s",
                     (year_id, month_start),
                 )
                 month_amount = cursor.fetchone()[0] or 0
                 cursor.execute(
-                    "SELECT COUNT(DISTINCT student_id) FROM StudentDues " "WHERE is_paid = 0 AND year_id = %s",
-                    (year_id,),
+                    "SELECT COUNT(DISTINCT student_id) FROM StudentDues "
+                    "WHERE is_paid = 0 AND academic_year_id = %s", (year_id,)
                 )
                 late = cursor.fetchone()[0] or 0
             self._stat_total.set_value(str(total))
@@ -569,11 +568,11 @@ class StudentPaymentWindow(QMainWindow):
                 f"color: {ThemeManager.get_colors().TEXT_PRIMARY}; font-size: 13px; border: none; background: transparent;"
             )
 
-            chk = QCheckBox("Sélectionner pour Payer")
+            chk = QCheckBox("SÃ©lectionner pour Payer")
             chk.setStyleSheet("border: none; background: transparent; font-weight: bold;")
 
             if is_paid:
-                chk.setText("Déjà Payé ✅")
+                chk.setText("DÃ©jÃ  PayÃ© âœ…")
                 chk.setChecked(True)
                 chk.setEnabled(False)
             else:
@@ -600,7 +599,7 @@ class StudentPaymentWindow(QMainWindow):
 
     def reset_calcs(self):
         self.spin_paid_amount.setValue(0)
-        self.lbl_total_due.setText("Total Sélectionné: 0")
+        self.lbl_total_due.setText("Total SÃ©lectionnÃ©: 0")
         self.lbl_balance.setText("Rendu: 0")
         self.current_total_selected = 0.0
 
@@ -611,7 +610,7 @@ class StudentPaymentWindow(QMainWindow):
                 total += amt
 
         self.current_total_selected = total
-        self.lbl_total_due.setText(f"Total Sélectionné: {total:,.0f} FCFA")
+        self.lbl_total_due.setText(f"Total SÃ©lectionnÃ©: {total:,.0f} FCFA")
         self.spin_paid_amount.setValue(total)
         self.recalc_totals()
 
@@ -621,15 +620,15 @@ class StudentPaymentWindow(QMainWindow):
 
         balance = received - to_pay
 
-        self.lbl_balance.setText(f"Rendu (باقي للعميل): {max(0, balance):,.0f} FCFA")
+        self.lbl_balance.setText(f"Rendu (Ø¨Ø§Ù‚ÙŠ Ù„Ù„Ø¹Ù…ÙŠÙ„): {max(0, balance):,.0f} FCFA")
 
         if balance >= 0:
             self.lbl_balance.setStyleSheet(f"font-size: 16px; color: {ThemeManager.get_colors().SUCCESS};")
         else:
-            self.lbl_balance.setText(f"Reste à payer (نقص في الدفع): {abs(balance):,.0f} FCFA")
+            self.lbl_balance.setText(f"Reste Ã  payer (Ù†Ù‚Øµ ÙÙŠ Ø§Ù„Ø¯ÙØ¹): {abs(balance):,.0f} FCFA")
             self.lbl_balance.setStyleSheet(f"font-size: 16px; color: {ThemeManager.get_colors().DANGER};")
 
-    # ─── execute_payment_transaction ─────────────────────────────────────────
+    # â”€â”€â”€ execute_payment_transaction â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
     def execute_payment_transaction(self):
         sid = self.combo_students.currentData()
         if not sid or self.current_total_selected <= 0:
@@ -637,13 +636,13 @@ class StudentPaymentWindow(QMainWindow):
 
         received = self.spin_paid_amount.value()
         if received <= 0:
-            QMessageBox.warning(self, "Erreur", "Veuillez saisir un montant valide (أدخل مبلغاً صحيحاً).")
+            QMessageBox.warning(self, "Erreur", "Veuillez saisir un montant valide (Ø£Ø¯Ø®Ù„ Ù…Ø¨Ù„ØºØ§Ù‹ ØµØ­ÙŠØ­Ø§Ù‹).")
             return
 
         descriptions = [desc for _due_id, (chk, _amt, desc) in self.due_checkboxes.items() if chk.isChecked()]
         full_description = " | ".join(descriptions)
         if received < self.current_total_selected:
-            full_description += " (Paiement Partiel / دفع جزئي)"
+            full_description += " (Paiement Partiel / Ø¯ÙØ¹ Ø¬Ø²Ø¦ÙŠ)"
 
         try:
             active_year = self.get_active_year_id()
@@ -670,16 +669,16 @@ class StudentPaymentWindow(QMainWindow):
                     conn,
                     getattr(self, "current_user", "system"),
                     "PAYMENT",
-                    f"{student_name} - {received:,.0f} FCFA (N°{pid})",
+                    f"{student_name} - {received:,.0f} FCFA (NÂ°{pid})",
                 )
                 conn.commit()
 
             QMessageBox.information(
                 self,
-                "Succès",
-                f"Encaissement validé avec succès (N° {pid}).\n"
-                "Le reçu n'est pas imprimé automatiquement."
-                " Utilisez le bouton '📄 Reçu' dans le registre si nécessaire.",
+                "SuccÃ¨s",
+                f"Encaissement validÃ© avec succÃ¨s (NÂ° {pid}).\n"
+                "Le reÃ§u n'est pas imprimÃ© automatiquement."
+                " Utilisez le bouton 'ðŸ“„ ReÃ§u' dans le registre si nÃ©cessaire.",
             )
 
             self.load_student_status()
@@ -700,10 +699,12 @@ class StudentPaymentWindow(QMainWindow):
             for i in range(5):
                 self.table_history.setItem(idx, i, QTableWidgetItem(str(row[i])))
 
-            btn = QPushButton("📄 Reçu")
+            btn = QPushButton("ðŸ“„ ReÃ§u")
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
             colors = ThemeManager.get_colors()
-            btn.setStyleSheet(f"background-color: {colors.PRIMARY}; color: white; border-radius: 4px; padding: 2px;")
+            btn.setStyleSheet(
+                f"background-color: {colors.PRIMARY}; color: white; border-radius: 4px; padding: 2px;"
+            )
             btn.clicked.connect(lambda ch, p=row[0]: self.generate_receipt(p))
             self.table_history.setCellWidget(idx, 5, btn)
 
@@ -761,9 +762,9 @@ class StudentPaymentWindow(QMainWindow):
             self,
             default_name,
             mode="print",
-            dialog_title="Enregistrer le reçu",
-            success_save_message="Reçu PDF généré.",
-            success_print_message="Reçu envoyé à l'imprimante.",
+            dialog_title="Enregistrer le reÃ§u",
+            success_save_message="ReÃ§u PDF gÃ©nÃ©rÃ©.",
+            success_print_message="ReÃ§u envoyÃ© Ã  l'imprimante.",
         )
 
 

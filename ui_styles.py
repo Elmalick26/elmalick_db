@@ -3,7 +3,9 @@
 Unified UI Styles for the School Management System
 """
 
-from PyQt6.QtCore import Qt
+import math
+
+from PyQt6.QtCore import Qt, QTimer, pyqtSignal
 from PyQt6.QtGui import QColor, QFont
 from PyQt6.QtWidgets import (
     QApplication,
@@ -12,10 +14,13 @@ from PyQt6.QtWidgets import (
     QDoubleSpinBox,
     QFrame,
     QGraphicsDropShadowEffect,
+    QHBoxLayout,
     QLabel,
     QLineEdit,
     QPushButton,
     QTextEdit,
+    QVBoxLayout,
+    QWidget,
 )
 
 from db_path import configure_qt_font_environment
@@ -493,11 +498,337 @@ def get_tabs_style():
     """
 
 
-# ========== LOADING OVERLAY ==========
+# ========== STAT CHIP (for ModuleHeaderWidget inline stats) ==========
 
-from PyQt6.QtCore import QTimer  # noqa: E402
-from PyQt6.QtCore import pyqtSignal  # noqa: E402
-from PyQt6.QtWidgets import QHBoxLayout, QVBoxLayout, QWidget  # noqa: E402 (imports at module level preferred)
+
+class _StatChip(QFrame):
+    """
+    Chip de statistique compact intégré dans ModuleHeaderWidget.
+    Affiche une icône, une valeur en gras colorée et un libellé court.
+    """
+
+    def __init__(self, icon: str, label: str, value: str, color: str, parent=None):
+        super().__init__(parent)
+        self._color = color
+        self.setFixedWidth(108)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(10, 5, 8, 5)
+        layout.setSpacing(1)
+
+        # Top row: icon + value
+        top_w = QWidget()
+        top_w.setStyleSheet("background: transparent; border: none;")
+        top = QHBoxLayout(top_w)
+        top.setContentsMargins(0, 0, 0, 0)
+        top.setSpacing(5)
+
+        self._icon_lbl = QLabel(icon)
+        self._icon_lbl.setFont(QFont("Segoe UI", 15))
+        self._icon_lbl.setStyleSheet("background: transparent;")
+
+        self._value_lbl = QLabel(value)
+        self._value_lbl.setFont(QFont("Segoe UI", 17, QFont.Weight.Bold))
+        self._value_lbl.setStyleSheet(f"color: {color}; background: transparent;")
+
+        top.addWidget(self._icon_lbl)
+        top.addWidget(self._value_lbl)
+        top.addStretch()
+
+        # Label row
+        self._label_lbl = QLabel(label)
+        self._label_lbl.setFont(QFont("Segoe UI", 8))
+
+        layout.addWidget(top_w)
+        layout.addWidget(self._label_lbl)
+
+        self._apply_styles()
+
+    def _apply_styles(self):
+        # Keep header stat chips visually aligned with dark module headers
+        # regardless of global theme mode.
+        dark_bg = "#1E293B"
+        dark_border = "#334155"
+        label_color = "#94A3B8"
+        icon_color = "#E2E8F0"
+        self.setStyleSheet(
+            f"""
+            QFrame {{
+                background-color: {dark_bg};
+                border-radius: 7px;
+                border: 1px solid {dark_border};
+                border-left: 3px solid {self._color};
+            }}
+        """
+        )
+        self._icon_lbl.setStyleSheet(f"color: {icon_color}; background: transparent;")
+        self._label_lbl.setStyleSheet(f"color: {label_color}; background: transparent;")
+
+    def set_value(self, value: str):
+        """Mettre à jour la valeur affichée."""
+        self._value_lbl.setText(value)
+
+    def refresh_theme(self):
+        self._apply_styles()
+
+
+# ========== MODULE HEADER WIDGET ==========
+
+
+class ModuleHeaderWidget(QFrame):
+    """
+    En-tête unifié pour tous les modules. Contient titre + sous-titre à gauche
+    et des chips de statistiques compacts à droite (via add_stat).
+
+    Usage::
+        header = ModuleHeaderWidget(icon="📊", title="TITRE", subtitle="Sous-titre")
+        layout.addWidget(header)
+        stat = header.add_stat("👥", "Total", "—", "#3B82F6")
+        # Plus tard :
+        stat.set_value("42")
+    """
+
+    def __init__(self, icon: str = "📋", title: str = "", subtitle: str = "", parent=None):
+        super().__init__(parent)
+        self._icon = icon
+        self._title = title
+        self._subtitle = subtitle
+        self._stat_chips: list = []
+        self.setFixedHeight(82)
+        self._build_ui()
+        self._apply_styles()
+
+    def _build_ui(self):
+        self._main_layout = QHBoxLayout(self)
+        self._main_layout.setContentsMargins(20, 10, 16, 10)
+        self._main_layout.setSpacing(14)
+
+        self._icon_lbl = QLabel(self._icon)
+        self._icon_lbl.setFont(QFont("Segoe UI", 26))
+        self._icon_lbl.setFixedWidth(42)
+
+        text_box = QVBoxLayout()
+        text_box.setSpacing(2)
+
+        self._title_lbl = QLabel(self._title)
+        self._title_lbl.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
+
+        self._sub_lbl = QLabel(self._subtitle)
+        self._sub_lbl.setFont(QFont("Cairo", 10))
+
+        text_box.addWidget(self._title_lbl)
+        text_box.addWidget(self._sub_lbl)
+
+        self._main_layout.addWidget(self._icon_lbl)
+        self._main_layout.addLayout(text_box)
+        self._main_layout.addStretch()
+
+        # Zone des chips de statistiques (droite)
+        self._stats_layout = QHBoxLayout()
+        self._stats_layout.setSpacing(7)
+        self._stats_layout.setContentsMargins(0, 0, 0, 0)
+        self._main_layout.addLayout(self._stats_layout)
+
+    def add_stat(self, icon: str, label: str, value: str = "—", color: str = "#3B82F6") -> _StatChip:
+        """
+        Ajoute un chip de statistique à droite du header.
+        Retourne le chip pour pouvoir mettre à jour la valeur via set_value().
+        """
+        chip = _StatChip(icon, label, value, color)
+        self._stats_layout.addWidget(chip)
+        self._stat_chips.append(chip)
+        return chip
+
+    def _apply_styles(self):
+        colors = ThemeManager.get_colors()
+        self.setStyleSheet(
+            f"""
+            QFrame {{
+                background-color: {colors.BG_HEADER};
+                border-radius: 10px;
+                border-bottom: 1px solid {colors.BORDER};
+            }}
+        """
+        )
+        self._icon_lbl.setStyleSheet("background: transparent;")
+        self._title_lbl.setStyleSheet(f"color: {colors.HEADER_TEXT}; background: transparent;")
+        self._sub_lbl.setStyleSheet(f"color: {colors.TEXT_SECONDARY}; background: transparent;")
+
+    def refresh_theme(self):
+        """Appelé après un changement de thème."""
+        self._apply_styles()
+        for chip in self._stat_chips:
+            chip.refresh_theme()
+
+    def set_subtitle(self, text: str):
+        """Mise à jour dynamique du sous-titre."""
+        self._subtitle = text
+        self._sub_lbl.setText(text)
+
+
+# ========== KPI CARD ==========
+
+
+class KpiCard(QFrame):
+    """
+    بطاقة مؤشر أداء (KPI) قابلة لإعادة الاستخدام في جميع الوحدات.
+    تستجيب للثيم الفاتح والداكن.
+
+    Usage::
+        card = KpiCard(icon="👥", label="Total Élèves", value="320", color="#3B82F6")
+        layout.addWidget(card)
+        # لاحقاً:
+        card.set_value("345")
+    """
+
+    def __init__(
+        self,
+        icon: str = "📊",
+        label: str = "",
+        value: str = "—",
+        color: str = "#3B82F6",
+        parent=None,
+        theme_mode: str = "dark",
+    ):
+        super().__init__(parent)
+        self._color = color
+        self._theme_mode = theme_mode
+        self.setMinimumSize(160, 100)
+        self.setMaximumHeight(130)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(16, 14, 16, 14)
+        layout.setSpacing(4)
+
+        top_row_widget = QFrame()
+        top_row_widget.setStyleSheet("background: transparent; border: none;")
+        top_row = QHBoxLayout(top_row_widget)
+        top_row.setContentsMargins(0, 0, 0, 0)
+
+        self._icon_lbl = QLabel(icon)
+        self._icon_lbl.setFont(QFont("Segoe UI", 20))
+        self._icon_lbl.setStyleSheet("background: transparent;")
+
+        self._label_lbl = QLabel(label)
+        self._label_lbl.setFont(QFont("Segoe UI", 11))
+
+        top_row.addWidget(self._icon_lbl)
+        top_row.addStretch()
+        top_row.addWidget(self._label_lbl)
+
+        self._value_lbl = QLabel(value)
+        self._value_lbl.setFont(QFont("Segoe UI", 24, QFont.Weight.Bold))
+        self._value_lbl.setStyleSheet(f"color: {color}; background: transparent;")
+
+        layout.addWidget(top_row_widget)
+        layout.addWidget(self._value_lbl)
+
+        self._apply_styles()
+
+    def _apply_styles(self):
+        if self._theme_mode == "default":
+            colors = ThemeManager.get_colors()
+            bg_color = colors.BG_CARD
+            border_color = colors.BORDER
+            label_color = colors.TEXT_SECONDARY
+            icon_color = colors.TEXT_PRIMARY
+        else:
+            # KPI cards are intentionally kept dark for visual consistency
+            # with module headers in both light and dark app modes.
+            bg_color = "#1E293B"
+            border_color = "#334155"
+            label_color = "#94A3B8"
+            icon_color = "#E2E8F0"
+        self.setStyleSheet(
+            f"""
+            QFrame {{
+                background-color: {bg_color};
+                border-radius: 10px;
+                border: 1px solid {border_color};
+                border-left: 4px solid {self._color};
+            }}
+        """
+        )
+        self._icon_lbl.setStyleSheet(f"color: {icon_color}; background: transparent;")
+        self._label_lbl.setStyleSheet(f"color: {label_color}; background: transparent;")
+
+    def set_value(self, value: str):
+        """تحديث القيمة ديناميكياً."""
+        self._value_lbl.setText(value)
+
+    def refresh_theme(self):
+        """اُستدعى بعد تغيير الثيم."""
+        self._apply_styles()
+
+
+# ========== TOAST NOTIFICATION ==========
+
+
+class ToastNotification(QFrame):
+    """
+    إشعار غير مُعيق (Snackbar) يظهر أسفل يمين النافذة الأم
+    ثم يختفي تلقائياً بعد *duration* مللي ثانية.
+
+    Usage::
+        ToastNotification.show_toast(parent_window, "تم الحفظ بنجاح ✔", kind="success")
+        ToastNotification.show_toast(parent_window, "حدث خطأ", kind="error")
+    """
+
+    _COLORS = {
+        "success": ("#10B981", "#FFFFFF"),
+        "error": ("#EF4444", "#FFFFFF"),
+        "info": ("#3B82F6", "#FFFFFF"),
+        "warning": ("#F59E0B", "#FFFFFF"),
+    }
+
+    def __init__(self, parent: QWidget, message: str, kind: str = "success", duration: int = 3000):
+        super().__init__(parent)
+        self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.ToolTip)
+        self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setFixedHeight(50)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(16, 8, 16, 8)
+
+        bg_color, fg_color = self._COLORS.get(kind, self._COLORS["info"])
+        self.setStyleSheet(
+            f"""
+            QFrame {{
+                background-color: {bg_color};
+                border-radius: 8px;
+            }}
+        """
+        )
+
+        icon_map = {"success": "✔", "error": "✖", "info": "ℹ", "warning": "⚠"}
+        icon_lbl = QLabel(icon_map.get(kind, "ℹ") + "  " + message)
+        icon_lbl.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
+        icon_lbl.setStyleSheet(f"color: {fg_color}; background: transparent;")
+        layout.addWidget(icon_lbl)
+
+        self.adjustSize()
+        self._position_self()
+
+        QTimer.singleShot(duration, self.close)
+        self.show()
+        self.raise_()
+
+    def _position_self(self):
+        if self.parent():
+            p = self.parent()
+            pw, ph = p.width(), p.height()  # type: ignore[union-attr]
+            self.setFixedWidth(min(420, pw - 40))
+            x = pw - self.width() - 20
+            y = ph - self.height() - 20
+            self.move(x, y)
+
+    @staticmethod
+    def show_toast(parent: QWidget, message: str, kind: str = "success", duration: int = 3000):
+        """طريقة مختصرة لعرض الإشعار."""
+        ToastNotification(parent, message, kind, duration)
+
+
+# ========== LOADING OVERLAY ==========
 
 
 class LoadingOverlay(QWidget):
@@ -771,8 +1102,6 @@ class PaginationWidget(QWidget):
     def _total_pages(self) -> int:
         if self._total == 0:
             return 1
-        import math
-
         return math.ceil(self._total / self.page_size)
 
     def _go_to(self, page: int) -> None:

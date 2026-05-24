@@ -10,6 +10,7 @@ import sys
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
+
 import db_path
 
 
@@ -28,9 +29,7 @@ class JSONLogFormatter(logging.Formatter):
 
     def format(self, record: logging.LogRecord) -> str:
         log_obj: dict = {
-            "timestamp": datetime.utcfromtimestamp(record.created).strftime(
-                "%Y-%m-%dT%H:%M:%S.%f"
-            )[:-3] + "Z",
+            "timestamp": datetime.utcfromtimestamp(record.created).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z",
             "level": record.levelname,
             "module": getattr(record, "app_module", record.module),
             "message": record.getMessage(),
@@ -77,18 +76,13 @@ class AppLogger:
         self._logger.propagate = False
 
         # Text rotating file handler — 10 MB max, 7 backups
-        file_handler = RotatingFileHandler(
-            log_file, maxBytes=10 * 1024 * 1024, backupCount=7, encoding="utf-8"
-        )
+        file_handler = RotatingFileHandler(log_file, maxBytes=10 * 1024 * 1024, backupCount=7, encoding="utf-8")
         file_handler.setLevel(logging.DEBUG)
 
-        # Console Handler - تأمين ضد بيئات التشغيل التي لا تحتوي على Console (مثل ملفات EXE)
+        # Console Handler — تأمين ضد بيئات التشغيل التي لا تحتوي على Console (مثل ملفات EXE)
+        # ملاحظة: ملفات السجل (file handlers) تستخدم UTF-8 صراحةً وهي المصدر الرئيسي
         try:
-            if sys.platform == 'win32' and hasattr(sys.stdout, 'fileno'):
-                console_handler = logging.StreamHandler(sys.stdout)
-                console_handler.stream = open(sys.stdout.fileno(), mode='w', encoding='utf-8', buffering=1)
-            else:
-                console_handler = logging.StreamHandler(sys.stdout)
+            console_handler = logging.StreamHandler(sys.stdout)
         except Exception:
             console_handler = logging.StreamHandler()
 
@@ -108,9 +102,7 @@ class AppLogger:
 
         # JSON rotating log file — 10 MB max, 7 backups (JSONL format)
         json_log_file = log_dir / f"app_json_{datetime.now().strftime('%Y%m%d')}.jsonl"
-        json_handler = RotatingFileHandler(
-            json_log_file, maxBytes=10 * 1024 * 1024, backupCount=7, encoding="utf-8"
-        )
+        json_handler = RotatingFileHandler(json_log_file, maxBytes=10 * 1024 * 1024, backupCount=7, encoding="utf-8")
         json_handler.setLevel(logging.DEBUG)
         json_handler.setFormatter(JSONLogFormatter())
 

@@ -15,18 +15,30 @@ First-Run Setup Wizard for El Malick Gest
             sys.exit(0)  # لا يمكن تشغيل البرنامج بدون إعداد
 """
 
-import sys
 import os
-from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton,
-    QLineEdit, QStackedWidget, QWidget, QFileDialog, QMessageBox,
-    QFormLayout, QSpinBox, QFrame
-)
+import sys
+
 from PyQt6.QtCore import Qt, QTimer
 from PyQt6.QtGui import QFont, QIcon
+from PyQt6.QtWidgets import (
+    QDialog,
+    QFileDialog,
+    QFormLayout,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QPushButton,
+    QSpinBox,
+    QStackedWidget,
+    QVBoxLayout,
+    QWidget,
+)
 
-from config_manager import ConfigManager
 from app_logger import AppLogger
+from config_manager import ConfigManager
+from validators import format_errors, validate_password_strength
 
 # ─────────────────────────────────────────────────────────────────────────────
 # دالة الفحص: هل يجب تشغيل المعالج؟
@@ -60,6 +72,7 @@ def should_run_wizard() -> bool:
 # المعالج الرئيسي
 # ─────────────────────────────────────────────────────────────────────────────
 
+
 class FirstRunWizard(QDialog):
     """معالج الإعداد الأول — QDialog متعدد الخطوات"""
 
@@ -88,11 +101,11 @@ class FirstRunWizard(QDialog):
 
         # المحتوى المتعدد الخطوات
         self.stack = QStackedWidget()
-        self.stack.addWidget(self._step_welcome())       # 0
-        self.stack.addWidget(self._step_school_info())   # 1
-        self.stack.addWidget(self._step_database())      # 2
-        self.stack.addWidget(self._step_admin())         # 3
-        self.stack.addWidget(self._step_summary())       # 4
+        self.stack.addWidget(self._step_welcome())  # 0
+        self.stack.addWidget(self._step_school_info())  # 1
+        self.stack.addWidget(self._step_database())  # 2
+        self.stack.addWidget(self._step_admin())  # 3
+        self.stack.addWidget(self._step_summary())  # 4
         root.addWidget(self.stack, 1)
 
         # أزرار التنقل
@@ -201,9 +214,7 @@ class FirstRunWizard(QDialog):
         self.txt_school_name = QLineEdit()
         self.txt_school_name.setPlaceholderText("مثال: مدرسة النور الابتدائية / École Primaire El Nour")
         self.txt_school_name.setText(
-            self.config.school_name
-            if self.config.school_name != "El Malick School Management System"
-            else ""
+            self.config.school_name if self.config.school_name != "El Malick School Management System" else ""
         )
         self.txt_school_name.setMinimumHeight(36)
 
@@ -294,8 +305,7 @@ class FirstRunWizard(QDialog):
         # زر اختبار الاتصال
         btn_test = QPushButton("🔌 اختبار الاتصال / Tester la connexion")
         btn_test.setStyleSheet(
-            "padding: 8px 16px; background-color: #43A047; color: white; "
-            "border-radius: 6px; font-weight: bold;"
+            "padding: 8px 16px; background-color: #43A047; color: white; " "border-radius: 6px; font-weight: bold;"
         )
         btn_test.clicked.connect(self._test_db_connection)
         layout.addWidget(btn_test, 0, Qt.AlignmentFlag.AlignLeft)
@@ -312,17 +322,19 @@ class FirstRunWizard(QDialog):
         self.lbl_conn_status.setText("⏳ جار الاختبار...")
         self.lbl_conn_status.setStyleSheet("color: #888;")
         from PyQt6.QtWidgets import QApplication
+
         QApplication.processEvents()
 
         try:
             import psycopg2
+
             conn = psycopg2.connect(
                 host=self.txt_db_host.text().strip(),
                 port=self.spin_db_port.value(),
                 dbname=self.txt_db_name.text().strip(),
                 user=self.txt_db_user.text().strip(),
                 password=self.txt_db_pass.text(),
-                connect_timeout=5
+                connect_timeout=5,
             )
             conn.close()
             self.lbl_conn_status.setText("✅ الاتصال ناجح! / Connexion réussie!")
@@ -383,7 +395,6 @@ class FirstRunWizard(QDialog):
         return w
 
     def _update_password_strength(self):
-        from validators import validate_password_strength
         pwd = self.txt_admin_pass.text()
         errors = validate_password_strength(pwd)
         if not pwd:
@@ -479,7 +490,6 @@ class FirstRunWizard(QDialog):
                 return False
 
         elif step == 3:  # حساب المسؤول
-            from validators import validate_password_strength
             admin_user = self.txt_admin_user.text().strip()
             if not admin_user:
                 QMessageBox.warning(self, "خطأ", "اسم المستخدم المسؤول مطلوب.")
@@ -488,7 +498,6 @@ class FirstRunWizard(QDialog):
             confirm = self.txt_admin_confirm.text()
             errors = validate_password_strength(pwd)
             if errors:
-                from validators import format_errors
                 QMessageBox.warning(self, "كلمة مرور ضعيفة", format_errors(errors))
                 return False
             if pwd != confirm:
@@ -525,10 +534,11 @@ class FirstRunWizard(QDialog):
 
             AppLogger.info("FirstRunWizard", "تم إكمال إعداد البرنامج الأول بنجاح")
             QMessageBox.information(
-                self, "تم الإعداد / Configuration terminée",
+                self,
+                "تم الإعداد / Configuration terminée",
                 "تم حفظ جميع الإعدادات بنجاح!\n"
                 "Configuration enregistrée avec succès!\n\n"
-                "سيبدأ البرنامج الآن. / Le logiciel va démarrer maintenant."
+                "سيبدأ البرنامج الآن. / Le logiciel va démarrer maintenant.",
             )
             self.accept()
 
@@ -548,6 +558,7 @@ class FirstRunWizard(QDialog):
             import security_utils
             from database_setup import DatabaseManager, log_audit
             from repositories.login_repo import LoginRepository
+
             new_hash = security_utils.hash_password(new_password)
             db = DatabaseManager()
             with db.get_connection() as conn:
@@ -565,6 +576,7 @@ class FirstRunWizard(QDialog):
 
 if __name__ == "__main__":
     from PyQt6.QtWidgets import QApplication
+
     app = QApplication(sys.argv)
 
     print(f"should_run_wizard() = {should_run_wizard()}")

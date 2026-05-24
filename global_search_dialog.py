@@ -19,18 +19,25 @@ global_search_dialog.py — نافذة البحث العالمي (Ctrl+K)
 
 from __future__ import annotations
 
+from PyQt6.QtCore import QEvent, Qt, QTimer, pyqtSignal
+from PyQt6.QtGui import QColor, QFont, QKeySequence
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLineEdit, QListWidget,
-    QListWidgetItem, QLabel, QFrame, QWidget, QSizePolicy
+    QDialog,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QLineEdit,
+    QListWidget,
+    QListWidgetItem,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
 )
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QFont, QKeySequence, QColor
 
-from database_setup import DatabaseManager
 from app_logger import AppLogger
+from database_setup import DatabaseManager
 from repositories.global_search_repo import GlobalSearchRepository
 from ui_styles import ThemeManager
-
 
 # نوع النتيجة: (category, display_text, subtitle, module_id, record_id)
 ResultItem = tuple[str, str, str, str, int]
@@ -46,7 +53,7 @@ CATEGORY_MODULES = {
     "Élève": "student_management",
     "Personnel": "staff_management",
     "Paiement": "finance_payments",
-    "Audit": None,          # pas de navigation pour audit
+    "Audit": None,  # pas de navigation pour audit
 }
 
 
@@ -90,7 +97,7 @@ class GlobalSearchDialog(QDialog):
         self._results: list[ResultItem] = []
         self._debounce = QTimer(self)
         self._debounce.setSingleShot(True)
-        self._debounce.setInterval(250)      # 250 ms debounce
+        self._debounce.setInterval(250)  # 250 ms debounce
         self._debounce.timeout.connect(self._do_search)
         self._build_ui()
 
@@ -105,13 +112,15 @@ class GlobalSearchDialog(QDialog):
         card = QFrame()
         card.setMinimumWidth(580)
         card.setMaximumWidth(680)
-        card.setStyleSheet(f"""
+        card.setStyleSheet(
+            f"""
             QFrame {{
                 background-color: {colors.BG_CARD};
                 border-radius: 14px;
                 border: 1px solid {colors.BORDER};
             }}
-        """)
+        """
+        )
 
         vlay = QVBoxLayout(card)
         vlay.setContentsMargins(16, 14, 16, 14)
@@ -125,12 +134,14 @@ class GlobalSearchDialog(QDialog):
 
         self.txt_search = QLineEdit()
         self.txt_search.setPlaceholderText("Recherche globale... / البحث العام  (Esc pour fermer)")
-        self.txt_search.setStyleSheet(f"""
+        self.txt_search.setStyleSheet(
+            f"""
             QLineEdit {{
                 background: transparent; border: none;
                 color: {colors.TEXT_PRIMARY}; font-size: 15px; padding: 2px 4px;
             }}
-        """)
+        """
+        )
         self.txt_search.textChanged.connect(lambda: self._debounce.start())
         self.txt_search.installEventFilter(self)
         search_row.addWidget(self.txt_search, 1)
@@ -150,7 +161,8 @@ class GlobalSearchDialog(QDialog):
         self.result_list = QListWidget()
         self.result_list.setMinimumHeight(60)
         self.result_list.setMaximumHeight(400)
-        self.result_list.setStyleSheet(f"""
+        self.result_list.setStyleSheet(
+            f"""
             QListWidget {{
                 background: transparent; border: none;
                 outline: none;
@@ -162,7 +174,8 @@ class GlobalSearchDialog(QDialog):
             QListWidget::item:selected, QListWidget::item:hover {{
                 background-color: {colors.PRIMARY}22;
             }}
-        """)
+        """
+        )
         self.result_list.itemActivated.connect(self._on_activate)
         self.result_list.itemDoubleClicked.connect(self._on_activate)
         vlay.addWidget(self.result_list)
@@ -177,7 +190,6 @@ class GlobalSearchDialog(QDialog):
 
     # ---------------------------------------------------------------- Events
     def eventFilter(self, obj, event):
-        from PyQt6.QtCore import QEvent
         if obj is self.txt_search and event.type() == QEvent.Type.KeyPress:
             key = event.key()
             if key == Qt.Key.Key_Escape:
@@ -240,9 +252,7 @@ class GlobalSearchDialog(QDialog):
             icon = CATEGORY_ICONS.get(category, "•")
             navigable = module_id is not None
 
-            item_widget = _ResultItemWidget(
-                icon, category, title, subtitle, navigable, colors
-            )
+            item_widget = _ResultItemWidget(icon, category, title, subtitle, navigable, colors)
             list_item = QListWidgetItem(self.result_list)
             list_item.setSizeHint(item_widget.sizeHint())
             list_item.setData(Qt.ItemDataRole.UserRole, (module_id, record_id))
@@ -298,16 +308,20 @@ class _ResultItemWidget(QWidget):
 
         lbl_cat = QLabel(category)
         cat_color = {
-            "Élève": colors.PRIMARY, "Personnel": colors.SECONDARY,
-            "Paiement": colors.SUCCESS, "Audit": colors.WARNING,
+            "Élève": colors.PRIMARY,
+            "Personnel": colors.SECONDARY,
+            "Paiement": colors.SUCCESS,
+            "Audit": colors.WARNING,
         }.get(category, colors.BORDER)
-        lbl_cat.setStyleSheet(f"""
+        lbl_cat.setStyleSheet(
+            f"""
             QLabel {{
                 background: {cat_color}22; color: {cat_color};
                 border: 1px solid {cat_color}55; border-radius: 8px;
                 padding: 2px 8px; font-size: 10px; font-weight: bold;
             }}
-        """)
+        """
+        )
         lay.addWidget(lbl_cat)
 
         if navigable:

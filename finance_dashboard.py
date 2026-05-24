@@ -1,24 +1,40 @@
 import sys
-import psycopg2
 from datetime import datetime
-from fpdf import FPDF
-from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
-                             QHBoxLayout, QLabel, QFrame, QTableWidget,
-                             QTableWidgetItem, QHeaderView, QGraphicsDropShadowEffect,
-                             QPushButton)
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QFont, QColor, QIcon
+
 import matplotlib.pyplot as plt
+import psycopg2
+from fpdf import FPDF
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-from database_setup import DatabaseManager
-from print_export_service import output_pdf, get_report_output_mode
-from pdf_report_style import apply_grades_sheet_header, apply_table_header_style, apply_table_body_style, set_zebra_row_fill, get_school_info_row
-from repositories.finance_repo import FinanceRepository
+from PyQt6.QtCore import Qt, QTimer
+from PyQt6.QtGui import QColor, QFont, QIcon
+from PyQt6.QtWidgets import (
+    QApplication,
+    QFrame,
+    QGraphicsDropShadowEffect,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QMainWindow,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QVBoxLayout,
+    QWidget,
+)
 
-from ui_styles import ThemeManager, Colors, rgba, get_table_style
 from app_logger import AppLogger
+from database_setup import DatabaseManager
+from pdf_report_style import (
+    apply_grades_sheet_header,
+    apply_table_body_style,
+    apply_table_header_style,
+    get_school_info_row,
+    set_zebra_row_fill,
+)
+from print_export_service import get_report_output_mode, output_pdf
+from repositories.finance_repo import FinanceRepository
+from ui_styles import Colors, ThemeManager, get_table_style, rgba
 
-THEME_AVAILABLE = True
 FINANCE_DASHBOARD_REPORT_MODE = get_report_output_mode("finance_dashboard_report_mode", "save")
 
 
@@ -33,20 +49,7 @@ class ModernFinanceDashboard(QMainWindow):
         self.last_inventory = 0.0
         self.last_recent_transactions = []
 
-        if THEME_AVAILABLE:
-            ThemeManager.apply_theme(self)
-        else:
-            colors = Colors()
-            self.setStyleSheet(f"""
-                QMainWindow {{
-                    background-color: {colors.BG_MAIN};
-                }}
-                QLabel {{
-                    font-family: 'Segoe UI', 'Cairo', sans-serif;
-                    color: {colors.TEXT_PRIMARY};
-                }}
-            """)
-
+        ThemeManager.apply_theme(self)
         self.init_ui()
         self.refresh_data()
 
@@ -57,16 +60,18 @@ class ModernFinanceDashboard(QMainWindow):
         self.main_layout.setContentsMargins(20, 20, 20, 20)
         self.main_layout.setSpacing(20)
 
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+        colors = ThemeManager.get_colors()
 
         # Header
         header_frame = QFrame()
-        header_frame.setStyleSheet(f"""
+        header_frame.setStyleSheet(
+            f"""
             QFrame {{
                 background-color: {colors.BG_HEADER};
                 border-radius: 10px;
             }}
-        """)
+        """
+        )
         header_frame.setMaximumHeight(80)
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(15)
@@ -83,28 +88,16 @@ class ModernFinanceDashboard(QMainWindow):
         title_box = QVBoxLayout()
         title_label = QLabel("TABLEAU DE BORD FINANCIER")
         title_label.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
-        if THEME_AVAILABLE:
-            title_label.setStyleSheet(f"color: {ThemeManager.get_colors().HEADER_TEXT}; background: transparent;")
-        else:
-            title_label.setStyleSheet(f"color: {colors.HEADER_TEXT}; background: transparent;")
-
+        title_label.setStyleSheet(f"color: {ThemeManager.get_colors().HEADER_TEXT}; background: transparent;")
         sub_label = QLabel("Vue d'ensemble des revenus et dépenses / نظرة عامة")
         sub_label.setFont(QFont("Cairo", 11))
-        if THEME_AVAILABLE:
-            sub_label.setStyleSheet(f"color: {ThemeManager.get_colors().TEXT_SECONDARY}; background: transparent;")
-        else:
-            sub_label.setStyleSheet(f"color: {colors.TEXT_SECONDARY}; background: transparent;")
-
+        sub_label.setStyleSheet(f"color: {ThemeManager.get_colors().TEXT_SECONDARY}; background: transparent;")
         title_box.addWidget(title_label)
         title_box.addWidget(sub_label)
 
         date_label = QLabel(datetime.now().strftime("%d %B %Y"))
         date_label.setFont(QFont("Segoe UI", 12))
-        if THEME_AVAILABLE:
-            date_label.setStyleSheet(f"color: {ThemeManager.get_colors().HEADER_TEXT}; background: transparent;")
-        else:
-            date_label.setStyleSheet(f"color: {colors.TEXT_SECONDARY}; background: transparent;")
-
+        date_label.setStyleSheet(f"color: {ThemeManager.get_colors().HEADER_TEXT}; background: transparent;")
         header_layout.addWidget(icon_lbl)
         header_layout.addSpacing(15)
         header_layout.addLayout(title_box)
@@ -113,18 +106,19 @@ class ModernFinanceDashboard(QMainWindow):
         btn_export = QPushButton("📄 Rapport Exécutif")
         btn_export.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_export.setMinimumHeight(36)
-        if THEME_AVAILABLE:
-            btn_export.setStyleSheet(f"""
-                QPushButton {{
-                    background-color: {ThemeManager.get_colors().SUCCESS};
-                    color: white;
-                    font-weight: bold;
-                    border-radius: 6px;
-                    border: none;
-                    padding: 6px 14px;
-                }}
-                QPushButton:hover {{ background-color: {ThemeManager.get_colors().SUCCESS_HOVER}; }}
-            """)
+        btn_export.setStyleSheet(
+            f"""
+            QPushButton {{
+                background-color: {ThemeManager.get_colors().SUCCESS};
+                color: white;
+                font-weight: bold;
+                border-radius: 6px;
+                border: none;
+                padding: 6px 14px;
+            }}
+            QPushButton:hover {{ background-color: {ThemeManager.get_colors().SUCCESS_HOVER}; }}
+        """
+        )
         btn_export.clicked.connect(self.export_executive_report_pdf)
 
         header_layout.addWidget(btn_export)
@@ -155,11 +149,8 @@ class ModernFinanceDashboard(QMainWindow):
         # Chart Container
         self.chart_frame = self.create_container("Analyse des Flux / تحليل التدفقات")
         self.figure, self.ax = plt.subplots(figsize=(5, 4), dpi=100)
-        if THEME_AVAILABLE:
-            self.figure.patch.set_facecolor(colors.BG_CARD)
-            self.ax.set_facecolor(colors.BG_CARD)
-        else:
-            self.figure.patch.set_facecolor(colors.BG_CARD)
+        self.figure.patch.set_facecolor(colors.BG_CARD)
+        self.ax.set_facecolor(colors.BG_CARD)
         self.canvas = FigureCanvas(self.figure)
         self.chart_frame.layout().addWidget(self.canvas)
         content_layout.addWidget(self.chart_frame, 4)
@@ -179,17 +170,19 @@ class ModernFinanceDashboard(QMainWindow):
         self.main_layout.addLayout(content_layout)
 
     def create_modern_card(self, title, value, color, icon):
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+        colors = ThemeManager.get_colors()
         card = QFrame()
         card.setFixedHeight(140)
-        card.setStyleSheet(f"""
+        card.setStyleSheet(
+            f"""
             QFrame {{
                 background-color: {colors.BG_CARD};
                 border-radius: 12px;
                 border: 1px solid {colors.BORDER};
                 border-left: 6px solid {color};
             }}
-        """)
+        """
+        )
 
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(20)
@@ -203,11 +196,9 @@ class ModernFinanceDashboard(QMainWindow):
         # Top row: Title and Icon
         top_layout = QHBoxLayout()
         lbl_title = QLabel(title)
-        if THEME_AVAILABLE:
-            lbl_title.setStyleSheet(f"color: {ThemeManager.get_colors().TEXT_SECONDARY}; font-weight: bold; font-size: 12px; text-transform: uppercase;")
-        else:
-            lbl_title.setStyleSheet(f"color: {colors.TEXT_SECONDARY}; font-weight: bold; font-size: 12px; text-transform: uppercase;")
-
+        lbl_title.setStyleSheet(
+            f"color: {ThemeManager.get_colors().TEXT_SECONDARY}; font-weight: bold; font-size: 12px; text-transform: uppercase;"
+        )
         lbl_icon = QLabel(icon)
         lbl_icon.setStyleSheet(
             f"color: {color}; font-size: 20px; background-color: {rgba(color, 32)}; border-radius: 15px; padding: 5px;"
@@ -224,27 +215,28 @@ class ModernFinanceDashboard(QMainWindow):
         # Value
         lbl_value = QLabel(value)
         lbl_value.setObjectName("val_label")
-        if THEME_AVAILABLE:
-            lbl_value.setStyleSheet(f"color: {ThemeManager.get_colors().TEXT_PRIMARY}; font-size: 28px; font-weight: 800; border: none; background: transparent;")
-        else:
-            lbl_value.setStyleSheet(f"color: {colors.TEXT_PRIMARY}; font-size: 28px; font-weight: 800; border: none; background: transparent;")
-
+        lbl_value.setStyleSheet(
+            f"color: {ThemeManager.get_colors().TEXT_PRIMARY}; font-size: 28px; font-weight: 800; border: none; background: transparent;"
+        )
         layout.addWidget(lbl_value)
         return card
 
     def create_container(self, title_text):
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+        colors = ThemeManager.get_colors()
         frame = QFrame()
-        frame.setStyleSheet("""
+        frame.setStyleSheet(
+            """
             QFrame {
                 background-color: %(bg)s;
                 border-radius: 12px;
                 border: 1px solid %(border)s;
             }
-        """ % {
-            "bg": colors.BG_CARD if colors else "white",
-            "border": colors.BORDER,
-        })
+        """
+            % {
+                "bg": colors.BG_CARD if colors else "white",
+                "border": colors.BORDER,
+            }
+        )
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(20)
         shadow.setColor(QColor(15, 23, 42, 15))
@@ -256,11 +248,7 @@ class ModernFinanceDashboard(QMainWindow):
 
         title = QLabel(title_text)
         title.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
-        if THEME_AVAILABLE:
-            title.setStyleSheet(f"color: {ThemeManager.get_colors().TEXT_PRIMARY}; margin-bottom: 10px; border: none;")
-        else:
-            title.setStyleSheet(f"color: {colors.TEXT_PRIMARY}; margin-bottom: 10px; border: none;")
-
+        title.setStyleSheet(f"color: {ThemeManager.get_colors().TEXT_PRIMARY}; margin-bottom: 10px; border: none;")
         layout.addWidget(title)
         return frame
 
@@ -268,36 +256,7 @@ class ModernFinanceDashboard(QMainWindow):
         table.setShowGrid(False)
         table.setAlternatingRowColors(True)
         table.verticalHeader().setVisible(False)
-        if THEME_AVAILABLE:
-            table.setStyleSheet(get_table_style())
-        else:
-            colors = Colors()
-            table.setStyleSheet(f"""
-                QTableWidget {{
-                    background-color: {colors.BG_CARD};
-                    border: none;
-                    gridline-color: {colors.BORDER};
-                    font-size: 13px;
-                    color: {colors.TEXT_PRIMARY};
-                }}
-                QTableWidget::item {{
-                    padding: 8px;
-                    border-bottom: 1px solid {colors.BG_MAIN};
-                }}
-                QTableWidget::item:selected {{
-                    background-color: {colors.PRIMARY};
-                    color: white;
-                }}
-                QHeaderView::section {{
-                    background-color: {colors.BG_MAIN};
-                    color: {colors.TEXT_SECONDARY};
-                    padding: 10px;
-                    border: none;
-                    font-weight: bold;
-                    text-transform: uppercase;
-                    font-size: 11px;
-                }}
-            """)
+        table.setStyleSheet(get_table_style())
 
     def refresh_data(self):
         try:
@@ -336,26 +295,23 @@ class ModernFinanceDashboard(QMainWindow):
             # Chart
             self.ax.clear()
             if inc > 0 or exp > 0:
-                if THEME_AVAILABLE:
-                    theme_colors = ThemeManager.get_colors()
-                    colors = [theme_colors.SUCCESS, theme_colors.DANGER]
-                    text_color = theme_colors.TEXT_PRIMARY
-                else:
-                    colors = [Colors().SUCCESS, Colors().DANGER]
-                    text_color = Colors().TEXT_PRIMARY
+                theme_colors = ThemeManager.get_colors()
+                colors = [theme_colors.SUCCESS, theme_colors.DANGER]
+                text_color = theme_colors.TEXT_PRIMARY
                 wedges, texts, autotexts = self.ax.pie(
-                    [inc, exp], labels=['Recettes', 'Dépenses'],
-                    autopct='%1.1f%%', startangle=90, colors=colors,
+                    [inc, exp],
+                    labels=['Recettes', 'Dépenses'],
+                    autopct='%1.1f%%',
+                    startangle=90,
+                    colors=colors,
                     wedgeprops={'width': 0.5, 'edgecolor': 'w'},  # Donut
-                    textprops={'color': text_color}
+                    textprops={'color': text_color},
                 )
                 plt.setp(autotexts, size=9, weight="bold", color="white")
             else:
-                if THEME_AVAILABLE:
-                    self.ax.text(0.5, 0.5, "Pas de données", ha='center', va='center', color=ThemeManager.get_colors().TEXT_SECONDARY)
-                else:
-                    self.ax.text(0.5, 0.5, "Pas de données", ha='center', va='center', color=Colors().TEXT_SECONDARY)
-
+                self.ax.text(
+                    0.5, 0.5, "Pas de données", ha='center', va='center', color=ThemeManager.get_colors().TEXT_SECONDARY
+                )
             self.canvas.draw()
 
             # Table (recent transactions)
@@ -367,16 +323,9 @@ class ModernFinanceDashboard(QMainWindow):
                 type_val = "Recette" if row[0] == 'Entrée' else "Dépense"
                 type_item = QTableWidgetItem(type_val)
                 if row[0] == 'Entrée':
-                    if THEME_AVAILABLE:
-                        type_item.setForeground(QColor(ThemeManager.get_colors().SUCCESS))
-                    else:
-                        type_item.setForeground(QColor(Colors().SUCCESS))
+                    type_item.setForeground(QColor(ThemeManager.get_colors().SUCCESS))
                 else:
-                    if THEME_AVAILABLE:
-                        type_item.setForeground(QColor(ThemeManager.get_colors().DANGER))
-                    else:
-                        type_item.setForeground(QColor(Colors().DANGER))
-
+                    type_item.setForeground(QColor(ThemeManager.get_colors().DANGER))
                 source_text = (str(row[1] or "-")).strip() or "-"
                 amount_val = _to_float(row[2])
                 date_text = str(row[3] or "-")

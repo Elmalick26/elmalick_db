@@ -9,17 +9,22 @@ All existing code that does:
 still works because database_setup.py re-exports this class.
 """
 
-import threading
 import logging
+import threading
 from contextlib import contextmanager
 
 import psycopg2  # noqa: F401
-from psycopg2 import OperationalError, Error
+from psycopg2 import Error, OperationalError
 from psycopg2 import pool as pg_pool
 
 from config_manager import ConfigManager
 
 logger = logging.getLogger("DatabaseManager")
+
+# حدود مجمع الاتصالات — يمكن تعديلها من مكان واحد
+_POOL_MIN_CONN: int = 2  # حد أدنى: عدد الاتصالات المفتوحة دائماً
+_POOL_MAX_CONN: int = 10  # حد أقصى: عدد الاتصالات المتزامنة المسموح بها
+_POOL_CONNECT_TIMEOUT: int = 10  # مهلة انتظار الاتصال بالثواني
 
 
 class DatabaseManager:
@@ -47,19 +52,19 @@ class DatabaseManager:
             with cls._pool_lock:
                 if cls._pool is None:
                     config = ConfigManager()
-                    min_conn, max_conn = 2, 10
                     cls._pool = pg_pool.ThreadedConnectionPool(
-                        min_conn,
-                        max_conn,
+                        _POOL_MIN_CONN,
+                        _POOL_MAX_CONN,
                         host=config.db_host,
                         port=config.db_port,
                         dbname=config.db_name,
                         user=config.db_user,
                         password=config.db_password,
                         sslmode=config.db_ssl_mode,
+                        connect_timeout=_POOL_CONNECT_TIMEOUT,
                     )
                     logger.info(
-                        f"Connection pool initialized: minconn={min_conn}, maxconn={max_conn} "
+                        f"Connection pool initialized: minconn={_POOL_MIN_CONN}, maxconn={_POOL_MAX_CONN} "
                         f"({config.db_host}:{config.db_port}/{config.db_name})"
                     )
         return cls._pool
@@ -101,7 +106,13 @@ class DatabaseManager:
             self._conn = None
 
     def get_connection(self):
-        """Return active connection (if inside a context manager) or a context manager."""
+        """
+        إرجاع الاتصال النشط بطريقتين:
+        - داخل ``with DatabaseManager() as db:``  → يرجع الاتصال مباشرة
+          مثال: ``conn = db.get_connection(); cursor = conn.cursor()``
+        - خارج أي context manager → يرجع context manager جديد
+          مثال: ``with db.get_connection() as conn: cursor = conn.cursor()``
+        """
         if self._conn:
             return self._conn
         return self._connection_context()
@@ -135,4 +146,5 @@ class DatabaseManager:
     def initialize_database(self) -> None:
         """Create / migrate all database tables by delegating to db_schema."""
         from db_schema import initialize_schema
+
         initialize_schema(self)

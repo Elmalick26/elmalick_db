@@ -1,25 +1,54 @@
-import sys
-import psycopg2  # تغيير المكتبة
 import os
+import sys
 from datetime import datetime
+
+import psycopg2  # تغيير المكتبة
 from fpdf import FPDF
-from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
-                             QHBoxLayout, QTableWidget, QTableWidgetItem,
-                             QPushButton, QLabel, QLineEdit, QComboBox,
-                             QMessageBox, QHeaderView, QGroupBox, QFrame, QDateEdit,
-                             QTabWidget, QGridLayout, QGraphicsDropShadowEffect)
-from PyQt6.QtCore import Qt, QDate
-from PyQt6.QtGui import QFont, QColor
-from database_setup import DatabaseManager, log_audit
-from repositories.user_repo import UserRepository
-from app_logger import AppLogger
+from PyQt6.QtCore import QDate, Qt
+from PyQt6.QtGui import QColor, QFont
+from PyQt6.QtWidgets import (
+    QApplication,
+    QComboBox,
+    QDateEdit,
+    QFrame,
+    QGridLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QLineEdit,
+    QMainWindow,
+    QMessageBox,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
+)
+
 import security_utils
-from print_export_service import output_pdf, get_report_output_mode
-from pdf_report_style import apply_grades_sheet_header, apply_table_header_style, apply_table_body_style, set_zebra_row_fill, get_school_info_row
+from app_logger import AppLogger
+from database_setup import DatabaseManager, log_audit
+from pdf_report_style import (
+    apply_grades_sheet_header,
+    apply_table_body_style,
+    apply_table_header_style,
+    get_school_info_row,
+    set_zebra_row_fill,
+)
+from print_export_service import get_report_output_mode, output_pdf
+from repositories.user_repo import UserRepository
+from ui_styles import (
+    Colors,
+    ModuleHeaderWidget,
+    ThemeManager,
+    apply_shadow_to_widget,
+    get_card_style,
+    get_table_style,
+    get_tabs_style,
+)
 
-from ui_styles import ThemeManager, Colors, get_card_style, apply_shadow_to_widget, get_table_style, get_tabs_style
-
-THEME_AVAILABLE = True
 USER_AUDIT_REPORT_OUTPUT_MODE = get_report_output_mode("user_audit_report_mode", "save")
 
 
@@ -47,19 +76,7 @@ class UserManagementWindow(QMainWindow):
         self.setMinimumSize(1100, 700)
 
         # تطبيق المظهر
-        if THEME_AVAILABLE:
-            ThemeManager.apply_theme(self)
-        else:
-            colors = Colors()
-            self.setStyleSheet(f"""
-                QMainWindow {{ background-color: {colors.BG_MAIN}; }}
-                QLabel {{ font-family: 'Segoe UI', 'Cairo', sans-serif; color: {colors.TEXT_PRIMARY}; }}
-                QGroupBox {{
-                    border: 1px solid {colors.BORDER}; border-radius: 8px; margin-top: 10px;
-                    background-color: {colors.BG_CARD}; font-weight: bold; color: {colors.TEXT_SECONDARY};
-                }}
-            """)
-
+        ThemeManager.apply_theme(self)
         self.selected_user_id = None
         self.selected_username = ""
         self.current_audit_report_rows = []
@@ -71,6 +88,7 @@ class UserManagementWindow(QMainWindow):
         self.init_ui()
         self.load_users()
         self.load_audit_logs()
+        self._load_kpi_stats()
 
     def ensure_admin_exists(self):
         try:
@@ -102,55 +120,25 @@ class UserManagementWindow(QMainWindow):
         self.main_layout.setContentsMargins(20, 20, 20, 20)
         self.main_layout.setSpacing(15)
 
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+        colors = ThemeManager.get_colors()
 
-        # 1. Header Frame
-        header_frame = QFrame()
-        header_frame.setStyleSheet(f"QFrame {{ background-color: {colors.BG_HEADER}; border-radius: 10px; }}")
-        header_frame.setMaximumHeight(80)
+        # 1. En-tête unifié
+        header = ModuleHeaderWidget(
+            icon="🔐",
+            title="GESTION DES UTILISATEURS",
+            subtitle="إدارة الصلاحيات، الحسابات، وسجل العمليات",
+        )
+        self.main_layout.addWidget(header)
+        self._stat_users = header.add_stat("👥", "Utilisateurs", "—", "#3B82F6")
+        self._stat_active = header.add_stat("✅", "Actifs", "—", "#22C55E")
+        self._stat_admins = header.add_stat("🔑", "Admins", "—", "#8B5CF6")
+        self._stat_audit = header.add_stat("📝", "Logs Audit", "—", "#F59E0B")
 
-        shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(15)
-        shadow.setColor(QColor(15, 23, 42, 40))
-        shadow.setOffset(0, 4)
-        header_frame.setGraphicsEffect(shadow)
+        # 2. KPI Cards
 
-        hl = QHBoxLayout(header_frame)
-        hl.setContentsMargins(20, 15, 20, 15)
-
-        icon_lbl = QLabel("🔐")
-        icon_lbl.setStyleSheet("font-size: 32px; background: transparent;")
-
-        title_layout = QVBoxLayout()
-        header_lbl = QLabel("GESTION DES UTILISATEURS")
-        header_lbl.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
-        header_lbl.setStyleSheet(f"color: {colors.HEADER_TEXT}; background: transparent;")
-
-        sub_lbl = QLabel("إدارة الصلاحيات، الحسابات، وسجل العمليات")
-        sub_lbl.setFont(QFont("Cairo", 11))
-        sub_lbl.setStyleSheet(f"color: {colors.TEXT_SECONDARY}; background: transparent;")
-
-        title_layout.addWidget(header_lbl)
-        title_layout.addWidget(sub_lbl)
-
-        hl.addWidget(icon_lbl)
-        hl.addSpacing(15)
-        hl.addLayout(title_layout)
-        hl.addStretch()
-
-        self.main_layout.addWidget(header_frame)
-
-        # 2. Tabs
+        # 3. Onglets
         self.tabs = QTabWidget()
-        if THEME_AVAILABLE:
-            self.tabs.setStyleSheet(get_tabs_style())
-        else:
-            self.tabs.setStyleSheet(f"""
-                QTabWidget::pane {{ border: 1px solid {colors.BORDER}; background: {colors.BG_CARD}; border-radius: 12px; margin-top: 15px; }}
-                QTabBar::tab {{ background: {colors.BG_MAIN}; color: {colors.TEXT_SECONDARY}; padding: 12px 30px; margin-right: 6px; border-top-left-radius: 8px; border-top-right-radius: 8px; font-weight: bold; font-family: 'Segoe UI', 'Cairo'; }}
-                QTabBar::tab:selected {{ background: {colors.BG_HEADER}; color: {colors.HEADER_TEXT}; }}
-                QTabBar::tab:hover {{ background: {colors.BORDER}; }}
-            """)
+        self.tabs.setStyleSheet(get_tabs_style())
 
         self.setup_users_tab()
         self.setup_audit_tab()
@@ -159,46 +147,59 @@ class UserManagementWindow(QMainWindow):
 
     def create_card(self):
         frame = QFrame()
-        if THEME_AVAILABLE:
-            frame.setStyleSheet(get_card_style())
-            apply_shadow_to_widget(frame)
-        else:
-            colors = Colors()
-            frame.setStyleSheet(f"QFrame {{ background-color: {colors.BG_CARD}; border-radius: 12px; border: 1px solid {colors.BORDER}; }}")
-            shadow = QGraphicsDropShadowEffect()
-            shadow.setBlurRadius(20); shadow.setColor(QColor(15, 23, 42, 15)); shadow.setOffset(0, 4)
-            frame.setGraphicsEffect(shadow)
+        frame.setStyleSheet(get_card_style())
         return frame
 
     def styled_input(self, placeholder):
         le = QLineEdit()
         le.setPlaceholderText(placeholder)
         le.setMinimumHeight(38)
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-        le.setStyleSheet(f"QLineEdit {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }} QLineEdit:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}")
+        colors = ThemeManager.get_colors()
+        le.setStyleSheet(
+            f"QLineEdit {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }} QLineEdit:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}"
+        )
         return le
 
     def styled_combo(self):
         combo = QComboBox()
         combo.setMinimumHeight(38)
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-        combo.setStyleSheet(f"QComboBox {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }} QComboBox:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}")
+        colors = ThemeManager.get_colors()
+        combo.setStyleSheet(
+            f"QComboBox {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }} QComboBox:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}"
+        )
         return combo
 
     def style_table(self, table):
         table.setShowGrid(False)
         table.setAlternatingRowColors(True)
         table.verticalHeader().setVisible(False)
-        if THEME_AVAILABLE:
-            table.setStyleSheet(get_table_style())
-        else:
-            colors = Colors()
-            table.setStyleSheet(f"""
-                QTableWidget {{ background-color: {colors.BG_CARD}; border: 1px solid {colors.BORDER}; border-radius: 8px; gridline-color: {colors.BORDER}; font-size: 13px; color: {colors.TEXT_PRIMARY}; }}
-                QTableWidget::item {{ padding: 6px; border-bottom: 1px solid {colors.BG_MAIN}; }}
-                QTableWidget::item:selected {{ background-color: {colors.PRIMARY}; color: white; }}
-                QHeaderView::section {{ background-color: {colors.BG_HEADER}; color: {colors.HEADER_TEXT}; padding: 10px; border: none; font-weight: bold; }}
-            """)
+        table.setStyleSheet(get_table_style())
+
+    def _load_kpi_stats(self):
+        """Charge les statistiques des utilisateurs."""
+        try:
+            db = DatabaseManager()
+            with db.get_connection() as conn:
+                cursor = conn.cursor()
+                # Total utilisateurs
+                cursor.execute("SELECT COUNT(*) FROM Users")
+                total = cursor.fetchone()[0] or 0
+                # Actifs
+                cursor.execute("SELECT COUNT(*) FROM Users WHERE is_active = TRUE")
+                active = cursor.fetchone()[0] or 0
+                # Admins
+                cursor.execute("SELECT COUNT(*) FROM Users WHERE role = 'Admin'")
+                admins = cursor.fetchone()[0] or 0
+                # Logs audit (30 derniers jours)
+                cursor.execute("SELECT COUNT(*) FROM AuditLogs WHERE timestamp >= NOW() - INTERVAL '30 days'")
+                audit_count = cursor.fetchone()[0] or 0
+
+            self._stat_users.set_value(str(total))
+            self._stat_active.set_value(str(active))
+            self._stat_admins.set_value(str(admins))
+            self._stat_audit.set_value(str(audit_count))
+        except Exception as e:
+            AppLogger.error("UserManagementWindow", f"Erreur KPI stats: {e}")
 
     def setup_users_tab(self):
         tab = QWidget()
@@ -214,9 +215,11 @@ class UserManagementWindow(QMainWindow):
         alay = QVBoxLayout(add_card)
         alay.setContentsMargins(15, 15, 15, 15)
 
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+        colors = ThemeManager.get_colors()
         lbl_add_title = QLabel("➕ Nouveau Utilisateur / إضافة مستخدم")
-        lbl_add_title.setStyleSheet(f"font-weight: bold; color: {colors.TEXT_PRIMARY}; font-size: 14px; margin-bottom: 5px;")
+        lbl_add_title.setStyleSheet(
+            f"font-weight: bold; color: {colors.TEXT_PRIMARY}; font-size: 14px; margin-bottom: 5px;"
+        )
         alay.addWidget(lbl_add_title)
 
         form_grid = QGridLayout()
@@ -246,7 +249,9 @@ class UserManagementWindow(QMainWindow):
 
         btn_add = QPushButton("Créer le compte")
         btn_add.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_add.setStyleSheet(f"QPushButton {{ background-color: {colors.SUCCESS}; color: white; font-weight: bold; padding: 10px; border-radius: 6px; border: none; }} QPushButton:hover {{ background-color: {colors.SUCCESS_HOVER}; }}")
+        btn_add.setStyleSheet(
+            f"QPushButton {{ background-color: {colors.SUCCESS}; color: white; font-weight: bold; padding: 10px; border-radius: 6px; border: none; }} QPushButton:hover {{ background-color: {colors.SUCCESS_HOVER}; }}"
+        )
         btn_add.clicked.connect(self.add_user)
 
         alay.addLayout(form_grid)
@@ -261,12 +266,16 @@ class UserManagementWindow(QMainWindow):
         mlay.setContentsMargins(15, 15, 15, 15)
 
         lbl_manage_title = QLabel("🔧 Gestion & Sécurité / إدارة الحساب")
-        lbl_manage_title.setStyleSheet(f"font-weight: bold; color: {colors.TEXT_PRIMARY}; font-size: 14px; margin-bottom: 5px;")
+        lbl_manage_title.setStyleSheet(
+            f"font-weight: bold; color: {colors.TEXT_PRIMARY}; font-size: 14px; margin-bottom: 5px;"
+        )
         mlay.addWidget(lbl_manage_title)
 
         self.lbl_selected_user = QLabel("Aucun utilisateur sélectionné")
         self.lbl_selected_user.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.lbl_selected_user.setStyleSheet(f"background-color: {colors.BG_MAIN}; color: {colors.TEXT_SECONDARY}; padding: 8px; border-radius: 6px; font-weight: bold; border: 1px solid {colors.BORDER};")
+        self.lbl_selected_user.setStyleSheet(
+            f"background-color: {colors.BG_MAIN}; color: {colors.TEXT_SECONDARY}; padding: 8px; border-radius: 6px; font-weight: bold; border: 1px solid {colors.BORDER};"
+        )
         mlay.addWidget(self.lbl_selected_user)
 
         mlay.addSpacing(10)
@@ -277,14 +286,18 @@ class UserManagementWindow(QMainWindow):
 
         btn_reset = QPushButton("Modifier le Mot de Passe")
         btn_reset.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_reset.setStyleSheet(f"QPushButton {{ background-color: {colors.PRIMARY}; color: white; font-weight: bold; padding: 8px; border-radius: 6px; border: none; }} QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}")
+        btn_reset.setStyleSheet(
+            f"QPushButton {{ background-color: {colors.PRIMARY}; color: white; font-weight: bold; padding: 8px; border-radius: 6px; border: none; }} QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}"
+        )
         btn_reset.clicked.connect(self.reset_password)
         mlay.addWidget(btn_reset)
 
         mlay.addSpacing(15)
         btn_delete = QPushButton("Supprimer ce Compte")
         btn_delete.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_delete.setStyleSheet(f"QPushButton {{ background-color: {colors.DANGER}; color: white; font-weight: bold; padding: 8px; border-radius: 6px; border: none; }} QPushButton:hover {{ background-color: {colors.DANGER_HOVER}; }}")
+        btn_delete.setStyleSheet(
+            f"QPushButton {{ background-color: {colors.DANGER}; color: white; font-weight: bold; padding: 8px; border-radius: 6px; border: none; }} QPushButton:hover {{ background-color: {colors.DANGER_HOVER}; }}"
+        )
         btn_delete.clicked.connect(self.delete_user)
         mlay.addWidget(btn_delete)
         mlay.addStretch()
@@ -320,7 +333,9 @@ class UserManagementWindow(QMainWindow):
         flay.addWidget(self.txt_audit_search)
 
         self.combo_audit_period = self.styled_combo()
-        self.combo_audit_period.addItems(["7 derniers jours", "30 derniers jours", "90 derniers jours", "Période personnalisée", "Tout"])
+        self.combo_audit_period.addItems(
+            ["7 derniers jours", "30 derniers jours", "90 derniers jours", "Période personnalisée", "Tout"]
+        )
         self.combo_audit_period.setCurrentText("30 derniers jours")
         self.combo_audit_period.currentIndexChanged.connect(self.on_audit_period_changed)
         flay.addWidget(self.combo_audit_period)
@@ -331,8 +346,10 @@ class UserManagementWindow(QMainWindow):
         self.date_audit_from.setDate(QDate.currentDate().addDays(-29))
         self.date_audit_from.setEnabled(False)
         self.date_audit_from.dateChanged.connect(self.load_audit_logs)
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-        self.date_audit_from.setStyleSheet(f"QDateEdit {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }}")
+        colors = ThemeManager.get_colors()
+        self.date_audit_from.setStyleSheet(
+            f"QDateEdit {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }}"
+        )
         flay.addWidget(self.date_audit_from)
 
         self.date_audit_to = QDateEdit()
@@ -341,7 +358,9 @@ class UserManagementWindow(QMainWindow):
         self.date_audit_to.setDate(QDate.currentDate())
         self.date_audit_to.setEnabled(False)
         self.date_audit_to.dateChanged.connect(self.load_audit_logs)
-        self.date_audit_to.setStyleSheet(f"QDateEdit {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }}")
+        self.date_audit_to.setStyleSheet(
+            f"QDateEdit {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }}"
+        )
         flay.addWidget(self.date_audit_to)
 
         self.combo_audit_limit = self.styled_combo()
@@ -352,7 +371,9 @@ class UserManagementWindow(QMainWindow):
 
         btn_export_audit = QPushButton("📄 Exporter Rapport PDF")
         btn_export_audit.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_export_audit.setStyleSheet(f"QPushButton {{ background-color: {colors.PRIMARY}; color: white; font-weight: bold; padding: 8px 14px; border-radius: 6px; border: none; }} QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}")
+        btn_export_audit.setStyleSheet(
+            f"QPushButton {{ background-color: {colors.PRIMARY}; color: white; font-weight: bold; padding: 8px 14px; border-radius: 6px; border: none; }} QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}"
+        )
         btn_export_audit.clicked.connect(self.export_audit_report_pdf)
         flay.addWidget(btn_export_audit)
 
@@ -400,7 +421,9 @@ class UserManagementWindow(QMainWindow):
             end_date = self.date_audit_to.date()
             if start_date > end_date:
                 start_date, end_date = end_date, start_date
-            self.current_audit_period_label = f"{start_date.toString('yyyy-MM-dd')} -> {end_date.toString('yyyy-MM-dd')}"
+            self.current_audit_period_label = (
+                f"{start_date.toString('yyyy-MM-dd')} -> {end_date.toString('yyyy-MM-dd')}"
+            )
             start = start_date.toString("yyyy-MM-dd") + " 00:00:00"
             end = end_date.toString("yyyy-MM-dd") + " 23:59:59"
             return start, end
@@ -421,9 +444,10 @@ class UserManagementWindow(QMainWindow):
             for staff_id, first_name, last_name in rows:
                 first = str(first_name or "").strip()
                 last = str(last_name or "").strip()
-                display_name = (f"{first} {last}".strip() or "[Staff]")
+                display_name = f"{first} {last}".strip() or "[Staff]"
                 self.combo_staff.addItem(display_name, staff_id)
-        except Exception: pass
+        except Exception:
+            pass
 
     def on_staff_selected(self):
         staff_id = self.combo_staff.currentData()
@@ -470,7 +494,7 @@ class UserManagementWindow(QMainWindow):
 
             self.current_audit_report_rows = [[r[0], r[1], r[2], r[3]] for r in rows]
 
-            colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+            colors = ThemeManager.get_colors()
 
             for row in rows:
                 idx = self.table_audit.rowCount()
@@ -578,9 +602,11 @@ class UserManagementWindow(QMainWindow):
         self.selected_username = self.table.item(row, 2).text()
         staff_name = self.table.item(row, 1).text()
 
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+        colors = ThemeManager.get_colors()
         self.lbl_selected_user.setText(f"👤 {self.selected_username} ({staff_name})")
-        self.lbl_selected_user.setStyleSheet(f"background-color: {colors.BG_MAIN}; color: {colors.PRIMARY}; padding: 8px; border-radius: 6px; font-weight: bold; border: 1px solid {colors.BORDER};")
+        self.lbl_selected_user.setStyleSheet(
+            f"background-color: {colors.BG_MAIN}; color: {colors.PRIMARY}; padding: 8px; border-radius: 6px; font-weight: bold; border: 1px solid {colors.BORDER};"
+        )
 
     def reset_password(self):
         if not self.selected_user_id:
@@ -612,12 +638,21 @@ class UserManagementWindow(QMainWindow):
             QMessageBox.critical(self, "Erreur", str(e))
 
     def delete_user(self):
-        if not self.selected_user_id: return
+        if not self.selected_user_id:
+            return
         if self.selected_user_id == 1 or self.selected_username == 'admin':
             QMessageBox.warning(self, "Interdit", "Impossible de supprimer l'administrateur principal.")
             return
 
-        if QMessageBox.question(self, "Confirmer", f"Supprimer '{self.selected_username}' ?", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes:
+        if (
+            QMessageBox.question(
+                self,
+                "Confirmer",
+                f"Supprimer '{self.selected_username}' ?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            == QMessageBox.StandardButton.Yes
+        ):
             try:
                 db = DatabaseManager()
                 with db.get_connection() as conn:
@@ -626,8 +661,10 @@ class UserManagementWindow(QMainWindow):
                     conn.commit()
                 self.load_users()
                 self.lbl_selected_user.setText("Aucun utilisateur sélectionné")
-                colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-                self.lbl_selected_user.setStyleSheet(f"background-color: {colors.BG_MAIN}; color: {colors.TEXT_SECONDARY}; padding: 8px; border-radius: 6px; border: 1px solid {colors.BORDER};")
+                colors = ThemeManager.get_colors()
+                self.lbl_selected_user.setStyleSheet(
+                    f"background-color: {colors.BG_MAIN}; color: {colors.TEXT_SECONDARY}; padding: 8px; border-radius: 6px; border: 1px solid {colors.BORDER};"
+                )
                 self.selected_user_id = None
             except Exception as e:
                 QMessageBox.critical(self, "Erreur", str(e))

@@ -1,6 +1,6 @@
 import os
 import sys
-from datetime import datetime
+from datetime import date, datetime
 
 import psycopg2
 from fpdf import FPDF
@@ -12,7 +12,6 @@ from PyQt6.QtWidgets import (
     QComboBox,
     QDateEdit,
     QFrame,
-    QGraphicsDropShadowEffect,
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
@@ -36,9 +35,16 @@ from print_export_service import get_report_output_mode, output_pdf
 from repositories.attendance_repo import AttendanceRepository
 from repositories.finance_repo import FinanceRepository
 from repositories.student_repo import StudentRepository
-from ui_styles import Colors, ThemeManager, apply_shadow_to_widget, get_card_style, get_table_style, get_tabs_style
+from ui_styles import (
+    Colors,
+    ModuleHeaderWidget,
+    ThemeManager,
+    apply_shadow_to_widget,
+    get_card_style,
+    get_table_style,
+    get_tabs_style,
+)
 
-THEME_AVAILABLE = True
 ATTENDANCE_REPORT_OUTPUT_MODE = get_report_output_mode("student_attendance_mode", "save")
 
 try:
@@ -181,19 +187,10 @@ class StudentAttendanceWindow(QMainWindow):
         self.setMinimumSize(1100, 750)
 
         # تطبيق المظهر باستخدام ThemeManager
-        if THEME_AVAILABLE:
-            ThemeManager.apply_theme(self)
-        else:
-            colors = Colors()
-            self.setStyleSheet(
-                f"""
-                QMainWindow {{ background-color: {colors.BG_MAIN}; }}
-                QLabel {{ font-family: 'Segoe UI', 'Cairo', sans-serif; color: {colors.TEXT_PRIMARY}; }}
-            """
-            )
-
+        ThemeManager.apply_theme(self)
         self.init_ui()
         self.load_classes()
+        self._load_kpi_stats()
 
     def get_active_year_id(self):
         """جلب السنة الدراسية النشطة لضمان ربط الحضور بالسنة الصحيحة"""
@@ -249,60 +246,23 @@ class StudentAttendanceWindow(QMainWindow):
         self.main_layout.setContentsMargins(20, 20, 20, 20)
         self.main_layout.setSpacing(15)
 
-        # 1. Header Frame
-        header_frame = QFrame()
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-        header_frame.setStyleSheet(
-            f"""
-            QFrame {{ background-color: {colors.BG_HEADER}; border-radius: 10px; }}
-        """
+        # 1. Header
+        header = ModuleHeaderWidget(
+            icon="📅",
+            title="SUIVI DE L'ASSIDUITÉ",
+            subtitle="متابعة الغياب والحضور اليومي",
         )
-        header_frame.setMaximumHeight(80)
+        self.main_layout.addWidget(header)
+        self._stat_present = header.add_stat("✅", "Présents", "—", "#22C55E")
+        self._stat_absent = header.add_stat("❌", "Absents", "—", "#EF4444")
+        self._stat_late = header.add_stat("⏰", "Retards", "—", "#F59E0B")
+        self._stat_rate = header.add_stat("📊", "Taux Présence", "—", "#3B82F6")
 
-        shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(15)
-        shadow.setColor(QColor(15, 23, 42, 40))
-        shadow.setOffset(0, 4)
-        header_frame.setGraphicsEffect(shadow)
+        # 2. KPI Cards
 
-        hl = QHBoxLayout(header_frame)
-        hl.setContentsMargins(20, 15, 20, 15)
-
-        icon_lbl = QLabel("📅")
-        icon_lbl.setStyleSheet("font-size: 32px; background: transparent;")
-
-        title_layout = QVBoxLayout()
-        header_lbl = QLabel("SUIVI DE L'ASSIDUITÉ")
-        header_lbl.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
-        header_lbl.setStyleSheet(f"color: {colors.HEADER_TEXT}; background: transparent;")
-
-        sub_lbl = QLabel("متابعة الغياب والحضور اليومي")
-        sub_lbl.setFont(QFont("Cairo", 11))
-        sub_lbl.setStyleSheet(f"color: {colors.TEXT_SECONDARY}; background: transparent;")
-
-        title_layout.addWidget(header_lbl)
-        title_layout.addWidget(sub_lbl)
-
-        hl.addWidget(icon_lbl)
-        hl.addSpacing(15)
-        hl.addLayout(title_layout)
-        hl.addStretch()
-
-        self.main_layout.addWidget(header_frame)
-
-        # 2. Tabs
+        # 3. Tabs
         self.tabs = QTabWidget()
-        if THEME_AVAILABLE:
-            self.tabs.setStyleSheet(get_tabs_style())
-        else:
-            self.tabs.setStyleSheet(
-                f"""
-                QTabWidget::pane {{ border: 1px solid {colors.BORDER}; background: {colors.BG_CARD}; border-radius: 12px; margin-top: 15px; }}
-                QTabBar::tab {{ background: {colors.BG_MAIN}; color: {colors.TEXT_SECONDARY}; padding: 12px 30px; margin-right: 6px; border-top-left-radius: 8px; border-top-right-radius: 8px; font-weight: bold; font-family: 'Segoe UI', 'Cairo'; }}
-                QTabBar::tab:selected {{ background: {colors.BG_HEADER}; color: {colors.HEADER_TEXT}; }}
-                QTabBar::tab:hover {{ background: {colors.BORDER}; }}
-            """
-            )
+        self.tabs.setStyleSheet(get_tabs_style())
 
         self.setup_daily_entry_tab()
         self.setup_reports_tab()
@@ -311,24 +271,13 @@ class StudentAttendanceWindow(QMainWindow):
 
     def create_card(self):
         frame = QFrame()
-        if THEME_AVAILABLE:
-            frame.setStyleSheet(get_card_style())
-            apply_shadow_to_widget(frame)
-        else:
-            colors = Colors()
-            frame.setStyleSheet(
-                f"QFrame {{ background-color: {colors.BG_CARD}; border-radius: 12px; border: 1px solid {colors.BORDER}; }}"
-            )
-            shadow = QGraphicsDropShadowEffect()
-            shadow.setBlurRadius(20)
-            shadow.setColor(QColor(15, 23, 42, 15))
-            shadow.setOffset(0, 4)
-            frame.setGraphicsEffect(shadow)
+        frame.setStyleSheet(get_card_style())
+        apply_shadow_to_widget(frame)
         return frame
 
     def styled_combo(self):
         combo = QComboBox()
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+        colors = ThemeManager.get_colors()
         combo.setStyleSheet(
             f"""
             QComboBox {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }}
@@ -341,7 +290,7 @@ class StudentAttendanceWindow(QMainWindow):
     def styled_date(self):
         de = QDateEdit()
         de.setCalendarPopup(True)
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+        colors = ThemeManager.get_colors()
         de.setStyleSheet(
             f"QDateEdit {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }}"
         )
@@ -353,19 +302,7 @@ class StudentAttendanceWindow(QMainWindow):
         table.setAlternatingRowColors(True)
         table.verticalHeader().setVisible(False)
         table.verticalHeader().setDefaultSectionSize(44)
-        if THEME_AVAILABLE:
-            table.setStyleSheet(get_table_style())
-        else:
-            colors = Colors()
-            table.setStyleSheet(
-                f"""
-                QTableWidget {{ background-color: {colors.BG_CARD}; border: 1px solid {colors.BORDER}; border-radius: 8px; gridline-color: {colors.BORDER}; font-size: 13px; color: {colors.TEXT_PRIMARY}; }}
-                QTableWidget::item {{ padding: 6px; border-bottom: 1px solid {colors.BG_MAIN}; }}
-                QTableWidget::item:alternate {{ background-color: {colors.BG_MAIN}; }}
-                QTableWidget::item:selected {{ background-color: {colors.PRIMARY}; color: {colors.HEADER_TEXT}; }}
-                QHeaderView::section {{ background-color: {colors.BG_HEADER}; color: {colors.HEADER_TEXT}; padding: 8px; border: none; font-weight: bold; }}
-            """
-            )
+        table.setStyleSheet(get_table_style())
 
     def setup_daily_entry_tab(self):
         tab = QWidget()
@@ -392,7 +329,7 @@ class StudentAttendanceWindow(QMainWindow):
 
         btn_load = QPushButton("📥 Charger / تحميل")
         btn_load.setCursor(Qt.CursorShape.PointingHandCursor)
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+        colors = ThemeManager.get_colors()
         btn_load.setStyleSheet(
             f"""
             QPushButton {{ background-color: {colors.PRIMARY}; color: white; padding: 10px; border-radius: 6px; font-weight: bold; border: none; }}
@@ -480,7 +417,7 @@ class StudentAttendanceWindow(QMainWindow):
         btn_layout.setSpacing(10)
 
         btn_style = "QPushButton { color: white; font-weight: bold; border-radius: 6px; padding: 10px; border: none; }"
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+        colors = ThemeManager.get_colors()
 
         btn_daily_pdf = QPushButton("📄 Journalier (Journal)")
         btn_daily_pdf.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -531,6 +468,49 @@ class StudentAttendanceWindow(QMainWindow):
     # ---------------------------------------------------------
     # Logic: Data Loading
     # ---------------------------------------------------------
+    def _load_kpi_stats(self):
+        try:
+            today_str = date.today().isoformat()
+            db = DatabaseManager()
+            with db.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute(
+                    "SELECT column_name FROM information_schema.columns WHERE table_name = 'studentattendance'"
+                )
+                cols = {r[0].lower() for r in cursor.fetchall()}
+                date_col = "attendance_date" if "attendance_date" in cols else "date"
+
+                cursor.execute(
+                    f"SELECT COUNT(*) FROM StudentAttendance WHERE {date_col} = %s AND LOWER(status) IN ('présent', 'present')",
+                    (today_str,),
+                )
+                row = cursor.fetchone()
+                present = row[0] if row else 0
+                cursor.execute(
+                    f"SELECT COUNT(*) FROM StudentAttendance WHERE {date_col} = %s AND LOWER(status) = 'absent'",
+                    (today_str,),
+                )
+                row = cursor.fetchone()
+                absent = row[0] if row else 0
+                cursor.execute(
+                    f"SELECT COUNT(*) FROM StudentAttendance WHERE {date_col} = %s AND (LOWER(status) LIKE '%retard%' OR LOWER(status) LIKE '%late%')",
+                    (today_str,),
+                )
+                row = cursor.fetchone()
+                late = row[0] if row else 0
+                total = present + absent + late
+                rate = f"{present * 100 // total}%" if total > 0 else "0%"
+            self._stat_present.set_value(str(present))
+            self._stat_absent.set_value(str(absent))
+            self._stat_late.set_value(str(late))
+            self._stat_rate.set_value(rate)
+        except Exception as e:
+            AppLogger.warning("StudentAttendance", f"KPI load error: {e}")
+            self._stat_present.set_value("0")
+            self._stat_absent.set_value("0")
+            self._stat_late.set_value("0")
+            self._stat_rate.set_value("0%")
+
     def load_classes(self):
         try:
             db = DatabaseManager()
@@ -614,7 +594,7 @@ class StudentAttendanceWindow(QMainWindow):
                 # Action
                 btn_reset = QPushButton("↺")
                 btn_reset.setToolTip("Réinitialiser")
-                colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+                colors = ThemeManager.get_colors()
                 btn_reset.setStyleSheet(
                     f"""
                     QPushButton {{ background-color: {colors.TEXT_SECONDARY}; color: white; border-radius: 4px; font-weight: bold; border: none; }}

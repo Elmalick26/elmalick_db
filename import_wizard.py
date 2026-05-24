@@ -498,8 +498,6 @@ class ImportWizard(QDialog):
                 data["birth_date"] = _parse_date(data["birth_date"])
                 # التحقق من التاريخ لـ validators
                 try:
-                    from datetime import date as _date
-
                     data["_birth_date_obj"] = (
                         datetime.strptime(data["birth_date"], "%Y-%m-%d").date() if data["birth_date"] else None
                     )

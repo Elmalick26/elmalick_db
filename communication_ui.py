@@ -17,7 +17,6 @@ from PyQt6.QtWidgets import (
     QDateEdit,
     QFileDialog,
     QFrame,
-    QGraphicsDropShadowEffect,
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
@@ -36,6 +35,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+import security_utils
 from app_logger import AppLogger
 from database_setup import DatabaseManager
 from pdf_report_style import (
@@ -47,9 +47,16 @@ from pdf_report_style import (
 )
 from print_export_service import get_report_output_mode, output_pdf
 from repositories.communication_repo import CommunicationRepository
-from ui_styles import Colors, ThemeManager, apply_shadow_to_widget, get_card_style, get_table_style, get_tabs_style
+from ui_styles import (
+    Colors,
+    ModuleHeaderWidget,
+    ThemeManager,
+    apply_shadow_to_widget,
+    get_card_style,
+    get_table_style,
+    get_tabs_style,
+)
 
-THEME_AVAILABLE = True
 COMMUNICATION_REPORT_OUTPUT_MODE = get_report_output_mode("communication_report_mode", "save")
 
 # --- Thread for Sending Emails (يمنع تجمد البرنامج) ---
@@ -120,21 +127,7 @@ class CommunicationWindow(QMainWindow):
         self.current_comm_report_title = ""
 
         # تطبيق المظهر
-        if THEME_AVAILABLE:
-            ThemeManager.apply_theme(self)
-        else:
-            colors = Colors()
-            self.setStyleSheet(
-                f"""
-                QMainWindow {{ background-color: {colors.BG_MAIN}; }}
-                QLabel {{ font-family: 'Segoe UI', 'Cairo', sans-serif; color: {colors.TEXT_PRIMARY}; }}
-                QGroupBox {{
-                    border: 1px solid {colors.BORDER}; border-radius: 8px; margin-top: 10px;
-                    background-color: {colors.BG_CARD}; font-weight: bold; color: {colors.TEXT_SECONDARY};
-                }}
-            """
-            )
-
+        ThemeManager.apply_theme(self)
         self.attachment_path = None
         self.init_ui()
         self.load_settings()
@@ -154,56 +147,15 @@ class CommunicationWindow(QMainWindow):
         self.layout.setContentsMargins(20, 20, 20, 20)
         self.layout.setSpacing(15)
 
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-
-        # Header Frame
-        header_frame = QFrame()
-        header_frame.setStyleSheet(f"QFrame {{ background-color: {colors.BG_HEADER}; border-radius: 10px; }}")
-        header_frame.setMaximumHeight(80)
-
-        shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(15)
-        shadow.setColor(QColor(15, 23, 42, 40))
-        shadow.setOffset(0, 4)
-        header_frame.setGraphicsEffect(shadow)
-
-        hl = QHBoxLayout(header_frame)
-        hl.setContentsMargins(20, 15, 20, 15)
-
-        icon_lbl = QLabel("📧")
-        icon_lbl.setStyleSheet("font-size: 32px; background: transparent;")
-
-        title_layout = QVBoxLayout()
-        header_lbl = QLabel("CENTRE DE MESSAGERIE")
-        header_lbl.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
-        header_lbl.setStyleSheet(f"color: {colors.HEADER_TEXT}; background: transparent;")
-
-        sub_lbl = QLabel("إرسال الإشعارات والبريد الإلكتروني")
-        sub_lbl.setFont(QFont("Cairo", 11))
-        sub_lbl.setStyleSheet(f"color: {colors.TEXT_SECONDARY}; background: transparent;")
-
-        title_layout.addWidget(header_lbl)
-        title_layout.addWidget(sub_lbl)
-
-        hl.addWidget(icon_lbl)
-        hl.addSpacing(15)
-        hl.addLayout(title_layout)
-        hl.addStretch()
-
-        self.layout.addWidget(header_frame)
+        # Header
+        header = ModuleHeaderWidget("📧", "CENTRE DE MESSAGERIE", "إرسال الإشعارات والبريد الإلكتروني")
+        self._stat_total = header.add_stat("📨", "Messages", "0", "#3B82F6")
+        self._stat_sent = header.add_stat("✅", "Envoyés", "0", "#22C55E")
+        self._stat_failed = header.add_stat("❌", "Échecs", "0", "#EF4444")
+        self.layout.addWidget(header)
 
         self.tabs = QTabWidget()
-        if THEME_AVAILABLE:
-            self.tabs.setStyleSheet(get_tabs_style())
-        else:
-            self.tabs.setStyleSheet(
-                f"""
-                QTabWidget::pane {{ border: 1px solid {colors.BORDER}; background: {colors.BG_CARD}; border-radius: 12px; margin-top: 15px; }}
-                QTabBar::tab {{ background: {colors.BG_MAIN}; color: {colors.TEXT_SECONDARY}; padding: 12px 30px; margin-right: 6px; border-top-left-radius: 8px; border-top-right-radius: 8px; font-weight: bold; font-family: 'Segoe UI', 'Cairo'; }}
-                QTabBar::tab:selected {{ background: {colors.BG_HEADER}; color: {colors.HEADER_TEXT}; }}
-                QTabBar::tab:hover {{ background: {colors.BORDER}; }}
-            """
-            )
+        self.tabs.setStyleSheet(get_tabs_style())
 
         self.setup_compose_tab()
         self.setup_settings_tab()
@@ -214,25 +166,14 @@ class CommunicationWindow(QMainWindow):
 
     def create_card(self):
         frame = QFrame()
-        if THEME_AVAILABLE:
-            frame.setStyleSheet(get_card_style())
-            apply_shadow_to_widget(frame)
-        else:
-            colors = Colors()
-            frame.setStyleSheet(
-                f"QFrame {{ background-color: {colors.BG_CARD}; border-radius: 12px; border: 1px solid {colors.BORDER}; }}"
-            )
-            shadow = QGraphicsDropShadowEffect()
-            shadow.setBlurRadius(20)
-            shadow.setColor(QColor(15, 23, 42, 15))
-            shadow.setOffset(0, 4)
-            frame.setGraphicsEffect(shadow)
+        frame.setStyleSheet(get_card_style())
+        apply_shadow_to_widget(frame)
         return frame
 
     def styled_input(self, placeholder):
         le = QLineEdit()
         le.setPlaceholderText(placeholder)
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+        colors = ThemeManager.get_colors()
         le.setStyleSheet(
             f"QLineEdit {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }} QLineEdit:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}"
         )
@@ -241,7 +182,7 @@ class CommunicationWindow(QMainWindow):
 
     def styled_combo(self):
         combo = QComboBox()
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+        colors = ThemeManager.get_colors()
         combo.setStyleSheet(
             f"QComboBox {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }} QComboBox:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}"
         )
@@ -252,7 +193,7 @@ class CommunicationWindow(QMainWindow):
         date_edit = QDateEdit()
         date_edit.setCalendarPopup(True)
         date_edit.setMinimumHeight(38)
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+        colors = ThemeManager.get_colors()
         date_edit.setStyleSheet(
             f"QDateEdit {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }} QDateEdit:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}"
         )
@@ -262,7 +203,7 @@ class CommunicationWindow(QMainWindow):
         text_edit = QTextEdit()
         if placeholder:
             text_edit.setPlaceholderText(placeholder)
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+        colors = ThemeManager.get_colors()
         text_edit.setStyleSheet(
             f"QTextEdit {{ padding: 10px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }} QTextEdit:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}"
         )
@@ -272,18 +213,7 @@ class CommunicationWindow(QMainWindow):
         table.setShowGrid(False)
         table.setAlternatingRowColors(True)
         table.verticalHeader().setVisible(False)
-        if THEME_AVAILABLE:
-            table.setStyleSheet(get_table_style())
-        else:
-            colors = Colors()
-            table.setStyleSheet(
-                f"""
-                QTableWidget {{ background-color: {colors.BG_CARD}; border: 1px solid {colors.BORDER}; border-radius: 8px; gridline-color: {colors.BORDER}; font-size: 13px; color: {colors.TEXT_PRIMARY}; }}
-                QTableWidget::item {{ padding: 6px; border-bottom: 1px solid {colors.BG_MAIN}; }}
-                QTableWidget::item:selected {{ background-color: {colors.PRIMARY}; color: white; }}
-                QHeaderView::section {{ background-color: {colors.BG_HEADER}; color: {colors.HEADER_TEXT}; padding: 8px; border: none; font-weight: bold; }}
-            """
-            )
+        table.setStyleSheet(get_table_style())
 
     def setup_compose_tab(self):
         tab = QWidget()
@@ -320,7 +250,7 @@ class CommunicationWindow(QMainWindow):
 
         att_layout = QHBoxLayout()
         self.lbl_attachment = QLabel("Aucun fichier joint")
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+        colors = ThemeManager.get_colors()
         self.lbl_attachment.setStyleSheet(f"color: {colors.TEXT_SECONDARY}; font-style: italic;")
 
         btn_att = QPushButton("📎 Joindre un fichier")
@@ -382,7 +312,7 @@ class CommunicationWindow(QMainWindow):
         btn_save = QPushButton("Sauvegarder Configuration")
         btn_save.setMinimumHeight(40)
         btn_save.setCursor(Qt.CursorShape.PointingHandCursor)
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+        colors = ThemeManager.get_colors()
         btn_save.setStyleSheet(
             f"background-color: {colors.WARNING}; color: white; font-weight: bold; border-radius: 6px; border: none;"
         )
@@ -416,7 +346,7 @@ class CommunicationWindow(QMainWindow):
 
         btn_refresh = QPushButton("Actualiser")
         btn_refresh.setCursor(Qt.CursorShape.PointingHandCursor)
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+        colors = ThemeManager.get_colors()
         btn_refresh.setStyleSheet(
             f"QPushButton {{ background-color: {colors.PRIMARY}; color: white; font-weight: bold; border-radius: 6px; padding: 8px; border: none; }} QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}"
         )
@@ -455,7 +385,7 @@ class CommunicationWindow(QMainWindow):
         btn_export.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_export.setMinimumHeight(38)
 
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+        colors = ThemeManager.get_colors()
         btn_generate.setStyleSheet(
             f"background-color: {colors.PRIMARY}; color: white; font-weight: bold; border-radius: 6px; border: none;"
         )
@@ -606,14 +536,12 @@ class CommunicationWindow(QMainWindow):
         if f:
             self.attachment_path = f
             self.lbl_attachment.setText(os.path.basename(f))
-            colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+            colors = ThemeManager.get_colors()
             self.lbl_attachment.setStyleSheet(f"color: {colors.SUCCESS}; font-weight: bold;")
 
     def save_settings(self):
         password_value = self.txt_password.text() if self.chk_save_password.isChecked() else ""
         try:
-            import security_utils
-
             encrypted_pwd = security_utils.encrypt_value(password_value) if password_value else ""
             db = DatabaseManager()
             with db.get_connection() as conn:
@@ -632,8 +560,6 @@ class CommunicationWindow(QMainWindow):
                 res = CommunicationRepository(conn).get_email_settings()
 
             if res:
-                import security_utils
-
                 self.txt_smtp_host.setText(str(res[1] or ""))
                 self.txt_smtp_port.setText(str(res[2] or ""))
                 self.txt_email.setText(str(res[3] or ""))
@@ -747,10 +673,17 @@ class CommunicationWindow(QMainWindow):
                 for c, val in enumerate(r):
                     item = QTableWidgetItem(str(val if val is not None else "-"))
                     if c == 3:
-                        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+                        colors = ThemeManager.get_colors()
                         item.setForeground(QColor(colors.SUCCESS) if val == "Envoyé" else QColor(colors.DANGER))
                         item.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
                     self.table_logs.setItem(idx, c, item)
+
+            # Update stat chips
+            total = len(rows)
+            sent = sum(1 for r in rows if r[3] == "Envoyé") if rows else 0
+            self._stat_total.set_value(str(total))
+            self._stat_sent.set_value(str(sent))
+            self._stat_failed.set_value(str(total - sent))
         except Exception as e:
             AppLogger.error("CommunicationUI", f"Error loading logs: {e}")
 

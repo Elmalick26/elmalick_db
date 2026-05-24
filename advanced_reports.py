@@ -1,11 +1,12 @@
 import os
+import subprocess
 import sys
 from datetime import datetime, timedelta
 
 import matplotlib.pyplot as plt
 import psycopg2
 from fpdf import FPDF
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
@@ -45,7 +46,6 @@ from repositories.analytics_repo import AnalyticsRepository
 from repositories.finance_repo import FinanceRepository
 from ui_styles import Colors, ThemeManager, apply_shadow_to_widget, get_card_style, get_tabs_style
 
-THEME_AVAILABLE = True
 ADVANCED_COMPREHENSIVE_PDF_MODE = get_report_output_mode("advanced_comprehensive_pdf_mode", "save")
 
 # --- Worker Thread for Heavy Report Generation ---
@@ -442,21 +442,7 @@ class AdvancedReportsWindow(QMainWindow):
         self.setWindowTitle("Rapports Avancés / التقارير المتقدمة")
         self.setMinimumSize(1100, 700)
 
-        if THEME_AVAILABLE:
-            ThemeManager.apply_theme(self)
-        else:
-            colors = Colors()
-            self.setStyleSheet(
-                f"""
-                QMainWindow {{ background-color: {colors.BG_MAIN}; }}
-                QLabel {{ font-family: 'Segoe UI', 'Cairo', sans-serif; color: {colors.TEXT_PRIMARY}; }}
-                QGroupBox {{
-                    border: 1px solid {colors.BORDER}; border-radius: 8px; margin-top: 10px;
-                    background-color: {colors.BG_CARD}; font-weight: bold; color: {colors.TEXT_SECONDARY};
-                }}
-            """
-            )
-
+        ThemeManager.apply_theme(self)
         self.worker = None
         self.init_ui()
 
@@ -543,7 +529,7 @@ class AdvancedReportsWindow(QMainWindow):
 
         # Header
         header_frame = QFrame()
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+        colors = ThemeManager.get_colors()
 
         header_frame.setStyleSheet(
             f"""
@@ -585,8 +571,7 @@ class AdvancedReportsWindow(QMainWindow):
 
         # Tabs
         tabs = QTabWidget()
-        if THEME_AVAILABLE:
-            tabs.setStyleSheet(get_tabs_style())
+        tabs.setStyleSheet(get_tabs_style())
 
         tabs.addTab(self.create_financial_charts_tab(), "📊 Graphiques Financiers")
         tabs.addTab(self.create_student_reports_tab(), "📈 Performance Étudiants")
@@ -596,19 +581,13 @@ class AdvancedReportsWindow(QMainWindow):
 
     def create_card(self):
         frame = QFrame()
-        if THEME_AVAILABLE:
-            frame.setStyleSheet(get_card_style())
-            apply_shadow_to_widget(frame)
-        else:
-            colors = Colors()
-            frame.setStyleSheet(
-                f"QFrame {{ background-color: {colors.BG_CARD}; border-radius: 12px; border: 1px solid {colors.BORDER}; }}"
-            )
+        frame.setStyleSheet(get_card_style())
+        apply_shadow_to_widget(frame)
         return frame
 
     def styled_combo(self):
         combo = QComboBox()
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+        colors = ThemeManager.get_colors()
         combo.setStyleSheet(
             f"""
             QComboBox {{ padding: 6px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }}
@@ -635,7 +614,7 @@ class AdvancedReportsWindow(QMainWindow):
 
         btn_generate = QPushButton("🔄 Actualiser Graphique")
         btn_generate.setCursor(Qt.CursorShape.PointingHandCursor)
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+        colors = ThemeManager.get_colors()
         btn_generate.setStyleSheet(
             f"""
             QPushButton {{ background-color: {colors.PRIMARY}; color: white; padding: 8px 20px; border-radius: 6px; font-weight: bold; border: none; }}
@@ -678,7 +657,7 @@ class AdvancedReportsWindow(QMainWindow):
         income = [income_dict.get(month, 0) for month in months]
         expenses = [expense_dict.get(month, 0) for month in months]
 
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+        colors = ThemeManager.get_colors()
 
         if not months:
             ax.text(
@@ -730,7 +709,7 @@ class AdvancedReportsWindow(QMainWindow):
         self.load_classes_combo()
         controls_layout.addWidget(self.class_combo)
 
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+        colors = ThemeManager.get_colors()
         btn_analyze = QPushButton("📈 Analyser Performance")
         btn_analyze.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_analyze.setStyleSheet(
@@ -757,7 +736,7 @@ class AdvancedReportsWindow(QMainWindow):
     def generate_student_chart(self):
         self.student_figure.clear()
         ax = self.student_figure.add_subplot(111)
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+        colors = ThemeManager.get_colors()
 
         class_id = self.class_combo.currentData()
         if not class_id:
@@ -858,7 +837,7 @@ class AdvancedReportsWindow(QMainWindow):
         grid = QGridLayout()
         grid.setSpacing(20)
 
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+        colors = ThemeManager.get_colors()
 
         btn_financial = self.create_export_button(
             "💰 Rapport Financier", "Export complet des recettes et dépenses", colors.SUCCESS
@@ -916,7 +895,7 @@ class AdvancedReportsWindow(QMainWindow):
         btn = QPushButton()
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
         btn.setMinimumHeight(110)
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+        colors = ThemeManager.get_colors()
         btn.setStyleSheet(
             f"""
             QPushButton {{ background-color: {colors.BG_CARD}; border: 1px solid {colors.BORDER}; border-radius: 12px; text-align: left; padding: 15px; border-left: 6px solid {color}; }}
@@ -1020,7 +999,7 @@ class AdvancedReportsWindow(QMainWindow):
 
     def on_export_finished(self, filepath):
         self.progress_bar.hide()
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+        colors = ThemeManager.get_colors()
         self.status_label.setText(f"✅ Export réussi: {os.path.basename(filepath)}")
         self.status_label.setStyleSheet(f"color: {colors.SUCCESS}; font-weight: bold;")
 
@@ -1038,15 +1017,13 @@ class AdvancedReportsWindow(QMainWindow):
                 if os.name == 'nt':
                     os.startfile(filepath)
                 else:
-                    import subprocess
-
                     subprocess.call(('xdg-open', filepath))
             except Exception as e:
                 AppLogger.warning("AdvancedReports", f"Impossible d'ouvrir le fichier exporté: {e}")
 
     def on_export_error(self, error):
         self.progress_bar.hide()
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+        colors = ThemeManager.get_colors()
         self.status_label.setText("❌ Erreur lors de l'export")
         self.status_label.setStyleSheet(f"color: {colors.DANGER}; font-weight: bold;")
         QMessageBox.critical(self, "Erreur", f"Erreur lors de l'export:\n{error}")

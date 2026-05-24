@@ -12,8 +12,6 @@ Centralized Validation Layer for El Malick Gest
 """
 
 from datetime import date
-from typing import Optional
-
 
 # ─────────────────────────────────────────────────────────────
 # 1. الطلاب / Students

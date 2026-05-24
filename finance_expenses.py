@@ -1,25 +1,58 @@
-import sys
-import psycopg2
 import os
+import sys
 from datetime import datetime
-from database_setup import DatabaseManager
-from app_logger import AppLogger
-from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
-                             QHBoxLayout, QTableWidget, QTableWidgetItem,
-                             QPushButton, QLabel, QLineEdit, QComboBox,
-                             QMessageBox, QHeaderView, QGroupBox, QDateEdit,
-                             QTabWidget, QDoubleSpinBox, QDialog, QFormLayout, QFrame,
-                             QGraphicsDropShadowEffect, QGridLayout)
-from PyQt6.QtCore import Qt, QDate
-from PyQt6.QtGui import QFont, QColor
+
+import psycopg2
 from fpdf import FPDF
+from PyQt6.QtCore import QDate, Qt
+from PyQt6.QtGui import QColor, QFont
+from PyQt6.QtWidgets import (
+    QApplication,
+    QComboBox,
+    QDateEdit,
+    QDialog,
+    QDoubleSpinBox,
+    QFormLayout,
+    QFrame,
+    QGraphicsDropShadowEffect,
+    QGridLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QLineEdit,
+    QMainWindow,
+    QMessageBox,
+    QPushButton,
+    QTableWidget,
+    QTableWidgetItem,
+    QTabWidget,
+    QVBoxLayout,
+    QWidget,
+)
 
-from ui_styles import ThemeManager, get_card_style, apply_shadow_to_widget, get_table_style, get_tabs_style, Colors
+from app_logger import AppLogger
+from database_setup import DatabaseManager
+from pdf_report_style import (
+    apply_grades_sheet_header,
+    apply_table_body_style,
+    apply_table_header_style,
+    apply_title_style,
+    get_school_info_row,
+    set_zebra_row_fill,
+)
+from print_export_service import get_report_output_mode, output_pdf
 from repositories.finance_repo import FinanceRepository
-from print_export_service import output_pdf, get_report_output_mode
-from pdf_report_style import apply_title_style, apply_grades_sheet_header, apply_table_header_style, apply_table_body_style, set_zebra_row_fill, get_school_info_row
+from ui_styles import (
+    Colors,
+    ModuleHeaderWidget,
+    ThemeManager,
+    apply_shadow_to_widget,
+    get_card_style,
+    get_table_style,
+    get_tabs_style,
+)
 
-THEME_AVAILABLE = True
 PAYSLIP_OUTPUT_MODE = get_report_output_mode("payslip_mode", "print")
 EXPENSES_REPORT_OUTPUT_MODE = get_report_output_mode("expenses_report_mode", "save")
 
@@ -34,30 +67,20 @@ class SalaryPaymentDialog(QDialog):
         self.setWindowTitle(f"Paiement Salaire / دفع الراتب - {month_str}")
         self.setMinimumSize(500, 550)
 
-        if THEME_AVAILABLE:
-            ThemeManager.apply_theme(self)
-            colors = ThemeManager.get_colors()
-            self.setStyleSheet(f"""
-                QDialog {{ background-color: {colors.BG_MAIN}; }}
-                QFrame {{ background-color: {colors.BG_CARD}; border-radius: 10px; border: 1px solid {colors.BORDER}; }}
-                QLabel {{ color: {colors.TEXT_PRIMARY}; font-size: 13px; }}
-                QDoubleSpinBox {{
-                    padding: 8px; border: 1px solid {colors.BORDER}; border-radius: 6px;
-                    background-color: {colors.INPUT_BG}; font-weight: bold; color: {colors.TEXT_PRIMARY};
-                }}
-                QDoubleSpinBox:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background-color: {colors.INPUT_BG_FOCUS}; }}
-            """)
-        else:
-            colors = Colors()
-            self.setStyleSheet(f"""
-                QDialog {{ background-color: {colors.BG_MAIN}; }}
-                QFrame {{ background-color: {colors.BG_CARD}; border-radius: 10px; border: 1px solid {colors.BORDER}; }}
-                QLabel {{ color: {colors.TEXT_PRIMARY}; font-size: 13px; }}
-                QDoubleSpinBox {{
-                    padding: 8px; border: 1px solid {colors.BORDER}; border-radius: 6px;
-                    background-color: {colors.INPUT_BG}; font-weight: bold; color: {colors.TEXT_PRIMARY};
-                }}
-            """)
+        ThemeManager.apply_theme(self)
+        colors = ThemeManager.get_colors()
+        self.setStyleSheet(
+            f"""
+            QDialog {{ background-color: {colors.BG_MAIN}; }}
+            QFrame {{ background-color: {colors.BG_CARD}; border-radius: 10px; border: 1px solid {colors.BORDER}; }}
+            QLabel {{ color: {colors.TEXT_PRIMARY}; font-size: 13px; }}
+            QDoubleSpinBox {{
+                padding: 8px; border: 1px solid {colors.BORDER}; border-radius: 6px;
+                background-color: {colors.INPUT_BG}; font-weight: bold; color: {colors.TEXT_PRIMARY};
+            }}
+            QDoubleSpinBox:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background-color: {colors.INPUT_BG_FOCUS}; }}
+        """
+        )
         self.init_ui()
 
     def init_ui(self):
@@ -111,7 +134,7 @@ class SalaryPaymentDialog(QDialog):
 
         self.lbl_net = QLabel("0 FCFA")
         self.lbl_net.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+        colors = ThemeManager.get_colors()
         self.lbl_net.setStyleSheet(f"color: {colors.SUCCESS};")
         form_layout.addRow("Net à Payer:", self.lbl_net)
 
@@ -124,14 +147,18 @@ class SalaryPaymentDialog(QDialog):
         btn_ok.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_cancel.setCursor(Qt.CursorShape.PointingHandCursor)
 
-        btn_cancel.setStyleSheet(f"""
+        btn_cancel.setStyleSheet(
+            f"""
             QPushButton {{ background-color: {colors.BG_CARD}; color: {colors.TEXT_PRIMARY}; font-weight: bold; padding: 10px 20px; border-radius: 6px; border: 1px solid {colors.BORDER}; }}
             QPushButton:hover {{ background-color: {colors.BORDER}; }}
-        """)
-        btn_ok.setStyleSheet(f"""
+        """
+        )
+        btn_ok.setStyleSheet(
+            f"""
             QPushButton {{ background-color: {colors.PRIMARY}; color: white; font-weight: bold; padding: 10px 20px; border-radius: 6px; border: none; }}
             QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}
-        """)
+        """
+        )
 
         btn_cancel.clicked.connect(self.reject)
         btn_ok.clicked.connect(self.accept)
@@ -175,15 +202,7 @@ class ExpensesWindow(QMainWindow):
         self.current_report_totals = {}
 
         # تطبيق المظهر (Dark Mode أو Light Mode)
-        if THEME_AVAILABLE:
-            ThemeManager.apply_theme(self)
-        else:
-            colors = Colors()
-            self.setStyleSheet(f"""
-                QMainWindow {{ background-color: {colors.BG_MAIN}; }}
-                QLabel {{ font-family: 'Segoe UI', 'Cairo', sans-serif; color: {colors.TEXT_PRIMARY}; }}
-            """)
-
+        ThemeManager.apply_theme(self)
         self.init_ui()
         self.load_history()
 
@@ -194,56 +213,21 @@ class ExpensesWindow(QMainWindow):
         self.main_layout.setContentsMargins(20, 20, 20, 20)
         self.main_layout.setSpacing(15)
 
-        # 1. Header Frame
-        header_frame = QFrame()
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-
-        header_frame.setStyleSheet(f"""
-            QFrame {{ background-color: {colors.BG_HEADER}; border-radius: 10px; }}
-        """)
-        header_frame.setMaximumHeight(80)
-
-        shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(15); shadow.setColor(QColor(15, 23, 42, 40)); shadow.setOffset(0, 4)
-        header_frame.setGraphicsEffect(shadow)
-
-        hl = QHBoxLayout(header_frame)
-        hl.setContentsMargins(20, 15, 20, 15)
-
-        icon_lbl = QLabel("💸")
-        icon_lbl.setStyleSheet("font-size: 32px; background: transparent;")
-
-        title_layout = QVBoxLayout()
-        header_lbl = QLabel("DÉPENSES & SALAIRES")
-        header_lbl.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
-        header_lbl.setStyleSheet(f"color: {colors.HEADER_TEXT}; background: transparent;")
-
-        sub_lbl = QLabel("إدارة المصاريف العامة ورواتب الموظفين")
-        sub_lbl.setFont(QFont("Cairo", 11))
-        sub_lbl.setStyleSheet(f"color: {colors.TEXT_SECONDARY}; background: transparent;")
-
-        title_layout.addWidget(header_lbl)
-        title_layout.addWidget(sub_lbl)
-
-        hl.addWidget(icon_lbl)
-        hl.addSpacing(15)
-        hl.addLayout(title_layout)
-        hl.addStretch()
-
-        self.main_layout.addWidget(header_frame)
+        # 1. Header with stat cards
+        header = ModuleHeaderWidget(
+            icon="💸",
+            title="DÉPENSES & SALAIRES",
+            subtitle="إدارة المصاريف العامة ورواتب الموظفين",
+        )
+        self._stat_exp_month = header.add_stat("💸", "Dépenses Ce Mois", "—", "#EF4444")
+        self._stat_sal_month = header.add_stat("👥", "Salaires Ce Mois", "—", "#8B5CF6")
+        self._stat_nb_trans = header.add_stat("📊", "Nb. Transactions", "—", "#3B82F6")
+        self._stat_annual = header.add_stat("📅", "Total Annuel", "—", "#22C55E")
+        self.main_layout.addWidget(header)
 
         # 2. Tabs
         self.tabs = QTabWidget()
-        if THEME_AVAILABLE:
-            self.tabs.setStyleSheet(get_tabs_style())
-        else:
-            self.tabs.setStyleSheet(f"""
-                QTabWidget::pane {{ border: 1px solid {colors.BORDER}; background: {colors.BG_CARD}; border-radius: 12px; margin-top: 15px; }}
-                QTabBar::tab {{ background: {colors.BG_MAIN}; color: {colors.TEXT_SECONDARY}; padding: 12px 30px; margin-right: 6px; border-top-left-radius: 8px; border-top-right-radius: 8px; font-weight: bold; font-family: 'Segoe UI', 'Cairo'; }}
-                QTabBar::tab:selected {{ background: {colors.BG_CARD}; color: {colors.PRIMARY}; border-bottom: 2px solid {colors.PRIMARY}; }}
-                QTabBar::tab:hover {{ background: {colors.BORDER}; }}
-            """)
-
+        self.tabs.setStyleSheet(get_tabs_style())
         self.setup_expenses_tab()
         self.setup_payroll_tab()
         self.setup_expense_reports_tab()
@@ -252,35 +236,32 @@ class ExpensesWindow(QMainWindow):
 
     def create_card(self):
         frame = QFrame()
-        if THEME_AVAILABLE:
-            frame.setStyleSheet(get_card_style())
-            apply_shadow_to_widget(frame)
-        else:
-            colors = Colors()
-            frame.setStyleSheet(f"QFrame {{ background-color: {colors.BG_CARD}; border-radius: 12px; border: 1px solid {colors.BORDER}; }}")
-            shadow = QGraphicsDropShadowEffect()
-            shadow.setBlurRadius(20); shadow.setColor(QColor(15, 23, 42, 15)); shadow.setOffset(0, 4)
-            frame.setGraphicsEffect(shadow)
+        frame.setStyleSheet(get_card_style())
+        apply_shadow_to_widget(frame)
         return frame
 
     def styled_input(self, placeholder):
         le = QLineEdit()
         le.setPlaceholderText(placeholder)
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-        le.setStyleSheet(f"""
+        colors = ThemeManager.get_colors()
+        le.setStyleSheet(
+            f"""
             QLineEdit {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }}
             QLineEdit:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}
-        """)
+        """
+        )
         le.setMinimumHeight(38)
         return le
 
     def styled_combo(self):
         combo = QComboBox()
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-        combo.setStyleSheet(f"""
+        colors = ThemeManager.get_colors()
+        combo.setStyleSheet(
+            f"""
             QComboBox {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }}
             QComboBox:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}
-        """)
+        """
+        )
         combo.setMinimumHeight(38)
         return combo
 
@@ -288,8 +269,7 @@ class ExpensesWindow(QMainWindow):
         table.setShowGrid(False)
         table.setAlternatingRowColors(True)
         table.verticalHeader().setVisible(False)
-        if THEME_AVAILABLE:
-            table.setStyleSheet(get_table_style())
+        table.setStyleSheet(get_table_style())
 
     # --- Tab 1: General Expenses ---
     def setup_expenses_tab(self):
@@ -305,14 +285,16 @@ class ExpensesWindow(QMainWindow):
         v_add.setSpacing(15)
 
         # Title
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+        colors = ThemeManager.get_colors()
         card_title = QLabel("Nouvelle Dépense / تسجيل مصروف جديد")
         card_title.setStyleSheet(f"font-weight: bold; color: {colors.TEXT_PRIMARY}; font-size: 14px;")
         v_add.addWidget(card_title)
 
         row1 = QHBoxLayout()
         self.combo_category = self.styled_combo()
-        self.combo_category.addItems(["Loyer", "Électricité/Eau", "Fournitures", "Maintenance", "Transport", "Marketing", "Autre"])
+        self.combo_category.addItems(
+            ["Loyer", "Électricité/Eau", "Fournitures", "Maintenance", "Transport", "Marketing", "Autre"]
+        )
 
         self.txt_desc = self.styled_input("Description...")
         self.txt_amount = self.styled_input("Montant (FCFA)")
@@ -330,15 +312,19 @@ class ExpensesWindow(QMainWindow):
         self.date_expense = QDateEdit()
         self.date_expense.setCalendarPopup(True)
         self.date_expense.setDate(QDate.currentDate())
-        self.date_expense.setStyleSheet(f"QDateEdit {{ padding: 8px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }}")
+        self.date_expense.setStyleSheet(
+            f"QDateEdit {{ padding: 8px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }}"
+        )
         self.date_expense.setMinimumHeight(38)
 
         self.btn_save_exp = QPushButton("Enregistrer")
         self.btn_save_exp.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_save_exp.setStyleSheet(f"""
+        self.btn_save_exp.setStyleSheet(
+            f"""
             QPushButton {{ background-color: {colors.WARNING}; color: white; font-weight: bold; padding: 10px 20px; border-radius: 6px; border: none; }}
             QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}
-        """)
+        """
+        )
         self.btn_save_exp.clicked.connect(self.save_expense)
 
         row2.addWidget(QLabel("Payé à:"))
@@ -358,7 +344,9 @@ class ExpensesWindow(QMainWindow):
 
         self.table_expenses = QTableWidget(0, 6)
         self.style_table(self.table_expenses)
-        self.table_expenses.setHorizontalHeaderLabels(["ID", "Catégorie", "Description", "Bénéficiaire", "Montant", "Date"])
+        self.table_expenses.setHorizontalHeaderLabels(
+            ["ID", "Catégorie", "Description", "Bénéficiaire", "Montant", "Date"]
+        )
         self.table_expenses.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         layout.addWidget(self.table_expenses)
 
@@ -377,22 +365,26 @@ class ExpensesWindow(QMainWindow):
         h_fil.setContentsMargins(20, 20, 20, 20)
         h_fil.setSpacing(15)
 
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+        colors = ThemeManager.get_colors()
         card_title = QLabel("Paiement des Salaires / دفع الرواتب")
         card_title.setStyleSheet(f"font-weight: bold; color: {colors.TEXT_PRIMARY}; font-size: 14px;")
 
         self.date_payroll_month = QDateEdit()
         self.date_payroll_month.setDisplayFormat("MM/yyyy")
         self.date_payroll_month.setDate(QDate.currentDate())
-        self.date_payroll_month.setStyleSheet(f"QDateEdit {{ padding: 8px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }}")
+        self.date_payroll_month.setStyleSheet(
+            f"QDateEdit {{ padding: 8px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }}"
+        )
         self.date_payroll_month.setMinimumHeight(38)
 
         btn_load_staff = QPushButton("Charger la Liste / تحميل")
         btn_load_staff.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_load_staff.setStyleSheet(f"""
+        btn_load_staff.setStyleSheet(
+            f"""
             QPushButton {{ background-color: {colors.PRIMARY}; color: white; font-weight: bold; border-radius: 6px; padding: 10px; border: none; }}
             QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}
-        """)
+        """
+        )
         btn_load_staff.clicked.connect(self.load_payroll_list)
 
         h_fil.addWidget(card_title)
@@ -406,9 +398,9 @@ class ExpensesWindow(QMainWindow):
         # Payroll Table
         self.table_payroll = QTableWidget(0, 7)
         self.style_table(self.table_payroll)
-        self.table_payroll.setHorizontalHeaderLabels([
-            "ID", "Employé", "Contrat", "Base/Heures", "Montant Calc.", "État", "Action"
-        ])
+        self.table_payroll.setHorizontalHeaderLabels(
+            ["ID", "Employé", "Contrat", "Base/Heures", "Montant Calc.", "État", "Action"]
+        )
         self.table_payroll.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         layout.addWidget(self.table_payroll)
 
@@ -426,7 +418,7 @@ class ExpensesWindow(QMainWindow):
         control_layout.setContentsMargins(20, 20, 20, 20)
         control_layout.setSpacing(12)
 
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+        colors = ThemeManager.get_colors()
 
         title = QLabel("Rapports Dépenses / تقارير المصروفات")
         title.setStyleSheet(f"font-weight: bold; color: {colors.TEXT_PRIMARY}; font-size: 14px;")
@@ -482,7 +474,9 @@ class ExpensesWindow(QMainWindow):
         control_layout.addLayout(filters)
 
         self.lbl_exp_report_summary = QLabel("Total: 0 FCFA")
-        self.lbl_exp_report_summary.setStyleSheet(f"color: {colors.TEXT_SECONDARY}; font-weight: bold; font-size: 13px;")
+        self.lbl_exp_report_summary.setStyleSheet(
+            f"color: {colors.TEXT_SECONDARY}; font-weight: bold; font-size: 13px;"
+        )
         control_layout.addWidget(self.lbl_exp_report_summary)
 
         layout.addWidget(control_card)
@@ -519,19 +513,27 @@ class ExpensesWindow(QMainWindow):
                     for category, count_rows, amount_total in repo.get_expenses_by_category(from_date, to_date_full):
                         amount_value = float(amount_total or 0)
                         total_expenses += amount_value
-                        rows.append([
-                            category or "Autre",
-                            str(count_rows),
-                            f"{amount_value:,.0f} FCFA",
-                        ])
+                        rows.append(
+                            [
+                                category or "Autre",
+                                str(count_rows),
+                                f"{amount_value:,.0f} FCFA",
+                            ]
+                        )
                     totals["expenses"] = total_expenses
 
                 elif report_key == "cashflow":
                     title = "Flux de Trésorerie (Dépenses vs Revenus)"
                     headers = ["Mois", "Dépenses (مصاريف)", "Revenus (مداخيل)", "Solde (الصافي)"]
 
-                    exp_by_month = {period: float(amount or 0) for period, amount in repo.get_cashflow_expenses_by_month(from_date, to_date_full)}
-                    inc_by_month = {period: float(amount or 0) for period, amount in repo.get_cashflow_revenues_by_month(from_date, to_date_full)}
+                    exp_by_month = {
+                        period: float(amount or 0)
+                        for period, amount in repo.get_cashflow_expenses_by_month(from_date, to_date_full)
+                    }
+                    inc_by_month = {
+                        period: float(amount or 0)
+                        for period, amount in repo.get_cashflow_revenues_by_month(from_date, to_date_full)
+                    }
 
                     periods = sorted(set(exp_by_month.keys()) | set(inc_by_month.keys()))
                     total_expenses = 0.0
@@ -543,12 +545,14 @@ class ExpensesWindow(QMainWindow):
                         balance = inc_value - exp_value
                         total_expenses += exp_value
                         total_revenues += inc_value
-                        rows.append([
-                            period,
-                            f"{exp_value:,.0f} FCFA",
-                            f"{inc_value:,.0f} FCFA",
-                            f"{balance:,.0f} FCFA",
-                        ])
+                        rows.append(
+                            [
+                                period,
+                                f"{exp_value:,.0f} FCFA",
+                                f"{inc_value:,.0f} FCFA",
+                                f"{balance:,.0f} FCFA",
+                            ]
+                        )
 
                     totals["expenses"] = total_expenses
                     totals["revenues"] = total_revenues
@@ -558,17 +562,21 @@ class ExpensesWindow(QMainWindow):
                     title = "Détail des Dépenses"
                     headers = ["Date", "Catégorie", "Description", "Bénéficiaire", "Montant"]
                     total_expenses = 0.0
-                    for expense_date, category, description, paid_to, amount in repo.get_expense_detail_list(from_date, to_date_full):
+                    for expense_date, category, description, paid_to, amount in repo.get_expense_detail_list(
+                        from_date, to_date_full
+                    ):
                         amount_value = float(amount or 0)
                         total_expenses += amount_value
                         display_date = str(expense_date).split(" ")[0] if expense_date else ""
-                        rows.append([
-                            display_date,
-                            category or "",
-                            description or "",
-                            paid_to or "",
-                            f"{amount_value:,.0f} FCFA",
-                        ])
+                        rows.append(
+                            [
+                                display_date,
+                                category or "",
+                                description or "",
+                                paid_to or "",
+                                f"{amount_value:,.0f} FCFA",
+                            ]
+                        )
                     totals["expenses"] = total_expenses
 
             return headers, rows, title, totals
@@ -601,7 +609,8 @@ class ExpensesWindow(QMainWindow):
         self.table_exp_reports.setRowCount(0)
 
         amount_columns = {
-            idx for idx, label in enumerate(headers)
+            idx
+            for idx, label in enumerate(headers)
             if any(token in label.lower() for token in ["montant", "dépenses", "revenus", "solde"])
         }
 
@@ -618,9 +627,10 @@ class ExpensesWindow(QMainWindow):
                     try:
                         val_num = float(val_str)
                         if "solde" in headers[col_idx].lower() or "balance" in headers[col_idx].lower():
-                            colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+                            colors = ThemeManager.get_colors()
                             item.setForeground(QColor(colors.SUCCESS if val_num >= 0 else colors.DANGER))
-                    except Exception: pass
+                    except Exception:
+                        pass
                 self.table_exp_reports.setItem(row_idx, col_idx, item)
 
         if report_key == "cashflow":
@@ -652,7 +662,14 @@ class ExpensesWindow(QMainWindow):
 
         apply_grades_sheet_header(pdf, school_info, self.current_report_title)
         apply_table_body_style(pdf, "Arial", 10)
-        pdf.cell(0, 8, f"Période: {self.date_exp_report_from.date().toString('dd/MM/yyyy')} - {self.date_exp_report_to.date().toString('dd/MM/yyyy')}", 0, 1, 'C')
+        pdf.cell(
+            0,
+            8,
+            f"Période: {self.date_exp_report_from.date().toString('dd/MM/yyyy')} - {self.date_exp_report_to.date().toString('dd/MM/yyyy')}",
+            0,
+            1,
+            'C',
+        )
         pdf.ln(3)
 
         column_count = max(1, len(self.current_report_headers))
@@ -733,14 +750,77 @@ class ExpensesWindow(QMainWindow):
                 for i, val in enumerate(r):
                     if i == 4:  # Amount column
                         item = QTableWidgetItem(f"{float(val or 0):,.0f} FCFA")
-                        if THEME_AVAILABLE:
-                            item.setForeground(QColor(ThemeManager.get_colors().DANGER))
+                        item.setForeground(QColor(ThemeManager.get_colors().DANGER))
                         item.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
                     else:
                         item = QTableWidgetItem(str(val if val is not None else ""))
                     self.table_expenses.setItem(idx, i, item)
         except Exception as e:
             AppLogger.error("FinanceExpenses", f"Error loading expenses history: {e}")
+
+        # Refresh stat cards
+        self._load_kpi_stats()
+
+    def _load_kpi_stats(self):
+        """Met à jour les cartes de statistiques (KPI cards) du mois en cours."""
+        try:
+            db = DatabaseManager()
+            with db.get_connection() as conn:
+                today = datetime.now()
+                current_month_str = today.strftime("%Y-%m")
+                start_date, end_date = self._month_bounds(current_month_str)
+
+                if not start_date:
+                    return
+
+                cursor = conn.cursor()
+
+                # 1. Total dépenses du mois
+                cursor.execute(
+                    "SELECT COALESCE(SUM(amount), 0) FROM Expenses WHERE TO_CHAR(CAST(expense_date AS TIMESTAMP), 'YYYY-MM') = %s",
+                    (current_month_str,),
+                )
+                exp_month = float(cursor.fetchone()[0] or 0)
+                self._stat_exp_month.set_value(f"{exp_month:,.0f} FCFA")
+
+                # 2. Total salaires du mois
+                cursor.execute(
+                    "SELECT COALESCE(SUM(net_amount), 0) FROM SalarySlips WHERE month_str = %s",
+                    (current_month_str,),
+                )
+                sal_month = float(cursor.fetchone()[0] or 0)
+                self._stat_sal_month.set_value(f"{sal_month:,.0f} FCFA")
+
+                # 3. Nombre de transactions (expenses + salaires)
+                cursor.execute(
+                    "SELECT COUNT(*) FROM Expenses WHERE TO_CHAR(CAST(expense_date AS TIMESTAMP), 'YYYY-MM') = %s",
+                    (current_month_str,),
+                )
+                exp_count = int(cursor.fetchone()[0] or 0)
+                cursor.execute(
+                    "SELECT COUNT(*) FROM SalarySlips WHERE month_str = %s",
+                    (current_month_str,),
+                )
+                sal_count = int(cursor.fetchone()[0] or 0)
+                self._stat_nb_trans.set_value(str(exp_count + sal_count))
+
+                # 4. Total annuel (dépenses + salaires)
+                year_str = today.strftime("%Y")
+                year_start = f"{year_str}-01-01"
+                year_end = f"{year_str}-12-31"
+                cursor.execute(
+                    "SELECT COALESCE(SUM(amount), 0) FROM Expenses WHERE CAST(expense_date AS TIMESTAMP) BETWEEN CAST(%s AS TIMESTAMP) AND CAST(%s AS TIMESTAMP)",
+                    (year_start, year_end),
+                )
+                annual_exp = float(cursor.fetchone()[0] or 0)
+                cursor.execute(
+                    "SELECT COALESCE(SUM(net_amount), 0) FROM SalarySlips WHERE month_str LIKE %s",
+                    (f"{year_str}-%",),
+                )
+                annual_sal = float(cursor.fetchone()[0] or 0)
+                self._stat_annual.set_value(f"{annual_exp + annual_sal:,.0f} FCFA")
+        except Exception as e:
+            AppLogger.error("FinanceExpenses", f"Error loading KPI stats: {e}")
 
     def _month_bounds(self, month_str):
         try:
@@ -791,7 +871,8 @@ class ExpensesWindow(QMainWindow):
                                     t1 = datetime.strptime(cin, "%H:%M")
                                     t2 = datetime.strptime(cout, "%H:%M")
                                     diff = (t2 - t1).total_seconds() / 3600
-                                    if diff > 0: total_hours += diff
+                                    if diff > 0:
+                                        total_hours += diff
                                 except ValueError:
                                     pass
 
@@ -813,22 +894,29 @@ class ExpensesWindow(QMainWindow):
                     self.table_payroll.setItem(idx, 4, amt_item)
 
                     status_item = QTableWidgetItem("PAYÉ" if is_paid else "En attente")
-                    if THEME_AVAILABLE:
-                        status_item.setForeground(
-                            QColor(ThemeManager.get_colors().SUCCESS) if is_paid else QColor(ThemeManager.get_colors().WARNING)
-                        )
+                    status_item.setForeground(
+                        QColor(ThemeManager.get_colors().SUCCESS)
+                        if is_paid
+                        else QColor(ThemeManager.get_colors().WARNING)
+                    )
                     status_item.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
                     self.table_payroll.setItem(idx, 5, status_item)
 
                     if not is_paid:
                         btn = QPushButton("Payer")
                         btn.setCursor(Qt.CursorShape.PointingHandCursor)
-                        if THEME_AVAILABLE:
-                            btn.setStyleSheet(f"background-color: {ThemeManager.get_colors().PRIMARY}; color: white; font-weight: bold; border-radius: 4px; border: none;")
+                        btn.setStyleSheet(
+                            f"background-color: {ThemeManager.get_colors().PRIMARY}; color: white; font-weight: bold; border-radius: 4px; border: none;"
+                        )
 
                         s_data = {
-                            'id': sid, 'name': name, 'role': role, 'contract_type': ctype,
-                            'calculated_base': calc_amount, 'hours_worked': hours_worked, 'rate': rate
+                            'id': sid,
+                            'name': name,
+                            'role': role,
+                            'contract_type': ctype,
+                            'calculated_base': calc_amount,
+                            'hours_worked': hours_worked,
+                            'rate': rate,
                         }
                         btn.clicked.connect(lambda ch, d=s_data: self.open_payment_dialog(d))
 
@@ -860,8 +948,14 @@ class ExpensesWindow(QMainWindow):
                 repo = FinanceRepository(conn)
                 # 1. Archive Slip
                 repo.insert_salary_slip(
-                    staff_id, month_str, p_data['base'], p_data['hours'],
-                    p_data['bonus'], p_data['deduction'], p_data['net'], today
+                    staff_id,
+                    month_str,
+                    p_data['base'],
+                    p_data['hours'],
+                    p_data['bonus'],
+                    p_data['deduction'],
+                    p_data['net'],
+                    today,
                 )
                 # 2. Record Expense
                 desc = f"Salaire {month_str} - Staff ID {staff_id}"

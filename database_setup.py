@@ -30,9 +30,8 @@ def log_audit(conn: Any, actor: str, action: str, target: str) -> None:
             (str(actor)[:100], str(action)[:100], str(target)[:200]),
         )
     except Exception as e:
-        import logging as _logging
-
-        _logging.getLogger("DatabaseManager").warning(f"Audit log failed: {e}")
+        # نستخدم logger المعرَّف في أعلى الملف — لا داعي لاستيراد مكرر
+        logger.warning(f"Audit log failed: {e}")
 
 
 if __name__ == "__main__":

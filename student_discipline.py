@@ -1,30 +1,58 @@
-import sys
-import psycopg2
 import os
-from datetime import datetime
-from database_setup import DatabaseManager
-from app_logger import AppLogger
-from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
-                             QHBoxLayout, QTableWidget, QTableWidgetItem,
-                             QPushButton, QLabel, QLineEdit, QComboBox,
-                             QMessageBox, QHeaderView, QGroupBox, QDateEdit,
-                             QTabWidget, QGridLayout, QDoubleSpinBox, QTextEdit,
-                             QFrame, QGraphicsDropShadowEffect, QScrollArea, QDialog, QFileDialog)
-from PyQt6.QtCore import Qt, QDate, QTimer
-from PyQt6.QtGui import QFont, QColor
+import sys
+from datetime import date, datetime
+
+import psycopg2
 from fpdf import FPDF
+from PyQt6.QtCore import QDate, Qt, QTimer
+from PyQt6.QtGui import QColor, QFont
+from PyQt6.QtWidgets import (
+    QApplication,
+    QComboBox,
+    QDateEdit,
+    QDialog,
+    QDoubleSpinBox,
+    QFileDialog,
+    QFrame,
+    QGridLayout,
+    QGroupBox,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QLineEdit,
+    QMainWindow,
+    QMessageBox,
+    QPushButton,
+    QScrollArea,
+    QTableWidget,
+    QTableWidgetItem,
+    QTabWidget,
+    QTextEdit,
+    QVBoxLayout,
+    QWidget,
+)
 
-from ui_styles import ThemeManager, Colors, get_card_style, apply_shadow_to_widget, get_table_style, get_tabs_style
-from print_export_service import output_pdf, get_report_output_mode
+from app_logger import AppLogger
+from database_setup import DatabaseManager
+from print_export_service import get_report_output_mode, output_pdf
 from repositories.discipline_repo import DisciplineRepository
+from ui_styles import (
+    Colors,
+    ModuleHeaderWidget,
+    ThemeManager,
+    apply_shadow_to_widget,
+    get_card_style,
+    get_table_style,
+    get_tabs_style,
+)
 
-THEME_AVAILABLE = True
 DISCIPLINE_OUTPUT_MODE = get_report_output_mode("student_discipline_mode", "print")
 
 # --- دعم اللغة العربية في FPDF ---
 try:
     import arabic_reshaper
     from bidi.algorithm import get_display
+
     ARABIC_SUPPORT = True
 except ModuleNotFoundError:
     ARABIC_SUPPORT = False
@@ -49,7 +77,8 @@ def _get_arabic_font_path():
 
 def fix_text(text):
     """معالجة النص العربي للظهور بشكل صحيح في PDF"""
-    if not text: return ""
+    if not text:
+        return ""
     text = str(text)
     if ARABIC_SUPPORT:
         try:
@@ -59,6 +88,7 @@ def fix_text(text):
         except Exception:
             return text
     return text.encode('latin-1', 'ignore').decode('latin-1')
+
 
 # --- فئة تقارير الانضباط ---
 
@@ -109,7 +139,8 @@ class DisciplinePDF(FPDF):
         if logo_path and os.path.exists(logo_path):
             try:
                 self.image(logo_path, x=right_x, y=left_y, w=20, h=22)
-            except Exception: pass
+            except Exception:
+                pass
         self.set_xy(right_x, left_y + 22)
         self.set_y(self.get_y() + 2)
         self.line(10, self.get_y(), 200, self.get_y())
@@ -137,11 +168,15 @@ class DisciplinePDF(FPDF):
         self.cell(0, 10, fix_text(f"   Classe: {data['class']}"), 0, 1, 'L')
 
         self.ln(10)
-        self.multi_cell(0, 10, fix_text(
-            "Monsieur/Madame,\n\n"
-            "Vous êtes prié(e) de bien vouloir vous présenter à la direction de l'école "
-            "le plus tôt possible (ou à la date indiquée ci-dessous) pour une affaire concernant votre enfant.\n"
-        ))
+        self.multi_cell(
+            0,
+            10,
+            fix_text(
+                "Monsieur/Madame,\n\n"
+                "Vous êtes prié(e) de bien vouloir vous présenter à la direction de l'école "
+                "le plus tôt possible (ou à la date indiquée ci-dessous) pour une affaire concernant votre enfant.\n"
+            ),
+        )
 
         self.ln(5)
         self.set_font(self.font_family, 'B', 14)
@@ -149,7 +184,9 @@ class DisciplinePDF(FPDF):
 
         self.set_font(self.font_family, '', 12)
         self.set_fill_color(255, 245, 245)
-        self.multi_cell(0, 10, fix_text(f"\n{data['inc']} (Date: {data['date']})\n\nDétails: {data['obs']}\n"), 1, 'L', True)
+        self.multi_cell(
+            0, 10, fix_text(f"\n{data['inc']} (Date: {data['date']})\n\nDétails: {data['obs']}\n"), 1, 'L', True
+        )
 
         self.ln(20)
 
@@ -172,9 +209,9 @@ class DisciplinePDF(FPDF):
         self.ln(15)
 
         self.set_font(self.font_family, '', 14)
-        self.multi_cell(0, 10, fix_text(
-            "Suite aux faits relevés, le Conseil de Discipline a décidé de la sanction suivante :\n"
-        ))
+        self.multi_cell(
+            0, 10, fix_text("Suite aux faits relevés, le Conseil de Discipline a décidé de la sanction suivante :\n")
+        )
 
         self.ln(5)
         self.set_font(self.font_family, 'B', 24)
@@ -205,21 +242,10 @@ class DisciplineWindow(QMainWindow):
         self.setWindowTitle("Discipline & Sanctions / الانضباط والسلوك")
         self.setMinimumSize(1100, 700)
 
-        if THEME_AVAILABLE:
-            ThemeManager.apply_theme(self)
-        else:
-            colors = Colors()
-            self.setStyleSheet(f"""
-                QMainWindow {{ background-color: {colors.BG_MAIN}; }}
-                QLabel {{ font-family: 'Segoe UI', 'Cairo', sans-serif; color: {colors.TEXT_PRIMARY}; }}
-                QGroupBox {{
-                    border: 1px solid {colors.BORDER}; border-radius: 8px; margin-top: 10px;
-                    background-color: {colors.BG_CARD}; font-weight: bold; color: {colors.TEXT_SECONDARY};
-                }}
-            """)
-
+        ThemeManager.apply_theme(self)
         self.init_ui()
         self.load_classes()
+        self._load_kpi_stats()
 
         # Auto-refresh history to keep the register in sync with new incidents.
         self.history_refresh_timer = QTimer(self)
@@ -251,9 +277,7 @@ class DisciplineWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                return DisciplineRepository(conn).resolve_period_id_for_class_date(
-                    class_id, date_str, year_id
-                )
+                return DisciplineRepository(conn).resolve_period_id_for_class_date(class_id, date_str, year_id)
         except Exception:
             return None
 
@@ -282,54 +306,23 @@ class DisciplineWindow(QMainWindow):
         self.layout.setContentsMargins(20, 20, 20, 20)
         self.layout.setSpacing(15)
 
-        # 1. Header Frame
-        header_frame = QFrame()
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-        header_frame.setStyleSheet(f"QFrame {{ background-color: {colors.BG_HEADER}; border-radius: 10px; }}")
-        header_frame.setMaximumHeight(80)
+        # 1. En-tête unifié
+        header = ModuleHeaderWidget(
+            icon="⚖️",
+            title="GESTION DE LA DISCIPLINE",
+            subtitle="تسجيل المخالفات، العقوبات، واستدعاءات الأولياء",
+        )
+        self.layout.addWidget(header)
+        self._stat_total = header.add_stat("📊", "Total Incidents", "—", "#3B82F6")
+        self._stat_month = header.add_stat("📅", "Ce Mois", "—", "#F59E0B")
+        self._stat_resolved = header.add_stat("✅", "Résolus", "—", "#22C55E")
+        self._stat_serious = header.add_stat("🚨", "Graves", "—", "#EF4444")
 
-        shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(15)
-        shadow.setColor(QColor(15, 23, 42, 40))
-        shadow.setOffset(0, 4)
-        header_frame.setGraphicsEffect(shadow)
+        # 2. KPI Cards
 
-        hl = QHBoxLayout(header_frame)
-        hl.setContentsMargins(20, 15, 20, 15)
-
-        icon_lbl = QLabel("⚖️")
-        icon_lbl.setStyleSheet("font-size: 32px; background: transparent;")
-
-        title_layout = QVBoxLayout()
-        header_lbl = QLabel("GESTION DE LA DISCIPLINE")
-        header_lbl.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
-        header_lbl.setStyleSheet(f"color: {colors.HEADER_TEXT}; background: transparent;")
-
-        sub_lbl = QLabel("تسجيل المخالفات، العقوبات، واستدعاءات الأولياء")
-        sub_lbl.setFont(QFont("Cairo", 11))
-        sub_lbl.setStyleSheet(f"color: {colors.TEXT_SECONDARY}; background: transparent;")
-
-        title_layout.addWidget(header_lbl)
-        title_layout.addWidget(sub_lbl)
-
-        hl.addWidget(icon_lbl)
-        hl.addSpacing(15)
-        hl.addLayout(title_layout)
-        hl.addStretch()
-
-        self.layout.addWidget(header_frame)
-
-        # 2. Tabs
+        # 3. Onglets
         self.tabs = QTabWidget()
-        if THEME_AVAILABLE:
-            self.tabs.setStyleSheet(get_tabs_style())
-        else:
-            self.tabs.setStyleSheet(f"""
-                QTabWidget::pane {{ border: 1px solid {colors.BORDER}; background: {colors.BG_CARD}; border-radius: 12px; margin-top: 15px; }}
-                QTabBar::tab {{ background: {colors.BG_MAIN}; color: {colors.TEXT_SECONDARY}; padding: 12px 30px; margin-right: 6px; border-top-left-radius: 8px; border-top-right-radius: 8px; font-weight: bold; font-family: 'Segoe UI', 'Cairo'; }}
-                QTabBar::tab:selected {{ background: {colors.BG_HEADER}; color: {colors.HEADER_TEXT}; }}
-                QTabBar::tab:hover {{ background: {colors.BORDER}; }}
-            """)
+        self.tabs.setStyleSheet(get_tabs_style())
 
         self.setup_entry_tab()
         self.setup_history_tab()
@@ -346,68 +339,134 @@ class DisciplineWindow(QMainWindow):
 
     def create_card(self):
         frame = QFrame()
-        if THEME_AVAILABLE:
-            frame.setStyleSheet(get_card_style())
-            apply_shadow_to_widget(frame)
-        else:
-            colors = Colors()
-            frame.setStyleSheet(f"QFrame {{ background-color: {colors.BG_CARD}; border-radius: 12px; border: 1px solid {colors.BORDER}; }}")
-            shadow = QGraphicsDropShadowEffect()
-            shadow.setBlurRadius(20)
-            shadow.setColor(QColor(15, 23, 42, 15))
-            shadow.setOffset(0, 4)
-            frame.setGraphicsEffect(shadow)
+        frame.setStyleSheet(get_card_style())
         return frame
+
+    def _load_kpi_stats(self):
+        """Charge les statistiques de discipline dans les KPI Cards."""
+        try:
+            db = DatabaseManager()
+            with db.get_connection() as conn:
+                cursor = conn.cursor()
+                # Resolve real table name across schema versions.
+                cursor.execute(
+                    "SELECT to_regclass('public.disciplineincidents'), to_regclass('public.studentdiscipline')"
+                )
+                reg_incidents, reg_legacy = cursor.fetchone()
+                table_name = "DisciplineIncidents" if reg_incidents else ("StudentDiscipline" if reg_legacy else None)
+                if not table_name:
+                    self._stat_total.set_value("0")
+                    self._stat_month.set_value("0")
+                    self._stat_resolved.set_value("0")
+                    self._stat_serious.set_value("0")
+                    return
+
+                cursor.execute(
+                    "SELECT column_name FROM information_schema.columns WHERE table_name = %s",
+                    (table_name.lower(),),
+                )
+                cols = {r[0].lower() for r in cursor.fetchall()}
+
+                date_col = "incident_date" if "incident_date" in cols else ("date" if "date" in cols else None)
+                status_col = "status" if "status" in cols else None
+                severity_col = (
+                    "severity" if "severity" in cols else ("severity_level" if "severity_level" in cols else None)
+                )
+                points_col = "points_deducted" if "points_deducted" in cols else None
+
+                # Total incidents
+                cursor.execute(f"SELECT COUNT(*) FROM {table_name}")
+                total = cursor.fetchone()[0] or 0
+
+                # Ce mois
+                today = date.today()
+                if date_col:
+                    cursor.execute(
+                        f"SELECT COUNT(*) FROM {table_name} WHERE EXTRACT(MONTH FROM {date_col}) = %s AND EXTRACT(YEAR FROM {date_col}) = %s",
+                        (today.month, today.year),
+                    )
+                    month_count = cursor.fetchone()[0] or 0
+                else:
+                    month_count = 0
+
+                # Résolus
+                if status_col:
+                    cursor.execute(
+                        f"SELECT COUNT(*) FROM {table_name} WHERE LOWER({status_col}) IN ('résolu', 'resolu', 'resolved', 'closed', 'cloture', 'clôturé')"
+                    )
+                    resolved = cursor.fetchone()[0] or 0
+                else:
+                    resolved = 0
+
+                # Graves
+                serious_filters = []
+                if severity_col:
+                    serious_filters.append(
+                        f"LOWER({severity_col}) IN ('grave', 'sérieux', 'serieux', 'high', 'severe')"
+                    )
+                if points_col:
+                    serious_filters.append(f"{points_col} >= 3")
+
+                if serious_filters:
+                    cursor.execute(f"SELECT COUNT(*) FROM {table_name} WHERE " + " OR ".join(serious_filters))
+                    serious = cursor.fetchone()[0] or 0
+                else:
+                    serious = 0
+
+            self._stat_total.set_value(str(total))
+            self._stat_month.set_value(str(month_count))
+            self._stat_resolved.set_value(str(resolved))
+            self._stat_serious.set_value(str(serious))
+        except Exception as e:
+            AppLogger.error("DisciplineWindow", f"Erreur KPI stats: {e}")
+            self._stat_total.set_value("0")
+            self._stat_month.set_value("0")
+            self._stat_resolved.set_value("0")
+            self._stat_serious.set_value("0")
 
     def styled_input(self, placeholder):
         le = QLineEdit()
         le.setPlaceholderText(placeholder)
         le.setMinimumHeight(38)
-        if THEME_AVAILABLE:
-            colors = ThemeManager.get_colors()
-            le.setStyleSheet(f"QLineEdit {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }}")
+        colors = ThemeManager.get_colors()
+        le.setStyleSheet(
+            f"QLineEdit {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }}"
+        )
         return le
 
     def styled_combo(self):
         combo = QComboBox()
         combo.setMinimumHeight(38)
-        if THEME_AVAILABLE:
-            colors = ThemeManager.get_colors()
-            combo.setStyleSheet(f"QComboBox {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }} QComboBox:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}")
+        colors = ThemeManager.get_colors()
+        combo.setStyleSheet(
+            f"QComboBox {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }} QComboBox:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}"
+        )
         return combo
 
     def style_table(self, table):
         table.setShowGrid(False)
         table.setAlternatingRowColors(True)
         table.verticalHeader().setVisible(False)
-        if THEME_AVAILABLE:
-            table.setStyleSheet(get_table_style())
-        else:
-            colors = Colors()
-            table.setStyleSheet(f"""
-                QTableWidget {{ background-color: {colors.BG_CARD}; border: 1px solid {colors.BORDER}; border-radius: 8px; gridline-color: {colors.BORDER}; font-size: 13px; color: {colors.TEXT_PRIMARY}; }}
-                QTableWidget::item {{ padding: 6px; border-bottom: 1px solid {colors.BG_MAIN}; color: {colors.TEXT_PRIMARY}; }}
-                QTableWidget::item:alternate {{ background-color: {colors.BG_MAIN}; }}
-                QTableWidget::item:selected {{ background-color: {colors.PRIMARY}; color: white; }}
-                QHeaderView::section {{ background-color: {colors.BG_HEADER}; color: {colors.HEADER_TEXT}; padding: 10px; border: none; font-weight: bold; }}
-            """)
+        table.setStyleSheet(get_table_style())
 
     def setup_entry_tab(self):
         tab = QWidget()
         layout = QHBoxLayout(tab)
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(20)
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+        colors = ThemeManager.get_colors()
 
         # --- Form Card (Left) ---
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
         scroll_area.setFrameShape(QFrame.Shape.NoFrame)
-        scroll_area.setStyleSheet(f"""
+        scroll_area.setStyleSheet(
+            f"""
             QScrollArea {{ background: transparent; border: none; }}
             QScrollBar:vertical {{ border: none; background: {colors.BG_MAIN}; width: 8px; margin: 0px; }}
             QScrollBar::handle:vertical {{ background: {colors.TEXT_SECONDARY}; min-height: 20px; border-radius: 4px; }}
-        """)
+        """
+        )
 
         form_card = self.create_card()
         form_card.setMinimumWidth(350)
@@ -429,15 +488,24 @@ class DisciplineWindow(QMainWindow):
         self.date_incident = QDateEdit()
         self.date_incident.setCalendarPopup(True)
         self.date_incident.setDate(QDate.currentDate())
-        self.date_incident.setStyleSheet(f"QDateEdit {{ padding: 8px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }}")
+        self.date_incident.setStyleSheet(
+            f"QDateEdit {{ padding: 8px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }}"
+        )
         self.date_incident.setMinimumHeight(38)
 
         self.combo_type = self.styled_combo()
-        self.combo_type.addItems([
-            "Bavardage / ثرثرة", "Retard / تأخر", "Absence injustifiée / غياب غير مبرر",
-            "Non port de la tenue / عدم ارتداء الزي", "Insolence / وقاحة",
-            "Bagarre / شجار", "Tricherie / غش", "Dégradation de matériel / تخريب"
-        ])
+        self.combo_type.addItems(
+            [
+                "Bavardage / ثرثرة",
+                "Retard / تأخر",
+                "Absence injustifiée / غياب غير مبرر",
+                "Non port de la tenue / عدم ارتداء الزي",
+                "Insolence / وقاحة",
+                "Bagarre / شجار",
+                "Tricherie / غش",
+                "Dégradation de matériel / تخريب",
+            ]
+        )
 
         self.txt_sanction = self.styled_input("Sanction (ex: Avertissement)")
 
@@ -445,31 +513,42 @@ class DisciplineWindow(QMainWindow):
         self.spin_points = QDoubleSpinBox()
         self.spin_points.setRange(0, 20)
         self.spin_points.setPrefix("Déduction: -")
-        self.spin_points.setStyleSheet(f"QDoubleSpinBox {{ padding: 8px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.BG_MAIN}; color: {colors.DANGER}; font-weight: bold; }}")
+        self.spin_points.setStyleSheet(
+            f"QDoubleSpinBox {{ padding: 8px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.BG_MAIN}; color: {colors.DANGER}; font-weight: bold; }}"
+        )
         self.spin_points.setMinimumHeight(38)
 
         self.txt_obs = QTextEdit()
         self.txt_obs.setPlaceholderText("Détails de l'incident...")
         self.txt_obs.setMaximumHeight(80)
         self.txt_obs.setMinimumHeight(60)
-        self.txt_obs.setStyleSheet(f"QTextEdit {{ padding: 8px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }}")
+        self.txt_obs.setStyleSheet(
+            f"QTextEdit {{ padding: 8px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }}"
+        )
 
         btn_save = QPushButton("💾 Enregistrer / حفظ")
         btn_save.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_save.setMinimumHeight(45)
-        btn_save.setStyleSheet(f"""
+        btn_save.setStyleSheet(
+            f"""
             QPushButton {{ background-color: {colors.DANGER}; color: white; font-weight: bold; border-radius: 8px; border: none; font-size: 14px; }}
             QPushButton:hover {{ background-color: {colors.DANGER_HOVER}; }}
-        """)
+        """
+        )
         btn_save.clicked.connect(self.save_incident)
 
         grid = QGridLayout()
         grid.setSpacing(10)
-        grid.addWidget(QLabel("Classe:"), 0, 0); grid.addWidget(self.combo_class_entry, 0, 1)
-        grid.addWidget(QLabel("Période:"), 1, 0); grid.addWidget(self.combo_period_entry, 1, 1)
-        grid.addWidget(QLabel("Élève:"), 2, 0); grid.addWidget(self.combo_student_entry, 2, 1)
-        grid.addWidget(QLabel("Date:"), 3, 0); grid.addWidget(self.date_incident, 3, 1)
-        grid.addWidget(QLabel("Type:"), 4, 0); grid.addWidget(self.combo_type, 4, 1)
+        grid.addWidget(QLabel("Classe:"), 0, 0)
+        grid.addWidget(self.combo_class_entry, 0, 1)
+        grid.addWidget(QLabel("Période:"), 1, 0)
+        grid.addWidget(self.combo_period_entry, 1, 1)
+        grid.addWidget(QLabel("Élève:"), 2, 0)
+        grid.addWidget(self.combo_student_entry, 2, 1)
+        grid.addWidget(QLabel("Date:"), 3, 0)
+        grid.addWidget(self.date_incident, 3, 1)
+        grid.addWidget(QLabel("Type:"), 4, 0)
+        grid.addWidget(self.combo_type, 4, 1)
 
         flay.addLayout(grid)
         flay.addWidget(QLabel("Sanction prise:"))
@@ -537,7 +616,9 @@ class DisciplineWindow(QMainWindow):
         # Table
         self.table_history = QTableWidget(0, 7)
         self.style_table(self.table_history)
-        self.table_history.setHorizontalHeaderLabels(["Élève", "Classe", "Date", "Incident", "Sanction", "Pts", "Action"])
+        self.table_history.setHorizontalHeaderLabels(
+            ["Élève", "Classe", "Date", "Incident", "Sanction", "Pts", "Action"]
+        )
         self.table_history.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.table_history.setColumnWidth(0, 50)
         self.table_history.setColumnWidth(6, 60)
@@ -573,10 +654,12 @@ class DisciplineWindow(QMainWindow):
     def load_students_entry(self):
         cid = self.combo_class_entry.currentData()
         self.combo_student_entry.clear()
-        if not cid: return
+        if not cid:
+            return
 
         active_year = self.get_active_year_id()
-        if active_year == -1: return
+        if active_year == -1:
+            return
 
         try:
             db = DatabaseManager()
@@ -584,9 +667,9 @@ class DisciplineWindow(QMainWindow):
                 repo = DisciplineRepository(conn)
                 cycle_name = repo.get_cycle_name_for_class(cid)
 
-                is_primary = bool(cycle_name and (
-                    "elem" in cycle_name or "prim" in cycle_name or "ibtida" in cycle_name
-                ))
+                is_primary = bool(
+                    cycle_name and ("elem" in cycle_name or "prim" in cycle_name or "ibtida" in cycle_name)
+                )
 
                 if is_primary:
                     self.spin_points.setRange(0, 10)
@@ -616,20 +699,15 @@ class DisciplineWindow(QMainWindow):
             return
 
         active_year = self.get_active_year_id()
-        if active_year == -1: return
+        if active_year == -1:
+            return
 
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
                 repo = DisciplineRepository(conn)
-                resolved_period_id = (
-                    period_id or
-                    repo.resolve_period_id_for_class_date(cid, date_inc, active_year)
-                )
-                repo.insert_incident(
-                    sid, date_inc, inc_type, sanction, pts, obs,
-                    active_year, resolved_period_id
-                )
+                resolved_period_id = period_id or repo.resolve_period_id_for_class_date(cid, date_inc, active_year)
+                repo.insert_incident(sid, date_inc, inc_type, sanction, pts, obs, active_year, resolved_period_id)
                 conn.commit()
 
             self.load_recent()
@@ -656,7 +734,7 @@ class DisciplineWindow(QMainWindow):
                 self.table_recent.setItem(idx, 2, QTableWidgetItem(str(r[2]) if r[2] else "-"))
 
                 pts_item = QTableWidgetItem(f"-{r[3]}")
-                pts_item.setForeground(QColor(ThemeManager.get_colors().DANGER if THEME_AVAILABLE else Colors().DANGER))
+                pts_item.setForeground(QColor(ThemeManager.get_colors().DANGER))
                 pts_item.setFont(QFont("Segoe UI", 9, QFont.Weight.Bold))
                 self.table_recent.setItem(idx, 3, pts_item)
         except Exception as e:
@@ -698,9 +776,7 @@ class DisciplineWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                rows = DisciplineRepository(conn).get_history(
-                    active_year, class_id=cid, period_id=pid, search=search
-                )
+                rows = DisciplineRepository(conn).get_history(active_year, class_id=cid, period_id=pid, search=search)
 
             for r in rows:
                 idx = self.table_history.rowCount()
@@ -720,12 +796,22 @@ class DisciplineWindow(QMainWindow):
                 btn_print = QPushButton("🖨️")
                 btn_print.setToolTip("Imprimer Convocation / Notification")
                 btn_print.setCursor(Qt.CursorShape.PointingHandCursor)
-                colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-                btn_print.setStyleSheet(f"""
+                colors = ThemeManager.get_colors()
+                btn_print.setStyleSheet(
+                    f"""
                     QPushButton {{ background-color: {colors.PRIMARY}; color: white; border-radius: 4px; border: none; font-weight: bold; }}
                     QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}
-                """)
-                data = {'name': r[1], 'class': r[2] or "-", 'inc': r[4], 'date': r[3], 'obs': r[7], 'sanction': r[5], 'pts': r[6]}
+                """
+                )
+                data = {
+                    'name': r[1],
+                    'class': r[2] or "-",
+                    'inc': r[4],
+                    'date': r[3],
+                    'obs': r[7],
+                    'sanction': r[5],
+                    'pts': r[6],
+                }
                 btn_print.clicked.connect(lambda ch, d=data: self.print_action(d))
 
                 w = QWidget()
@@ -739,14 +825,18 @@ class DisciplineWindow(QMainWindow):
     def on_history_item_clicked(self, item):
         row = item.row()
         name_item = self.table_history.item(row, 0)
-        if not name_item: return
+        if not name_item:
+            return
 
         try:
             incident_id = name_item.data(Qt.ItemDataRole.UserRole)
-            if not incident_id: return
-        except Exception: return
+            if not incident_id:
+                return
+        except Exception:
+            return
         details = self.get_incident_details(incident_id)
-        if not details: return
+        if not details:
+            return
 
         msg = QMessageBox(self)
         msg.setWindowTitle("Action")
@@ -780,7 +870,7 @@ class DisciplineWindow(QMainWindow):
         dialog = QDialog(self)
         dialog.setWindowTitle("Modifier / تعديل")
         dialog.setMinimumWidth(400)
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+        colors = ThemeManager.get_colors()
         dialog.setStyleSheet(f"background-color: {colors.BG_MAIN};")
 
         layout = QVBoxLayout(dialog)
@@ -794,14 +884,23 @@ class DisciplineWindow(QMainWindow):
         date_edit = QDateEdit()
         date_edit.setCalendarPopup(True)
         date_edit.setDate(QDate.fromString(details['date'], "yyyy-MM-dd"))
-        date_edit.setStyleSheet(f"padding: 5px; border: 1px solid {colors.BORDER}; border-radius: 4px; background: {colors.BG_CARD}; color: {colors.TEXT_PRIMARY};")
+        date_edit.setStyleSheet(
+            f"padding: 5px; border: 1px solid {colors.BORDER}; border-radius: 4px; background: {colors.BG_CARD}; color: {colors.TEXT_PRIMARY};"
+        )
 
         type_combo = self.styled_combo()
-        type_combo.addItems([
-            "Bavardage / ثرثرة", "Retard / تأخر", "Absence injustifiée / غياب غير مبرر",
-            "Non port de la tenue / عدم ارتداء الزي", "Insolence / وقاحة",
-            "Bagarre / شجار", "Tricherie / غش", "Dégradation de matériel / تخريب"
-        ])
+        type_combo.addItems(
+            [
+                "Bavardage / ثرثرة",
+                "Retard / تأخر",
+                "Absence injustifiée / غياب غير مبرر",
+                "Non port de la tenue / عدم ارتداء الزي",
+                "Insolence / وقاحة",
+                "Bagarre / شجار",
+                "Tricherie / غش",
+                "Dégradation de matériel / تخريب",
+            ]
+        )
         type_combo.setCurrentText(details['incident'])
 
         sanction_input = self.styled_input("Sanction")
@@ -811,34 +910,52 @@ class DisciplineWindow(QMainWindow):
         points_spin.setPrefix("Déduction: -")
         points_spin.setRange(0, 10 if self.is_primary_class(details['class_id']) else 20)
         points_spin.setValue(float(details['points'] or 0))
-        points_spin.setStyleSheet(f"padding: 5px; border: 1px solid {colors.BORDER}; border-radius: 4px; background: {colors.BG_CARD}; color: {colors.TEXT_PRIMARY};")
+        points_spin.setStyleSheet(
+            f"padding: 5px; border: 1px solid {colors.BORDER}; border-radius: 4px; background: {colors.BG_CARD}; color: {colors.TEXT_PRIMARY};"
+        )
 
         obs_input = QTextEdit()
         obs_input.setMinimumHeight(60)
         obs_input.setText(details['observation'] or "")
-        obs_input.setStyleSheet(f"padding: 5px; border: 1px solid {colors.BORDER}; border-radius: 4px; background: {colors.BG_CARD}; color: {colors.TEXT_PRIMARY};")
+        obs_input.setStyleSheet(
+            f"padding: 5px; border: 1px solid {colors.BORDER}; border-radius: 4px; background: {colors.BG_CARD}; color: {colors.TEXT_PRIMARY};"
+        )
 
         lbl_style = f"color: {colors.TEXT_PRIMARY};"
-        lbl_date = QLabel("Date:"); lbl_date.setStyleSheet(lbl_style)
-        lbl_type = QLabel("Type:"); lbl_type.setStyleSheet(lbl_style)
-        lbl_sanc = QLabel("Sanction:"); lbl_sanc.setStyleSheet(lbl_style)
-        lbl_pts = QLabel("Points:"); lbl_pts.setStyleSheet(lbl_style)
-        lbl_obs = QLabel("Obs:"); lbl_obs.setStyleSheet(lbl_style)
+        lbl_date = QLabel("Date:")
+        lbl_date.setStyleSheet(lbl_style)
+        lbl_type = QLabel("Type:")
+        lbl_type.setStyleSheet(lbl_style)
+        lbl_sanc = QLabel("Sanction:")
+        lbl_sanc.setStyleSheet(lbl_style)
+        lbl_pts = QLabel("Points:")
+        lbl_pts.setStyleSheet(lbl_style)
+        lbl_obs = QLabel("Obs:")
+        lbl_obs.setStyleSheet(lbl_style)
 
-        grid.addWidget(lbl_date, 0, 0); grid.addWidget(date_edit, 0, 1)
-        grid.addWidget(lbl_type, 1, 0); grid.addWidget(type_combo, 1, 1)
-        grid.addWidget(lbl_sanc, 2, 0); grid.addWidget(sanction_input, 2, 1)
-        grid.addWidget(lbl_pts, 3, 0); grid.addWidget(points_spin, 3, 1)
-        grid.addWidget(lbl_obs, 4, 0); grid.addWidget(obs_input, 4, 1)
+        grid.addWidget(lbl_date, 0, 0)
+        grid.addWidget(date_edit, 0, 1)
+        grid.addWidget(lbl_type, 1, 0)
+        grid.addWidget(type_combo, 1, 1)
+        grid.addWidget(lbl_sanc, 2, 0)
+        grid.addWidget(sanction_input, 2, 1)
+        grid.addWidget(lbl_pts, 3, 0)
+        grid.addWidget(points_spin, 3, 1)
+        grid.addWidget(lbl_obs, 4, 0)
+        grid.addWidget(obs_input, 4, 1)
 
         layout.addLayout(grid)
 
         btn_box = QHBoxLayout()
         btn_save = QPushButton("Enregistrer")
-        btn_save.setStyleSheet(f"background-color: {colors.SUCCESS}; color: white; padding: 6px; border-radius: 4px; font-weight: bold; border: none;")
+        btn_save.setStyleSheet(
+            f"background-color: {colors.SUCCESS}; color: white; padding: 6px; border-radius: 4px; font-weight: bold; border: none;"
+        )
 
         btn_cancel = QPushButton("Annuler")
-        btn_cancel.setStyleSheet(f"background-color: {colors.TEXT_SECONDARY}; color: white; padding: 6px; border-radius: 4px; border: none;")
+        btn_cancel.setStyleSheet(
+            f"background-color: {colors.TEXT_SECONDARY}; color: white; padding: 6px; border-radius: 4px; border: none;"
+        )
 
         btn_box.addWidget(btn_cancel)
         btn_box.addWidget(btn_save)
@@ -872,7 +989,15 @@ class DisciplineWindow(QMainWindow):
         dialog.exec()
 
     def delete_incident(self, incident_id, student_name):
-        if QMessageBox.question(self, "Confirmation", f"Supprimer l'incident de {student_name} ?", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes:
+        if (
+            QMessageBox.question(
+                self,
+                "Confirmation",
+                f"Supprimer l'incident de {student_name} ?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            == QMessageBox.StandardButton.Yes
+        ):
             try:
                 db = DatabaseManager()
                 with db.get_connection() as conn:
@@ -900,7 +1025,8 @@ class DisciplineWindow(QMainWindow):
             db = DatabaseManager()
             with db.get_connection() as conn:
                 school_info = DisciplineRepository(conn).get_school_info()
-        except Exception: pass
+        except Exception:
+            pass
         pdf = DisciplinePDF(school_info)
 
         file_name = "Convocation.pdf" if msg.clickedButton() == btn_convoc else "Sanction.pdf"

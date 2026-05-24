@@ -3,9 +3,13 @@
 Security & Cryptography Utilities
 """
 
-import hashlib
+import hashlib  # للتوافق مع تجزئة SHA256 القديمة فقط
+import secrets
 
 import bcrypt
+
+# عدد جولات bcrypt — 12 توازن جيد بين الأمان والسرعة
+_BCRYPT_ROUNDS = 12
 
 
 def hash_password(password: str) -> str:
@@ -15,9 +19,7 @@ def hash_password(password: str) -> str:
     """
     # bcrypt requires bytes
     password_bytes = password.encode('utf-8')
-    # gensalt generates a salt
-    salt = bcrypt.gensalt()
-    # hashpw returns bytes, decode to store as string
+    salt = bcrypt.gensalt(rounds=_BCRYPT_ROUNDS)
     hashed = bcrypt.hashpw(password_bytes, salt)
     return hashed.decode('utf-8')
 
@@ -77,6 +79,30 @@ def validate_password(password: str, min_length: int = 8) -> tuple[bool, str]:
         )
 
     return True, ""
+
+
+def generate_parent_pin(length: int = 4) -> str:
+    """
+    توليد رمز PIN عشوائي لولي الأمر (مؤمن تشفيرياً).
+    Generate a cryptographically secure numeric PIN for parent portal access.
+    """
+    return ''.join(str(secrets.randbelow(10)) for _ in range(length))
+
+
+def hash_pin(pin: str) -> str:
+    """
+    تشفير رمز PIN باستخدام bcrypt.
+    Hash a numeric PIN using bcrypt (reuses existing hash_password logic).
+    """
+    return hash_password(pin)
+
+
+def verify_pin(plain_pin: str, stored_hash: str) -> bool:
+    """
+    التحقق من صحة رمز PIN مقابل تجزئته المخزَّنة.
+    Verify a PIN against its bcrypt hash.
+    """
+    return verify_password(plain_pin, stored_hash)
 
 
 # ─── Fernet symmetric encryption (SMTP password at rest) ──────────────────────

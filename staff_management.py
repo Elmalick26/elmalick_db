@@ -16,7 +16,6 @@ from PyQt6.QtWidgets import (
     QDoubleSpinBox,
     QFileDialog,
     QFrame,
-    QGraphicsDropShadowEffect,
     QGridLayout,
     QGroupBox,
     QHBoxLayout,
@@ -46,9 +45,17 @@ from pdf_report_style import (
 from print_export_service import get_report_output_mode, output_pdf
 from repositories.finance_repo import FinanceRepository
 from repositories.staff_repo import StaffRepository
-from ui_styles import Colors, ThemeManager, apply_shadow_to_widget, get_card_style, get_table_style, get_tabs_style
+from ui_styles import (
+    Colors,
+    ModuleHeaderWidget,
+    ThemeManager,
+    apply_shadow_to_widget,
+    get_card_style,
+    get_module_caps,
+    get_table_style,
+    get_tabs_style,
+)
 
-THEME_AVAILABLE = True
 STAFF_LIST_OUTPUT_MODE = get_report_output_mode("staff_list_mode", "save")
 
 try:
@@ -197,33 +204,16 @@ class ModernStaffManagement(QMainWindow):
         self.setWindowTitle("Gestion des RH / إدارة الموارد البشرية")
         self.setMinimumSize(1100, 700)
 
-        if THEME_AVAILABLE:
-            ThemeManager.apply_theme(self)
-        else:
-            colors = Colors()
-            self.setStyleSheet(
-                f"""
-                QMainWindow {{ background-color: {colors.BG_MAIN}; }}
-                QLabel {{ font-family: 'Segoe UI', 'Cairo', sans-serif; color: {colors.TEXT_PRIMARY}; }}
-                QGroupBox {{
-                    border: 1px solid {colors.BORDER}; border-radius: 8px; margin-top: 10px;
-                    background-color: {colors.BG_CARD}; font-weight: bold; color: {colors.TEXT_SECONDARY};
-                }}
-                QGroupBox::title {{ subcontrol-origin: margin; subcontrol-position: top left; padding: 0 5px; left: 10px; }}
-                QScrollArea {{ border: none; background: transparent; }}
-            """
-            )
-
+        ThemeManager.apply_theme(self)
         self.current_photo_path = None
         self.selected_staff_id = None
 
         self.init_ui()
         self.load_staff_list()
+        self._load_kpi_stats()
 
     def apply_rbac(self, role: str) -> None:
         """تطبيق صلاحيات الأزرار بناءً على دور المستخدم — يُستدعى من MainWindow."""
-        from ui_styles import get_module_caps
-
         caps = get_module_caps(role, "staff_management")
         self.btn_save.setEnabled(caps["can_write"])
         self.btn_save.setVisible(caps["can_write"])
@@ -235,57 +225,23 @@ class ModernStaffManagement(QMainWindow):
         self.main_layout.setContentsMargins(20, 20, 20, 20)
         self.main_layout.setSpacing(15)
 
-        # 1. Header Frame
-        header_frame = QFrame()
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+        # 1. En-tête unifié
+        header = ModuleHeaderWidget(
+            icon="👥",
+            title="RESSOURCES HUMAINES",
+            subtitle="إدارة الموظفين، الرواتب، والجدول الزمني",
+        )
+        self.main_layout.addWidget(header)
+        self._stat_total = header.add_stat("👥", "Total Personnel", "—", "#3B82F6")
+        self._stat_profs = header.add_stat("👨‍🏫", "Professeurs", "—", "#8B5CF6")
+        self._stat_admin = header.add_stat("🏢", "Administration", "—", "#F59E0B")
+        self._stat_actifs = header.add_stat("✅", "Actifs", "—", "#22C55E")
 
-        header_frame.setStyleSheet(f"QFrame {{ background-color: {colors.BG_HEADER}; border-radius: 10px; }}")
-        header_frame.setMaximumHeight(80)
+        # 2. KPI
 
-        shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(15)
-        shadow.setColor(QColor(15, 23, 42, 40))
-        shadow.setOffset(0, 4)
-        header_frame.setGraphicsEffect(shadow)
-
-        hl = QHBoxLayout(header_frame)
-        hl.setContentsMargins(20, 15, 20, 15)
-
-        icon_lbl = QLabel("👥")
-        icon_lbl.setStyleSheet("font-size: 32px; background: transparent;")
-
-        title_layout = QVBoxLayout()
-        header_lbl = QLabel("RESSOURCES HUMAINES")
-        header_lbl.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
-        header_lbl.setStyleSheet(f"color: {colors.HEADER_TEXT}; background: transparent;")
-
-        sub_lbl = QLabel("إدارة الموظفين، الرواتب، والجدول الزمني")
-        sub_lbl.setFont(QFont("Cairo", 11))
-        sub_lbl.setStyleSheet(f"color: {colors.TEXT_SECONDARY}; background: transparent;")
-
-        title_layout.addWidget(header_lbl)
-        title_layout.addWidget(sub_lbl)
-
-        hl.addWidget(icon_lbl)
-        hl.addSpacing(15)
-        hl.addLayout(title_layout)
-        hl.addStretch()
-
-        self.main_layout.addWidget(header_frame)
-
-        # 2. Tabs
+        # 3. Onglets
         self.tabs = QTabWidget()
-        if THEME_AVAILABLE:
-            self.tabs.setStyleSheet(get_tabs_style())
-        else:
-            self.tabs.setStyleSheet(
-                f"""
-                QTabWidget::pane {{ border: 1px solid {colors.BORDER}; background: {colors.BG_CARD}; border-radius: 12px; margin-top: 15px; }}
-                QTabBar::tab {{ background: {colors.BG_MAIN}; color: {colors.TEXT_SECONDARY}; padding: 12px 30px; margin-right: 6px; border-top-left-radius: 8px; border-top-right-radius: 8px; font-weight: bold; font-family: 'Segoe UI', 'Cairo'; }}
-                QTabBar::tab:selected {{ background: {colors.BG_HEADER}; color: {colors.HEADER_TEXT}; }}
-                QTabBar::tab:hover {{ background: {colors.BORDER}; }}
-            """
-            )
+        self.tabs.setStyleSheet(get_tabs_style())
 
         self.setup_staff_tab()
 
@@ -293,30 +249,17 @@ class ModernStaffManagement(QMainWindow):
 
     def create_card(self):
         frame = QFrame()
-        if THEME_AVAILABLE:
-            frame.setStyleSheet(get_card_style())
-            apply_shadow_to_widget(frame)
-        else:
-            colors = Colors()
-            frame.setStyleSheet(
-                f"QFrame {{ background-color: {colors.BG_CARD}; border-radius: 12px; border: 1px solid {colors.BORDER}; }}"
-            )
-            shadow = QGraphicsDropShadowEffect()
-            shadow.setBlurRadius(20)
-            shadow.setColor(QColor(15, 23, 42, 15))
-            shadow.setOffset(0, 4)
-            frame.setGraphicsEffect(shadow)
+        frame.setStyleSheet(get_card_style())
         return frame
 
     def styled_input(self, placeholder):
         le = QLineEdit()
         le.setPlaceholderText(placeholder)
         le.setMinimumHeight(38)
-        if THEME_AVAILABLE:
-            colors = ThemeManager.get_colors()
-            le.setStyleSheet(
-                f"QLineEdit {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }} QLineEdit:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}"
-            )
+        colors = ThemeManager.get_colors()
+        le.setStyleSheet(
+            f"QLineEdit {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }} QLineEdit:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}"
+        )
         return le
 
     def sanitize(self, text):
@@ -327,37 +270,24 @@ class ModernStaffManagement(QMainWindow):
     def styled_combo(self):
         combo = QComboBox()
         combo.setMinimumHeight(38)
-        if THEME_AVAILABLE:
-            colors = ThemeManager.get_colors()
-            combo.setStyleSheet(
-                f"QComboBox {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }} QComboBox:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}"
-            )
+        colors = ThemeManager.get_colors()
+        combo.setStyleSheet(
+            f"QComboBox {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }} QComboBox:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}"
+        )
         return combo
 
     def style_table(self, table):
         table.setShowGrid(False)
         table.setAlternatingRowColors(True)
         table.verticalHeader().setVisible(False)
-        if THEME_AVAILABLE:
-            table.setStyleSheet(get_table_style())
-        else:
-            colors = Colors()
-            table.setStyleSheet(
-                f"""
-                QTableWidget {{ background-color: {colors.BG_CARD}; border: 1px solid {colors.BORDER}; border-radius: 8px; gridline-color: {colors.BORDER}; font-size: 13px; color: {colors.TEXT_PRIMARY}; }}
-                QTableWidget::item {{ padding: 6px; border-bottom: 1px solid {colors.BG_MAIN}; color: {colors.TEXT_PRIMARY}; }}
-                QTableWidget::item:alternate {{ background-color: {colors.BG_MAIN}; }}
-                QTableWidget::item:selected {{ background-color: {colors.PRIMARY}; color: white; }}
-                QHeaderView::section {{ background-color: {colors.BG_HEADER}; color: {colors.HEADER_TEXT}; padding: 10px; border: none; font-weight: bold; }}
-            """
-            )
+        table.setStyleSheet(get_table_style())
 
     def setup_staff_tab(self):
         tab = QWidget()
         layout = QHBoxLayout(tab)
         layout.setSpacing(20)
         layout.setContentsMargins(20, 20, 20, 20)
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+        colors = ThemeManager.get_colors()
 
         # --- العمود الأيمن: نموذج الإدخال (مع Scroll) ---
         scroll = QScrollArea()
@@ -644,7 +574,7 @@ class ModernStaffManagement(QMainWindow):
                 btn_layout.setContentsMargins(2, 2, 2, 2)
                 btn_layout.setSpacing(5)
 
-                colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+                colors = ThemeManager.get_colors()
                 btn_edit = QPushButton("✎")
                 btn_edit.setFixedSize(28, 28)
                 btn_edit.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -666,6 +596,29 @@ class ModernStaffManagement(QMainWindow):
                 self.table_staff.setCellWidget(r_idx, 8, btn_widget)
         except Exception as e:
             AppLogger.error("StaffManagement", f"Error loading staff list: {e}")
+
+    # ───────────────────────────── KPI ─────────────────────────────
+
+    def _load_kpi_stats(self):
+        """Charge les compteurs pour les cartes KPI."""
+        try:
+            db = DatabaseManager()
+            with db.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT COUNT(*) FROM Staff")
+                total = cursor.fetchone()[0]
+                cursor.execute("SELECT COUNT(*) FROM Staff WHERE role = 'Professeur'")
+                profs = cursor.fetchone()[0]
+                cursor.execute("SELECT COUNT(*) FROM Staff WHERE role = 'Administration'")
+                admin = cursor.fetchone()[0]
+                cursor.execute("SELECT COUNT(*) FROM Staff WHERE status ILIKE '%Actif%'")
+                actifs = cursor.fetchone()[0]
+            self._stat_total.set_value(str(total))
+            self._stat_profs.set_value(str(profs))
+            self._stat_admin.set_value(str(admin))
+            self._stat_actifs.set_value(str(actifs))
+        except Exception as e:
+            AppLogger.error("StaffManagement", f"KPI load error: {e}")
 
     def save_staff(self):
         fname = self.txt_fname.text().strip()
@@ -763,7 +716,7 @@ class ModernStaffManagement(QMainWindow):
         self.selected_staff_id = None
         self.combo_status.setCurrentIndex(0)
         self.btn_save.setText("💾 Enregistrer")
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+        colors = ThemeManager.get_colors()
         self.btn_save.setStyleSheet(
             f"QPushButton {{ background-color: {colors.SUCCESS}; color: white; border-radius: 8px; font-weight: bold; border: none; }} QPushButton:hover {{ background-color: {colors.SUCCESS_HOVER}; }}"
         )
@@ -823,7 +776,7 @@ class ModernStaffManagement(QMainWindow):
                 self.combo_status.setCurrentIndex(status_map.get(staff_status, 0))
 
                 self.btn_save.setText("✏️ Modifier")
-                colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+                colors = ThemeManager.get_colors()
                 self.btn_save.setStyleSheet(
                     f"QPushButton {{ background-color: {colors.WARNING}; color: white; border-radius: 8px; font-weight: bold; border: none; }}"
                 )

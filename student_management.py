@@ -6,14 +6,13 @@ from datetime import datetime
 import psycopg2
 from fpdf import FPDF
 from PyQt6.QtCore import QDate, QSize, Qt
-from PyQt6.QtGui import QColor, QFont, QIcon, QPixmap
+from PyQt6.QtGui import QFont, QIcon, QPixmap
 from PyQt6.QtWidgets import (
     QApplication,
     QComboBox,
     QDateEdit,
     QFileDialog,
     QFrame,
-    QGraphicsDropShadowEffect,
     QGridLayout,
     QHBoxLayout,
     QHeaderView,
@@ -35,9 +34,18 @@ from database_setup import DatabaseManager
 from print_export_service import get_report_output_mode, output_pdf
 from repositories.finance_repo import FinanceRepository
 from repositories.student_repo import StudentRepository
-from ui_styles import Colors, EmptyStateWidget, PaginationWidget, ThemeManager, get_table_style, get_tabs_style
+from ui_styles import (
+    Colors,
+    EmptyStateWidget,
+    ModuleHeaderWidget,
+    PaginationWidget,
+    ThemeManager,
+    ToastNotification,
+    get_module_caps,
+    get_table_style,
+    get_tabs_style,
+)
 
-THEME_AVAILABLE = True
 STUDENT_LIST_OUTPUT_MODE = get_report_output_mode("student_list_mode", "save")
 
 try:
@@ -125,34 +133,24 @@ class ModernStudentManagement(QMainWindow):
         self.setMinimumSize(1100, 700)
 
         # تطبيق المظهر (Dark Mode أو Light Mode)
-        if THEME_AVAILABLE:
-            ThemeManager.apply_theme(self)
-        else:
-            colors = Colors()
-            self.setStyleSheet(
-                f"""
-                QMainWindow {{ background-color: {colors.BG_MAIN}; }}
-                QLabel {{ font-family: 'Segoe UI', 'Cairo', sans-serif; color: {colors.TEXT_PRIMARY}; }}
-                QScrollArea {{ border: none; background: transparent; }}
-            """
-            )
-
+        ThemeManager.apply_theme(self)
         self.current_photo_path = None
         self.selected_student_id = None
         # علامات RBAC — يتم تحديثهما بواسطة apply_rbac() بعد الإنشاء
         self._rbac_can_write = True
         self._rbac_can_delete = True
+        self._initialized = False  # منع التحميل المزدوج عند استدعاء apply_rbac()
         self.init_ui()
         self.load_cycles_filter()
         self.load_cycles_reg()
         self.refresh_student_list()
+        self._load_kpi_stats()
+        self._initialized = True
 
     def apply_rbac(self, role: str) -> None:
         """تطبيق صلاحيات الأزرار بناءً على دور المستخدم الحالي.
         يُستدعى من MainWindow بعد إنشاء الوحدة مباشرةً.
         """
-        from ui_styles import get_module_caps
-
         caps = get_module_caps(role, "student_management")
         self._rbac_can_write = caps["can_write"]
         self._rbac_can_delete = caps["can_delete"]
@@ -161,7 +159,9 @@ class ModernStudentManagement(QMainWindow):
         self.btn_save.setVisible(caps["can_write"])
         self.btn_reset.setVisible(caps["can_write"])
         # إعادة تحميل الجدول لتطبيق إخفاء أزرار الحذف/التعديل
-        self.refresh_student_list()
+        # (لكن فقط بعد التهيئة الأولى — لتجنب التحميل المزدوج)
+        if self._initialized:
+            self.refresh_student_list()
 
     def init_ui(self):
         self.central_widget = QWidget()
@@ -170,57 +170,23 @@ class ModernStudentManagement(QMainWindow):
         self.main_layout.setContentsMargins(20, 20, 20, 20)
         self.main_layout.setSpacing(15)
 
-        # 1. Header (Deep Slate Style)
-        header_frame = QFrame()
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-        header_frame.setStyleSheet(
-            f"""
-            QFrame {{ background-color: {colors.BG_HEADER}; border-radius: 10px; }}
-        """
+        # 1. En-tête unifié
+        header = ModuleHeaderWidget(
+            icon="👨‍🎓",
+            title="GESTION DES ÉLÈVES",
+            subtitle="إدارة ملفات الطلاب والتسجيل",
         )
-        header_frame.setMaximumHeight(80)
+        self.main_layout.addWidget(header)
+        self._stat_total = header.add_stat("👥", "Total Élèves", "—", "#3B82F6")
+        self._stat_actifs = header.add_stat("✅", "Actifs", "—", "#22C55E")
+        self._stat_garcons = header.add_stat("👦", "Garçons", "—", "#8B5CF6")
+        self._stat_filles = header.add_stat("👧", "Filles", "—", "#EC4899")
 
-        shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(15)
-        shadow.setColor(QColor(15, 23, 42, 40))
-        shadow.setOffset(0, 4)
-        header_frame.setGraphicsEffect(shadow)
+        # 2. Statistiques rapides (KPI)
 
-        hl = QHBoxLayout(header_frame)
-        hl.setContentsMargins(20, 15, 20, 15)
-
-        icon_lbl = QLabel("👨‍🎓")
-        icon_lbl.setStyleSheet("font-size: 32px; background: transparent;")
-
-        title_layout = QVBoxLayout()
-        header_lbl = QLabel("GESTION DES ÉLÈVES")
-        header_lbl.setFont(QFont("Segoe UI", 16, QFont.Weight.Bold))
-        header_lbl.setStyleSheet(f"color: {colors.HEADER_TEXT}; background: transparent;")
-
-        sub_lbl = QLabel("إدارة ملفات الطلاب والتسجيل")
-        sub_lbl.setFont(QFont("Cairo", 12))
-        sub_lbl.setStyleSheet(f"color: {colors.TEXT_SECONDARY}; background: transparent;")
-
-        title_layout.addWidget(header_lbl)
-        title_layout.addWidget(sub_lbl)
-
-        hl.addWidget(icon_lbl)
-        hl.addSpacing(15)
-        hl.addLayout(title_layout)
-        hl.addStretch()
-
-        self.main_layout.addWidget(header_frame)
-
-        # 2. Tabs
+        # 3. Onglets
         self.tabs = QTabWidget()
-        self.tabs.setStyleSheet(
-            f"""
-            QTabWidget::pane {{ border: 1px solid {colors.BORDER}; background: {colors.BG_CARD}; border-radius: 12px; margin-top: 15px; }}
-            QTabBar::tab {{ background: {colors.BG_MAIN}; color: {colors.TEXT_SECONDARY}; padding: 12px 30px; margin-right: 6px; border-top-left-radius: 8px; border-top-right-radius: 8px; font-weight: bold; font-family: 'Segoe UI', 'Cairo'; font-size: 13px; }}
-            QTabBar::tab:selected {{ background: {colors.BG_CARD}; color: {colors.PRIMARY}; border-bottom: 2px solid {colors.PRIMARY}; }}
-            QTabBar::tab:hover {{ background: {colors.BORDER}; color: {colors.TEXT_PRIMARY}; }}
-        """
-        )
+        self.tabs.setStyleSheet(get_tabs_style())
 
         self.setup_student_tab()
         self.setup_list_tab()
@@ -229,17 +195,11 @@ class ModernStudentManagement(QMainWindow):
 
     def create_card(self):
         frame = QFrame()
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+        colors = ThemeManager.get_colors()
         frame.setStyleSheet(
-            f"""
-            QFrame {{ background-color: {colors.BG_CARD}; border-radius: 12px; border: 1px solid {colors.BORDER}; }}
-        """
+            f"QFrame {{ background-color: {colors.BG_CARD}; border-radius: 12px;"
+            f" border: 1px solid {colors.BORDER}; }}"
         )
-        shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(20)
-        shadow.setColor(QColor(15, 23, 42, 15))
-        shadow.setOffset(0, 4)
-        frame.setGraphicsEffect(shadow)
         return frame
 
     def styled_input(self, placeholder):
@@ -265,7 +225,7 @@ class ModernStudentManagement(QMainWindow):
         layout = QHBoxLayout(tab)
         layout.setSpacing(12)
         layout.setContentsMargins(20, 20, 20, 20)
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+        colors = ThemeManager.get_colors()
 
         # ===== العمود الأيمن: نموذج الإدخال (Scrollable) =====
         scroll = QScrollArea()
@@ -573,15 +533,24 @@ class ModernStudentManagement(QMainWindow):
         self.txt_search = self.styled_input("🔍 Recherche globale...")
         self.txt_search.textChanged.connect(self.refresh_student_list)
 
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-        btn_print = QPushButton("🖨️ Imprimer Liste")
+        colors = ThemeManager.get_colors()
+        btn_print = QPushButton("🖨️ Imprimer")
+        btn_print.setMinimumHeight(38)
         btn_print.setStyleSheet(
-            f"""
-            QPushButton {{ background-color: {colors.BG_CARD}; color: {colors.TEXT_PRIMARY}; padding: 10px 20px; border-radius: 6px; font-weight: bold; border: 1px solid {colors.BORDER}; }}
-            QPushButton:hover {{ background-color: {colors.BG_MAIN}; }}
-        """
+            f"QPushButton {{ background-color: {colors.BG_CARD}; color: {colors.TEXT_PRIMARY};"
+            f" padding: 8px 16px; border-radius: 6px; font-weight: bold; border: 1px solid {colors.BORDER}; }}"
+            f" QPushButton:hover {{ background-color: {colors.BG_MAIN}; }}"
         )
         btn_print.clicked.connect(self.print_student_list)
+
+        btn_excel = QPushButton("📊 Excel")
+        btn_excel.setMinimumHeight(38)
+        btn_excel.setStyleSheet(
+            f"QPushButton {{ background-color: {colors.SUCCESS}; color: white;"
+            f" padding: 8px 16px; border-radius: 6px; font-weight: bold; border: none; }}"
+            f" QPushButton:hover {{ background-color: {colors.SUCCESS_HOVER}; }}"
+        )
+        btn_excel.clicked.connect(self._export_excel)
 
         flay.addWidget(self.combo_filter_cycle)
         flay.addWidget(self.combo_filter_class)
@@ -589,8 +558,9 @@ class ModernStudentManagement(QMainWindow):
         flay.addWidget(self.date_filter_from)
         flay.addWidget(QLabel("Au"))
         flay.addWidget(self.date_filter_to)
-        flay.addWidget(self.txt_search)
+        flay.addWidget(self.txt_search, 1)
         flay.addWidget(btn_print)
+        flay.addWidget(btn_excel)
 
         layout.addWidget(filter_frame)
 
@@ -638,16 +608,7 @@ class ModernStudentManagement(QMainWindow):
         table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         table.setEditTriggers(QTableWidget.EditTrigger.NoEditTriggers)
         table.verticalHeader().setVisible(False)
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
-        table.setStyleSheet(
-            f"""
-            QTableWidget {{ background-color: {colors.BG_CARD}; border: 1px solid {colors.BORDER}; border-radius: 8px; gridline-color: {colors.BORDER}; font-size: 13px; color: {colors.TEXT_PRIMARY}; }}
-            QTableWidget::item {{ padding: 5px; border-bottom: 1px solid {colors.BG_MAIN}; }}
-            QTableWidget::item:alternate {{ background-color: {colors.BG_MAIN}; }}
-            QTableWidget::item:selected {{ background-color: {colors.PRIMARY}; color: white; }}
-            QHeaderView::section {{ background-color: {colors.BG_HEADER}; color: {colors.HEADER_TEXT}; padding: 8px; border: none; font-weight: bold; font-size: 13px; }}
-        """
-        )
+        table.setStyleSheet(get_table_style())
 
     # ===== Logic Methods =====
 
@@ -681,7 +642,7 @@ class ModernStudentManagement(QMainWindow):
         if hasattr(self, "txt_class_number"):
             self.txt_class_number.clear()
         self.btn_save.setText("💾 Enregistrer / حفظ")
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+        colors = ThemeManager.get_colors()
         self.btn_save.setStyleSheet(
             f"""
             QPushButton {{ background-color: {colors.SUCCESS}; color: white; border-radius: 8px; font-weight: bold; border: none; }}
@@ -990,7 +951,7 @@ class ModernStudentManagement(QMainWindow):
                     self.lbl_photo.setText("No Photo")
 
                 self.btn_save.setText("✏️ Modifier / تعديل")
-                colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+                colors = ThemeManager.get_colors()
                 self.btn_save.setStyleSheet(
                     f"""
                     QPushButton {{ background-color: {colors.WARNING}; color: white; border-radius: 8px; font-weight: bold; border: none; }}
@@ -1043,6 +1004,7 @@ class ModernStudentManagement(QMainWindow):
             self.pagination_list.reset()
         self.populate_table(self.table_students)
         self.populate_table(self.table_students_reg)
+        self._load_kpi_stats()
 
     def populate_table(self, table):
         table.setRowCount(0)
@@ -1128,17 +1090,16 @@ class ModernStudentManagement(QMainWindow):
                 layout.setContentsMargins(2, 2, 2, 2)
                 layout.setSpacing(5)
 
+                _c = ThemeManager.get_colors()
                 btn_edit = QPushButton("✎")
                 btn_edit.setFixedSize(28, 28)
-                btn_edit.setStyleSheet(
-                    f"background: {Colors().PRIMARY}; color: white; border-radius: 4px; border: none;"
-                )
+                btn_edit.setStyleSheet(f"background: {_c.PRIMARY}; color: white; border-radius: 4px; border: none;")
                 btn_edit.clicked.connect(lambda ch, sid=r[0]: self.load_student_for_edit(sid))
                 btn_edit.setVisible(self._rbac_can_write)
 
                 btn_del = QPushButton("✕")
                 btn_del.setFixedSize(28, 28)
-                btn_del.setStyleSheet(f"background: {Colors().DANGER}; color: white; border-radius: 4px; border: none;")
+                btn_del.setStyleSheet(f"background: {_c.DANGER}; color: white; border-radius: 4px; border: none;")
                 btn_del.clicked.connect(lambda ch, sid=r[0]: self.delete_student(sid))
                 btn_del.setVisible(self._rbac_can_delete)
 
@@ -1164,9 +1125,10 @@ class ModernStudentManagement(QMainWindow):
                 container = QWidget()
                 layout = QHBoxLayout(container)
                 layout.setContentsMargins(2, 2, 2, 2)
+                _c2 = ThemeManager.get_colors()
                 btn_del = QPushButton("✕")
                 btn_del.setFixedSize(24, 24)
-                btn_del.setStyleSheet(f"background: {Colors().DANGER}; color: white; border-radius: 4px; border: none;")
+                btn_del.setStyleSheet(f"background: {_c2.DANGER}; color: white; border-radius: 4px; border: none;")
                 btn_del.clicked.connect(lambda ch, sid=r[0]: self.delete_student(sid))
                 btn_del.setVisible(self._rbac_can_delete)
                 layout.addWidget(btn_del)
@@ -1212,6 +1174,96 @@ class ModernStudentManagement(QMainWindow):
         wiz = ImportWizard(parent=self, actor=actor)
         wiz.exec()
         self.refresh_student_list()
+
+    # ───────────────────────────── KPI ─────────────────────────────
+
+    def _load_kpi_stats(self):
+        """Charge les compteurs rapides pour les cartes KPI."""
+        try:
+            db = DatabaseManager()
+            with db.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute("SELECT COUNT(*) FROM Students")
+                total = cursor.fetchone()[0]
+                cursor.execute("SELECT COUNT(*) FROM Students WHERE status = 'Active'")
+                actifs = cursor.fetchone()[0]
+                cursor.execute("SELECT COUNT(*) FROM Students WHERE gender = 'M'")
+                garcons = cursor.fetchone()[0]
+                cursor.execute("SELECT COUNT(*) FROM Students WHERE gender = 'F'")
+                filles = cursor.fetchone()[0]
+            self._stat_total.set_value(str(total))
+            self._stat_actifs.set_value(str(actifs))
+            self._stat_garcons.set_value(str(garcons))
+            self._stat_filles.set_value(str(filles))
+        except Exception as e:
+            AppLogger.error("StudentManagement", f"KPI load error: {e}")
+
+    # ─────────────────────────── EXPORT EXCEL ───────────────────────────
+
+    def _export_excel(self):
+        """Exporte la liste filtrée vers un fichier Excel (.xlsx)."""
+        try:
+            import openpyxl
+            from openpyxl.styles import Alignment, Font, PatternFill
+        except ImportError:
+            QMessageBox.critical(self, "Erreur", "openpyxl n'est pas installé.")
+            return
+
+        rows = self._fetch_full_list_rows()
+        if not rows:
+            QMessageBox.information(self, "Export", "Aucune donnée à exporter.")
+            return
+
+        file_path, _ = QFileDialog.getSaveFileName(
+            self, "Enregistrer Excel", f"Eleves_{datetime.now().strftime('%Y%m%d')}.xlsx", "Excel (*.xlsx)"
+        )
+        if not file_path:
+            return
+
+        try:
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.title = "Élèves"
+
+            headers = [
+                "ID",
+                "Prénom (FR)",
+                "Nom (FR)",
+                "الاسم (AR)",
+                "اللقب (AR)",
+                "Naissance",
+                "Lieu",
+                "Sexe",
+                "Adresse",
+                "Classe",
+                "N° Cls",
+                "Code Accès",
+                "Tuteur",
+                "Tél",
+                "Email",
+                "Date Inscr.",
+                "Statut",
+            ]
+            header_fill = PatternFill("solid", fgColor="1E293B")
+            header_font = Font(bold=True, color="F8FAFC")
+            for col, h in enumerate(headers, 1):
+                cell = ws.cell(row=1, column=col, value=h)
+                cell.fill = header_fill
+                cell.font = header_font
+                cell.alignment = Alignment(horizontal="center")
+
+            for row_data in rows:
+                ws.append(list(row_data))
+
+            # Ajustement automatique de la largeur des colonnes
+            for col in ws.columns:
+                max_len = max((len(str(c.value or "")) for c in col), default=8)
+                ws.column_dimensions[col[0].column_letter].width = min(max_len + 4, 40)
+
+            wb.save(file_path)
+            ToastNotification.show_toast(self, f"Excel exporté : {file_path}", kind="success")
+        except Exception as e:
+            QMessageBox.critical(self, "Erreur Export", str(e))
 
     def print_filtered_list(self):
         rows, headers = self._fetch_reg_list_rows()

@@ -11,7 +11,6 @@ from PyQt6.QtGui import QColor, QFont, QIcon, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QApplication,
     QFrame,
-    QGraphicsDropShadowEffect,
     QGridLayout,
     QHBoxLayout,
     QLabel,
@@ -38,9 +37,7 @@ from repositories.finance_repo import FinanceRepository
 from repositories.grades_repo import GradesRepository
 from repositories.staff_repo import StaffRepository
 from repositories.student_repo import StudentRepository
-from ui_styles import Colors, DarkColors, ThemeManager
-
-THEME_AVAILABLE = True
+from ui_styles import Colors, DarkColors, KpiCard, ThemeManager, ToastNotification
 
 
 def _resolve_app_icon_path():
@@ -104,8 +101,6 @@ class MainWindow(QMainWindow):
         self.setMinimumSize(1280, 800)
         self.showMaximized()
 
-        self.config = ConfigManager()
-
         # تطبيق الثيم المحفوظ
         if self.config.dark_mode_enabled:
             ThemeManager.set_theme("dark")
@@ -118,40 +113,11 @@ class MainWindow(QMainWindow):
             self.backup_system = AutoBackupSystem()
             self.backup_system.start_auto_backup(interval_hours=self.config.backup_interval_hours)
 
-        # حاويات النوافذ الفرعية والأزرار
+        # حاويات النوافذ الفرعية والأزرار (الصلاحيات تُحسب في setup_modules_and_permissions)
         self.module_widgets = {}
         self.module_factories = {}
         self.nav_buttons = {}
-        role_permissions = {
-            "Admin": ["all"],
-            "Comptable": [
-                "finance_dashboard",
-                "fees_setup",
-                "student_dues",
-                "finance_payments",
-                "expenses_payroll",
-                "inventory",
-            ],
-            "Secretaire": [
-                "student_management",
-                "staff_management",
-                "staff_attendance",
-                "staff_leaves",
-                "student_attendance",
-                "admin_docs",
-                "communication",
-            ],
-            "Pédagogique": [
-                "academic_settings",
-                "student_management",
-                "student_attendance",
-                "student_discipline",
-                "student_grades",
-                "bulletin_generation",
-            ],
-            "Prof": ["student_attendance", "student_discipline", "student_grades"],
-        }
-        self.allowed_modules = role_permissions.get(self.user_role, [])
+        self.allowed_modules = []  # يُملأ في setup_modules_and_permissions
 
         self.init_ui()
         self.load_dashboard_data()
@@ -218,33 +184,47 @@ class MainWindow(QMainWindow):
 
     def setup_sidebar(self):
         colors = ThemeManager.get_colors()
+        self._sidebar_expanded = True
+        self._cat_labels = []  # category header labels
+        self._btn_icon_map = {}  # mod_id → icon str
+
         self.sidebar = QFrame()
         self.sidebar.setFixedWidth(260)
         self.sidebar.setStyleSheet(
             f"""
-            QFrame {{ background-color: {colors.BG_HEADER}; border-right: 1px solid {colors.BORDER}; }}
+            QFrame {{ background-color: {colors.BG_HEADER}; border-right: 2px solid {colors.BORDER}; }}
         """
         )
-
-        shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(15)
-        shadow.setColor(QColor(0, 0, 0, 50))
-        shadow.setOffset(3, 0)
-        self.sidebar.setGraphicsEffect(shadow)
 
         self.sidebar_layout = QVBoxLayout(self.sidebar)
         self.sidebar_layout.setContentsMargins(10, 20, 10, 20)
         self.sidebar_layout.setSpacing(5)
 
-        # شعار البرنامج
+        # شعار البرنامج + زر طي الشريط الجانبي
+        title_row = QHBoxLayout()
+        title_row.setContentsMargins(0, 0, 0, 0)
+        title_row.setSpacing(4)
         self.app_title = QLabel("🏫 El Malick Gest")
-        self.app_title.setFont(QFont("Segoe UI", 18, QFont.Weight.Bold))
-        self.app_title.setStyleSheet(f"color: {colors.HEADER_TEXT}; padding: 10px; margin-bottom: 10px;")
+        self.app_title.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
+        self.app_title.setStyleSheet(f"color: {colors.HEADER_TEXT}; padding: 6px 4px;")
         self.app_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.sidebar_layout.addWidget(self.app_title)
+        self.btn_toggle_sidebar = QPushButton("❮")
+        self.btn_toggle_sidebar.setFixedSize(28, 28)
+        self.btn_toggle_sidebar.setToolTip("Réduire la barre latérale")
+        self.btn_toggle_sidebar.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_toggle_sidebar.setStyleSheet(
+            f"QPushButton {{ background:transparent; color:{colors.HEADER_TEXT}; border:1px solid {colors.BORDER}; "
+            "border-radius:4px; font-size:14px; font-weight:bold; }} "
+            f"QPushButton:hover {{ background:{colors.PRIMARY}; border-color:{colors.PRIMARY}; }}"
+        )
+        self.btn_toggle_sidebar.clicked.connect(self._toggle_sidebar)
+        title_row.addWidget(self.app_title, 1)
+        title_row.addWidget(self.btn_toggle_sidebar)
+        self.sidebar_layout.addLayout(title_row)
 
         # زر الرئيسية (Dashboard)
         self.btn_dashboard = QPushButton("🏠 Tableau de Bord / الرئيسية")
+        self.btn_dashboard.setToolTip("Tableau de Bord / الرئيسية")
         self.style_nav_button(self.btn_dashboard)
         self.btn_dashboard.setChecked(True)
         self.btn_dashboard.clicked.connect(lambda: self.switch_module(self.dashboard_idx, self.btn_dashboard))
@@ -292,15 +272,9 @@ class MainWindow(QMainWindow):
         self.topbar.setFixedHeight(60)
         self.topbar.setStyleSheet(
             f"""
-            QFrame {{ background-color: {colors.BG_CARD}; border-bottom: 1px solid {colors.BORDER}; }}
+            QFrame {{ background-color: {colors.BG_CARD}; border-bottom: 2px solid {colors.BORDER}; }}
         """
         )
-
-        shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(10)
-        shadow.setColor(QColor(0, 0, 0, 20))
-        shadow.setOffset(0, 2)
-        self.topbar.setGraphicsEffect(shadow)
 
         tlay = QHBoxLayout(self.topbar)
         tlay.setContentsMargins(20, 0, 20, 0)
@@ -336,9 +310,9 @@ class MainWindow(QMainWindow):
                 border-radius: 20px;
                 font-size: 20px;
                 border: 1px solid {colors.BORDER};
-                font-family: "Segoe UI Emoji", "Apple Color Emoji", sans-serif;
+                font-family: "Segoe UI Emoji";
                 padding: 0px;
-                padding-bottom: 4px; /* لرفع الإيموجي قليلاً للوسط */
+                padding-bottom: 4px;
             }}
             QPushButton:hover {{ background-color: {colors.BORDER}; }}
         """
@@ -441,12 +415,12 @@ class MainWindow(QMainWindow):
         kpi_layout = QHBoxLayout()
         kpi_layout.setSpacing(20)
 
-        colors = ThemeManager.get_colors() if THEME_AVAILABLE else Colors()
+        colors = ThemeManager.get_colors()
 
-        self.kpi_students = self.create_kpi_card("Total Élèves", "0", "👨‍🎓", colors.PRIMARY)
-        self.kpi_staff = self.create_kpi_card("Total Personnel", "0", "👥", colors.SECONDARY)
-        self.kpi_classes = self.create_kpi_card("Classes Actives", "0", "🏫", colors.WARNING)
-        self.kpi_revenue = self.create_kpi_card("Revenu (Année)", "0 FCFA", "💰", colors.SUCCESS)
+        self.kpi_students = KpiCard("👨‍🎓", "Total Élèves", "0", colors.PRIMARY, theme_mode="default")
+        self.kpi_staff = KpiCard("👥", "Total Personnel", "0", colors.SECONDARY, theme_mode="default")
+        self.kpi_classes = KpiCard("🏫", "Classes Actives", "0", colors.WARNING, theme_mode="default")
+        self.kpi_revenue = KpiCard("💰", "Revenu (Année)", "0 FCFA", colors.SUCCESS, theme_mode="default")
 
         kpi_layout.addWidget(self.kpi_students)
         kpi_layout.addWidget(self.kpi_staff)
@@ -548,9 +522,6 @@ class MainWindow(QMainWindow):
         self.alerts_refresh_timer = QTimer(self)
         self.alerts_refresh_timer.timeout.connect(self.load_alerts_data)
         self.alerts_refresh_timer.start(5 * 60 * 1000)
-
-        # تحديث الأزرار السريعة بناءً على الصلاحيات
-        self.apply_rbac_to_quick_actions()
 
         return widget
 
@@ -667,41 +638,6 @@ class MainWindow(QMainWindow):
         except Exception as e:
             AppLogger.error("MainDashboard", f"Alerts load error: {e}")
 
-    def create_kpi_card(self, title, value, icon, color):
-        card = QFrame()
-        colors = ThemeManager.get_colors()
-        card.setStyleSheet(
-            f"""
-            QFrame {{
-                background-color: {colors.BG_CARD}; border-radius: 12px;
-                border: 1px solid {colors.BORDER}; border-left: 5px solid {color};
-            }}
-        """
-        )
-        shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(15)
-        shadow.setColor(QColor(0, 0, 0, 15))
-        shadow.setOffset(0, 4)
-        card.setGraphicsEffect(shadow)
-
-        lay = QHBoxLayout(card)
-        vlay = QVBoxLayout()
-        lbl_title = QLabel(title)
-        lbl_title.setStyleSheet(f"color: {colors.TEXT_SECONDARY}; font-weight: bold; font-size: 12px; border:none;")
-        lbl_val = QLabel(value)
-        lbl_val.setObjectName("val")
-        lbl_val.setStyleSheet(f"color: {colors.TEXT_PRIMARY}; font-weight: 800; font-size: 24px; border:none;")
-        vlay.addWidget(lbl_title)
-        vlay.addWidget(lbl_val)
-
-        lbl_icon = QLabel(icon)
-        lbl_icon.setStyleSheet("font-size: 28px; background: transparent; border:none;")
-
-        lay.addLayout(vlay)
-        lay.addStretch()
-        lay.addWidget(lbl_icon)
-        return card
-
     def create_qa_button(self, text, icon, color):
         btn = QPushButton(f"{icon} {text}")
         btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -729,14 +665,14 @@ class MainWindow(QMainWindow):
                 active_year = fin_repo.get_active_year_id()
 
                 st_count = stu_repo.count_active_students(active_year)
-                self.kpi_students.findChild(QLabel, "val").setText(str(st_count))
+                self.kpi_students.set_value(str(st_count))
 
-                self.kpi_staff.findChild(QLabel, "val").setText(str(sta_repo.get_active_staff_count()))
+                self.kpi_staff.set_value(str(sta_repo.get_active_staff_count()))
 
-                self.kpi_classes.findChild(QLabel, "val").setText(str(stu_repo.count_classes()))
+                self.kpi_classes.set_value(str(stu_repo.count_classes()))
 
                 rev = fin_repo.get_total_revenue(active_year) or 0
-                self.kpi_revenue.findChild(QLabel, "val").setText(f"{rev:,.0f}")
+                self.kpi_revenue.set_value(f"{rev:,.0f}")
 
                 data = stu_repo.get_students_by_cycle(active_year)
 
@@ -855,11 +791,13 @@ class MainWindow(QMainWindow):
                         f"color: {colors.TEXT_SECONDARY}; font-size: 11px; font-weight: bold; margin-top: 10px; margin-left: 5px;"
                     )
                     self.nav_layout.addWidget(lbl_cat)
+                    self._cat_labels.append(lbl_cat)
                     current_category = category
 
                 # Navigation Button
                 btn = QPushButton(f" {icon}   {title}")
                 self.style_nav_button(btn)
+                btn.setToolTip(title)
 
                 self.module_factories[mod_id] = window_class
                 self.module_widgets[mod_id] = None
@@ -867,6 +805,10 @@ class MainWindow(QMainWindow):
 
                 self.nav_layout.addWidget(btn)
                 self.nav_buttons[mod_id] = btn
+                self._btn_icon_map[mod_id] = icon
+
+        # تطبيق RBAC على الأزرار السريعة بعد تعبئة allowed_modules
+        self.apply_rbac_to_quick_actions()
 
     def open_module(self, mod_id, active_button, title):
         widget_idx = self.module_widgets.get(mod_id)
@@ -946,7 +888,47 @@ class MainWindow(QMainWindow):
         if mod_id in self.nav_buttons:
             self.nav_buttons[mod_id].click()
 
+    def _toggle_sidebar(self):
+        """Toggle sidebar between expanded (260px) and compact icon-only (64px) modes."""
+        self._sidebar_expanded = not self._sidebar_expanded
+        if self._sidebar_expanded:
+            self.sidebar.setFixedWidth(260)
+            self.btn_toggle_sidebar.setText("❮")
+            self.btn_toggle_sidebar.setToolTip("Réduire la barre latérale")
+            self.app_title.setText("🏫 El Malick Gest")
+            self.btn_dashboard.setText("🏠 Tableau de Bord / الرئيسية")
+            for mod_id, btn in self.nav_buttons.items():
+                icon = self._btn_icon_map.get(mod_id, "")
+                # Restore full label from button's tooltip
+                btn.setText(f" {icon}   {btn.toolTip()}")
+                btn.setStyleSheet("")
+                self.style_nav_button(btn)
+            for lbl in self._cat_labels:
+                lbl.setVisible(True)
+            if hasattr(self, 'btn_logout'):
+                self.btn_logout.setText("🚪 Déconnexion / خروج")
+        else:
+            self.sidebar.setFixedWidth(64)
+            self.btn_toggle_sidebar.setText("❯")
+            self.btn_toggle_sidebar.setToolTip("Agrandir la barre latérale")
+            self.app_title.setText("🏫")
+            self.btn_dashboard.setText("🏠")
+            for mod_id, btn in self.nav_buttons.items():
+                icon = self._btn_icon_map.get(mod_id, "•")
+                btn.setText(icon)
+                btn.setStyleSheet(
+                    "QPushButton { text-align:center; padding:10px 0; font-size:20px; "
+                    "border:none; border-radius:6px; background:transparent; color:#94A3B8; } "
+                    "QPushButton:hover { background:#334155; color:white; } "
+                    "QPushButton:checked { background:#3B82F6; color:white; }"
+                )
+            for lbl in self._cat_labels:
+                lbl.setVisible(False)
+            if hasattr(self, 'btn_logout'):
+                self.btn_logout.setText("🚪")
+
     def switch_module(self, index, active_button, title="Tableau de Bord / اللوحة الرئيسية"):
+        """التبديل الفوري بين الوحدات — بدون QGraphicsOpacityEffect لتجنّب تعارض الـ painters."""
         self.content_area.setCurrentIndex(index)
         self.lbl_module_title.setText(title)
 

@@ -1,4 +1,4 @@
-"""
+﻿"""
 analytics_dashboard.py — Phase 6.1+ (consolidé avec advanced_reports)
 لوحة تحليلات وتقارير متكاملة.
 
@@ -17,7 +17,10 @@ import sys
 from datetime import datetime
 
 import matplotlib
+import matplotlib.pyplot as plt  # noqa: E402
 from fpdf import FPDF
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas  # noqa: E402
+from matplotlib.figure import Figure  # noqa: E402
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
@@ -41,11 +44,6 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-matplotlib.use("Qt5Agg")
-import matplotlib.pyplot as plt  # noqa: E402
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas  # noqa: E402
-from matplotlib.figure import Figure  # noqa: E402
-
 from app_logger import AppLogger  # noqa: E402
 from database_setup import DatabaseManager  # noqa: E402
 from pdf_report_style import (  # noqa: E402
@@ -59,18 +57,20 @@ from print_export_service import get_report_output_mode, output_pdf  # noqa: E40
 from repositories.analytics_repo import AnalyticsRepository  # noqa: E402
 from repositories.finance_repo import FinanceRepository  # noqa: E402
 from services.grade_service import GradeService  # noqa: E402
-from ui_styles import Colors, ThemeManager  # noqa: E402
+from ui_styles import Colors, KpiCard, ModuleHeaderWidget, ThemeManager, get_tabs_style  # noqa: E402
 
 COMPREHENSIVE_PDF_MODE = get_report_output_mode("advanced_comprehensive_pdf_mode", "save")
 
-# ── Dark palette (fixed throughout the window) ─────────────────────────────
-_BG = "#161b2e"
-_CARD = "#1e2433"
-_CARD2 = "#252b3b"
-_TEXT = "#e0e0e0"
-_MUTED = "#9ca3af"
-_BORDER = "#374151"
-_ACCENT = "#4fc3f7"
+# ── Chart palette — dark theme for matplotlib (independent of UI theme) ────
+# These constants are ONLY used in matplotlib drawing code (chart backgrounds/axes).
+# All Qt widget styling uses ThemeManager instead.
+_CHART_BG = "#161b2e"
+_CHART_CARD = "#1e2433"
+_CHART_CARD2 = "#252b3b"
+_CHART_TEXT = "#e0e0e0"
+_CHART_MUTED = "#9ca3af"
+_CHART_BORDER = "#374151"
+_CHART_ACCENT = "#4fc3f7"
 
 
 def _drop_shadow(widget) -> None:
@@ -423,16 +423,30 @@ class AnalyticsWorker(QThread):
 
 
 # ──────────────────────────────────────────────────────────────────────────
-# Chart widgets — all use fixed dark palette
+# Chart widgets — theme-aware palette
 # ──────────────────────────────────────────────────────────────────────────
-def _dark_figure(figsize=(6, 4)) -> Figure:
-    return Figure(figsize=figsize, tight_layout=True, facecolor=_CARD)
+def _chart_colors():
+    c = ThemeManager.get_colors()
+    return {
+        "figure": c.BG_CARD,
+        "panel": c.BG_CARD,
+        "panel_alt": c.BG_MAIN,
+        "text": c.TEXT_PRIMARY,
+        "muted": c.TEXT_SECONDARY,
+        "border": c.BORDER,
+        "accent": c.PRIMARY,
+        "danger": c.DANGER,
+    }
+
+
+def _theme_figure(figsize=(6, 4)) -> Figure:
+    return Figure(figsize=figsize, tight_layout=True, facecolor=_chart_colors()["figure"])
 
 
 class GradesBarChart(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.fig = _dark_figure((7, 4))
+        self.fig = _theme_figure((7, 4))
         self.ax = self.fig.add_subplot(111)
         self.canvas = FigureCanvas(self.fig)
         lay = QVBoxLayout(self)
@@ -441,15 +455,16 @@ class GradesBarChart(QWidget):
         self._draw_empty()
 
     def _draw_empty(self) -> None:
+        c = _chart_colors()
         self.ax.clear()
-        self.ax.set_facecolor(_CARD)
+        self.ax.set_facecolor(c["panel"])
         self.ax.text(
             0.5,
             0.5,
             "En attente de données…",
             ha="center",
             va="center",
-            color=_MUTED,
+            color=c["muted"],
             fontsize=12,
             transform=self.ax.transAxes,
         )
@@ -457,27 +472,28 @@ class GradesBarChart(QWidget):
         self.canvas.draw()
 
     def update_data(self, names: list, averages: list, coefficients: list) -> None:
+        c = _chart_colors()
         self.ax.clear()
         if not names:
             self._draw_empty()
             return
         colors = plt.cm.RdYlGn([a / 20 for a in averages])  # type: ignore[attr-defined]
-        bars = self.ax.barh(names, averages, color=colors, edgecolor=_BORDER)
+        bars = self.ax.barh(names, averages, color=colors, edgecolor=c["border"])
         self.ax.set_xlim(0, 20)
-        self.ax.set_xlabel("Moyenne /20", color=_MUTED)
-        self.ax.set_title("Moyennes par Matière", color=_TEXT, fontsize=13, pad=10)
-        self.ax.tick_params(colors=_MUTED)
-        self.ax.set_facecolor(_CARD2)
-        self.fig.set_facecolor(_CARD)
+        self.ax.set_xlabel("Moyenne /20", color=c["muted"])
+        self.ax.set_title("Moyennes par Matière", color=c["text"], fontsize=13, pad=10)
+        self.ax.tick_params(colors=c["muted"])
+        self.ax.set_facecolor(c["panel"])
+        self.fig.set_facecolor(c["figure"])
         for spine in self.ax.spines.values():
-            spine.set_edgecolor(_BORDER)
+            spine.set_edgecolor(c["border"])
         for bar, avg in zip(bars, averages):
             self.ax.text(
                 bar.get_width() + 0.2,
                 bar.get_y() + bar.get_height() / 2,
                 f"{avg:.1f}",
                 va="center",
-                color=_TEXT,
+                color=c["text"],
                 fontsize=9,
             )
         self.canvas.draw()
@@ -486,7 +502,7 @@ class GradesBarChart(QWidget):
 class AttendanceLineChart(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.fig = _dark_figure((7, 3.5))
+        self.fig = _theme_figure((7, 3.5))
         self.ax = self.fig.add_subplot(111)
         self.canvas = FigureCanvas(self.fig)
         lay = QVBoxLayout(self)
@@ -495,15 +511,24 @@ class AttendanceLineChart(QWidget):
         self._draw_empty()
 
     def _draw_empty(self) -> None:
+        c = _chart_colors()
         self.ax.clear()
-        self.ax.set_facecolor(_CARD)
+        self.ax.set_facecolor(c["panel"])
         self.ax.text(
-            0.5, 0.5, "Chargement…", ha="center", va="center", color=_MUTED, fontsize=12, transform=self.ax.transAxes
+            0.5,
+            0.5,
+            "Chargement…",
+            ha="center",
+            va="center",
+            color=c["muted"],
+            fontsize=12,
+            transform=self.ax.transAxes,
         )
         self.ax.axis("off")
         self.canvas.draw()
 
     def update_data(self, monthly: dict) -> None:
+        c = _chart_colors()
         self.ax.clear()
         if not monthly:
             self.ax.text(
@@ -512,7 +537,7 @@ class AttendanceLineChart(QWidget):
                 "Aucune donnée de présence",
                 ha="center",
                 va="center",
-                color=_MUTED,
+                color=c["muted"],
                 fontsize=11,
                 transform=self.ax.transAxes,
             )
@@ -522,25 +547,25 @@ class AttendanceLineChart(QWidget):
         months = list(monthly.keys())
         rates = list(monthly.values())
         labels = [m[5:] for m in months]
-        self.ax.plot(labels, rates, marker="o", linewidth=2, color=_ACCENT, markersize=6)
-        self.ax.fill_between(range(len(rates)), rates, alpha=0.15, color=_ACCENT)
-        self.ax.axhline(80, linestyle="--", color="#ef5350", linewidth=1, label="Seuil 80%")
+        self.ax.plot(labels, rates, marker="o", linewidth=2, color=c["accent"], markersize=6)
+        self.ax.fill_between(range(len(rates)), rates, alpha=0.15, color=c["accent"])
+        self.ax.axhline(80, linestyle="--", color=c["danger"], linewidth=1, label="Seuil 80%")
         self.ax.set_ylim(0, 105)
-        self.ax.set_ylabel("Taux de présence (%)", color=_MUTED)
-        self.ax.set_title("Évolution de la Présence Mensuelle", color=_TEXT, fontsize=13, pad=10)
-        self.ax.tick_params(colors=_MUTED)
-        self.ax.set_facecolor(_CARD2)
-        self.fig.set_facecolor(_CARD)
+        self.ax.set_ylabel("Taux de présence (%)", color=c["muted"])
+        self.ax.set_title("Évolution de la Présence Mensuelle", color=c["text"], fontsize=13, pad=10)
+        self.ax.tick_params(colors=c["muted"])
+        self.ax.set_facecolor(c["panel"])
+        self.fig.set_facecolor(c["figure"])
         for spine in self.ax.spines.values():
-            spine.set_edgecolor(_BORDER)
-        self.ax.legend(facecolor=_CARD, labelcolor=_MUTED)
+            spine.set_edgecolor(c["border"])
+        self.ax.legend(facecolor=c["panel"], labelcolor=c["muted"])
         self.canvas.draw()
 
 
 class FinancePieChart(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.fig = _dark_figure((5, 4))
+        self.fig = _theme_figure((5, 4))
         self.ax = self.fig.add_subplot(111)
         self.canvas = FigureCanvas(self.fig)
         lay = QVBoxLayout(self)
@@ -549,15 +574,24 @@ class FinancePieChart(QWidget):
         self._draw_empty()
 
     def _draw_empty(self) -> None:
+        c = _chart_colors()
         self.ax.clear()
-        self.ax.set_facecolor(_CARD)
+        self.ax.set_facecolor(c["panel"])
         self.ax.text(
-            0.5, 0.5, "Chargement…", ha="center", va="center", color=_MUTED, fontsize=12, transform=self.ax.transAxes
+            0.5,
+            0.5,
+            "Chargement…",
+            ha="center",
+            va="center",
+            color=c["muted"],
+            fontsize=12,
+            transform=self.ax.transAxes,
         )
         self.ax.axis("off")
         self.canvas.draw()
 
     def update_data(self, paid: float, total_due: float) -> None:
+        c = _chart_colors()
         self.ax.clear()
         remaining = max(0.0, total_due - paid)
         if total_due <= 0:
@@ -567,7 +601,7 @@ class FinancePieChart(QWidget):
                 "Aucune donnée financière",
                 ha="center",
                 va="center",
-                color=_MUTED,
+                color=c["muted"],
                 fontsize=11,
                 transform=self.ax.transAxes,
             )
@@ -581,45 +615,17 @@ class FinancePieChart(QWidget):
             colors=["#66bb6a", "#ef5350"],
             explode=(0.05, 0),
             startangle=90,
-            textprops={"color": "white", "fontsize": 9},
+            textprops={"color": c["text"], "fontsize": 9},
         )
         for at in autotexts:
             at.set_fontsize(10)
-            at.set_color("white")
-        self.ax.set_title("Recouvrement des Frais", color=_TEXT, fontsize=13, pad=10)
-        self.fig.set_facecolor(_CARD)
+            at.set_color(c["text"])
+        self.ax.set_title("Recouvrement des Frais", color=c["text"], fontsize=13, pad=10)
+        self.fig.set_facecolor(c["figure"])
         self.canvas.draw()
 
 
-# ──────────────────────────────────────────────────────────────────────────
-# KPI Card widget
-# ──────────────────────────────────────────────────────────────────────────
-class KpiCard(QFrame):
-    def __init__(self, title: str, value: str = "—", icon: str = "📊", color: str = _ACCENT, parent=None):
-        super().__init__(parent)
-        self.setFrameShape(QFrame.Shape.StyledPanel)
-        self.setMinimumHeight(82)
-        self.setStyleSheet(
-            f"QFrame {{ background:{_CARD}; border:1px solid #2d3748; "
-            f"border-radius:10px; border-left:4px solid {color}; }}"
-        )
-        lay = QVBoxLayout(self)
-        lay.setContentsMargins(14, 10, 14, 10)
-        top = QHBoxLayout()
-        ico = QLabel(icon)
-        ico.setFont(QFont("Segoe UI Emoji", 20))
-        lbl = QLabel(title)
-        lbl.setStyleSheet(f"color:{_MUTED}; font-size:12px;")
-        top.addWidget(ico)
-        top.addWidget(lbl)
-        top.addStretch()
-        self.lbl_value = QLabel(value)
-        self.lbl_value.setStyleSheet(f"color:{color}; font-size:22px; font-weight:bold;")
-        lay.addLayout(top)
-        lay.addWidget(self.lbl_value)
-
-    def set_value(self, value: str) -> None:
-        self.lbl_value.setText(value)
+# KpiCard imported from ui_styles — see shared component at top of file
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -627,26 +633,10 @@ class KpiCard(QFrame):
 # ──────────────────────────────────────────────────────────────────────────
 class AnalyticsDashboardWindow(QMainWindow):
 
-    _COMBO_STYLE = (
-        f"QComboBox {{ background:{_CARD2}; color:{_TEXT}; border:1px solid {_BORDER}; "
-        "border-radius:4px; padding:4px 8px; min-width:120px; } "
-        "QComboBox::drop-down { border:none; } "
-        f"QComboBox QAbstractItemView {{ background:{_CARD2}; color:{_TEXT}; }}"
-    )
-    _BTN_PRIMARY = (
-        "QPushButton { background:#2962ff; color:white; border-radius:6px; "
-        "padding:6px 14px; font-weight:bold; border:none; } "
-        "QPushButton:hover { background:#1565c0; }"
-    )
-    _BTN_SUCCESS = (
-        "QPushButton { background:#00897b; color:white; border-radius:6px; "
-        "padding:6px 14px; font-weight:bold; border:none; } "
-        "QPushButton:hover { background:#00695c; }"
-    )
-
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Analytics & Rapports — Tableau de Bord")
+        ThemeManager.apply_theme(self)
         self._year_id: int | None = None
         self._class_id: int | None = None
         self._worker: AnalyticsWorker | None = None
@@ -661,69 +651,66 @@ class AnalyticsDashboardWindow(QMainWindow):
         root = QVBoxLayout(central)
         root.setContentsMargins(16, 12, 16, 12)
         root.setSpacing(10)
-        central.setStyleSheet(f"background:{_BG}; color:{_TEXT};")
+        # ThemeManager applies via apply_theme() in __init__ — no hardcoded background needed
         root.addWidget(self._build_header())
         root.addLayout(self._build_kpi_row())
         root.addWidget(self._build_tabs())
 
-    def _build_header(self) -> QFrame:
-        hdr = QFrame()
-        hdr.setFixedHeight(70)
-        hdr.setStyleSheet(f"QFrame {{ background:{_CARD}; border-radius:10px; }}")
-        _drop_shadow(hdr)
-        hl = QHBoxLayout(hdr)
-        hl.setContentsMargins(16, 8, 16, 8)
-        t_box = QVBoxLayout()
-        t1 = QLabel("📊 Analytics & Rapports")
-        t1.setFont(QFont("Cairo", 15, QFont.Weight.Bold))
-        t1.setStyleSheet(f"color:{_ACCENT};")
-        t2 = QLabel("Statistiques · Graphiques · Export Excel & PDF")
-        t2.setStyleSheet(f"color:{_MUTED}; font-size:11px;")
-        t_box.addWidget(t1)
-        t_box.addWidget(t2)
-        hl.addLayout(t_box)
-        hl.addStretch()
+    def _build_header(self) -> ModuleHeaderWidget:
+        hdr = ModuleHeaderWidget(
+            icon="📊",
+            title="ANALYTICS & RAPPORTS",
+            subtitle="Statistiques · Graphiques · Export Excel & PDF",
+        )
+        hl = hdr.layout()
+        # Append year/class filters and refresh button
+        c = ThemeManager.get_colors()
+        _combo_style = (
+            f"QComboBox {{ background:{c.INPUT_BG}; color:{c.TEXT_PRIMARY}; border:1px solid {c.BORDER}; "
+            "border-radius:4px; padding:4px 8px; min-width:120px; } "
+            "QComboBox::drop-down { border:none; } "
+            f"QComboBox QAbstractItemView {{ background:{c.BG_CARD}; color:{c.TEXT_PRIMARY}; }}"
+        )
         lbl_yr = QLabel("Année:")
-        lbl_yr.setStyleSheet(f"color:{_MUTED};")
+        lbl_yr.setStyleSheet(f"color:{c.HEADER_TEXT}; background:transparent;")
         hl.addWidget(lbl_yr)
         self.cmb_year = QComboBox()
         self.cmb_year.setMinimumWidth(140)
-        self.cmb_year.setStyleSheet(self._COMBO_STYLE)
+        self.cmb_year.setStyleSheet(_combo_style)
         self.cmb_year.currentIndexChanged.connect(self._on_year_changed)
         hl.addWidget(self.cmb_year)
         lbl_cl = QLabel("Classe:")
-        lbl_cl.setStyleSheet(f"color:{_MUTED};")
+        lbl_cl.setStyleSheet(f"color:{c.HEADER_TEXT}; background:transparent;")
         hl.addWidget(lbl_cl)
         self.cmb_class = QComboBox()
         self.cmb_class.setMinimumWidth(130)
-        self.cmb_class.setStyleSheet(self._COMBO_STYLE)
+        self.cmb_class.setStyleSheet(_combo_style)
         self.cmb_class.addItem("Toutes les classes", None)
         self.cmb_class.currentIndexChanged.connect(self._refresh)
         hl.addWidget(self.cmb_class)
         btn = QPushButton("🔄 Actualiser")
-        btn.setStyleSheet(self._BTN_PRIMARY)
+        btn.setStyleSheet(
+            "QPushButton { background:#2962ff; color:white; border-radius:6px; "
+            "padding:6px 14px; font-weight:bold; border:none; } "
+            "QPushButton:hover { background:#1565c0; }"
+        )
         btn.clicked.connect(self._refresh)
         hl.addWidget(btn)
         return hdr
 
     def _build_kpi_row(self) -> QHBoxLayout:
         row = QHBoxLayout()
-        self.kpi_avg = KpiCard("Moyenne Générale", "—", "🎓", "#66bb6a")
-        self.kpi_att = KpiCard("Taux de Présence", "—", "📅", _ACCENT)
-        self.kpi_paid = KpiCard("Taux de Recouvrement", "—", "💰", "#ffa726")
-        self.kpi_risk = KpiCard("Élèves en Difficulté", "—", "⚠️", "#ef5350")
+        self.kpi_avg = KpiCard("🎓", "Moyenne Générale", "—", "#66bb6a", theme_mode="default")
+        self.kpi_att = KpiCard("📅", "Taux de Présence", "—", _CHART_ACCENT, theme_mode="default")
+        self.kpi_paid = KpiCard("💰", "Taux de Recouvrement", "—", "#ffa726", theme_mode="default")
+        self.kpi_risk = KpiCard("⚠️", "Elèves en Difficulté", "—", "#ef5350", theme_mode="default")
         for card in (self.kpi_avg, self.kpi_att, self.kpi_paid, self.kpi_risk):
             row.addWidget(card)
         return row
 
     def _build_tabs(self) -> QTabWidget:
         self.tabs = QTabWidget()
-        self.tabs.setStyleSheet(
-            f"QTabWidget::pane {{ border:1px solid {_BORDER}; background:{_CARD}; border-radius:8px; }} "
-            f"QTabBar::tab {{ background:{_CARD2}; color:{_MUTED}; padding:8px 16px; margin-right:2px; "
-            f"border-radius:4px 4px 0 0; }} "
-            f"QTabBar::tab:selected {{ background:{_CARD}; color:{_TEXT}; border-bottom:2px solid {_ACCENT}; }}"
-        )
+        self.tabs.setStyleSheet(get_tabs_style())
         self.tabs.addTab(self._tab_notes(), "📚 Notes par Matière")
         self.tabs.addTab(self._tab_histogram(), "📈 Distribution Notes")
         self.tabs.addTab(self._tab_attendance(), "📅 Présences Mensuelles")
@@ -734,7 +721,6 @@ class AnalyticsDashboardWindow(QMainWindow):
 
     def _tab_notes(self) -> QWidget:
         w = QWidget()
-        w.setStyleSheet(f"background:{_BG};")
         lay = QVBoxLayout(w)
         lay.setContentsMargins(6, 6, 6, 6)
         self.grades_chart = GradesBarChart()
@@ -743,35 +729,31 @@ class AnalyticsDashboardWindow(QMainWindow):
 
     def _tab_histogram(self) -> QWidget:
         w = QWidget()
-        w.setStyleSheet(f"background:{_BG};")
+        c = ThemeManager.get_colors()
         lay = QVBoxLayout(w)
         lay.setContentsMargins(12, 12, 12, 12)
         lay.setSpacing(10)
         ctrl = QFrame()
-        ctrl.setStyleSheet(f"QFrame {{ background:{_CARD}; border-radius:8px; }}")
+        ctrl.setStyleSheet(f"QFrame {{ background:{c.BG_CARD}; border-radius:8px; border:1px solid {c.BORDER}; }}")
         cl = QHBoxLayout(ctrl)
         cl.setContentsMargins(12, 8, 12, 8)
         lbl_c = QLabel("Classe:")
-        lbl_c.setStyleSheet(f"color:{_MUTED};")
         self.cmb_hist = QComboBox()
         self.cmb_hist.setMinimumWidth(200)
-        self.cmb_hist.setStyleSheet(self._COMBO_STYLE)
         btn_h = QPushButton("📈 Analyser")
-        btn_h.setStyleSheet(self._BTN_SUCCESS)
         btn_h.clicked.connect(self._draw_histogram)
         cl.addWidget(lbl_c)
         cl.addWidget(self.cmb_hist)
         cl.addWidget(btn_h)
         cl.addStretch()
         lay.addWidget(ctrl)
-        self.hist_fig = Figure(figsize=(9, 5), tight_layout=True, facecolor=_CARD)
+        self.hist_fig = Figure(figsize=(9, 5), tight_layout=True, facecolor=c.BG_CARD)
         self.hist_canvas = FigureCanvas(self.hist_fig)
         lay.addWidget(self.hist_canvas)
         return w
 
     def _tab_attendance(self) -> QWidget:
         w = QWidget()
-        w.setStyleSheet(f"background:{_BG};")
         lay = QVBoxLayout(w)
         lay.setContentsMargins(6, 6, 6, 6)
         self.att_chart = AttendanceLineChart()
@@ -780,23 +762,21 @@ class AnalyticsDashboardWindow(QMainWindow):
 
     def _tab_finance(self) -> QWidget:
         w = QWidget()
-        w.setStyleSheet(f"background:{_BG};")
         lay = QVBoxLayout(w)
         lay.setContentsMargins(12, 12, 12, 12)
         lay.setSpacing(10)
+        c = ThemeManager.get_colors()
         ctrl = QFrame()
-        ctrl.setStyleSheet(f"QFrame {{ background:{_CARD}; border-radius:8px; }}")
+        ctrl.setStyleSheet(f"QFrame {{ background:{c.BG_CARD}; border-radius:8px; border:1px solid {c.BORDER}; }}")
         cl = QHBoxLayout(ctrl)
         cl.setContentsMargins(12, 8, 12, 8)
         lbl_p = QLabel("Période:")
-        lbl_p.setStyleSheet(f"color:{_MUTED};")
+        lbl_p.setStyleSheet("")
         self.cmb_period = QComboBox()
         self.cmb_period.addItems(["6 derniers mois", "12 derniers mois", "Année en cours"])
         self.cmb_period.setCurrentIndex(1)
         self.cmb_period.setMinimumWidth(160)
-        self.cmb_period.setStyleSheet(self._COMBO_STYLE)
         btn_f = QPushButton("🔄 Actualiser")
-        btn_f.setStyleSheet(self._BTN_PRIMARY)
         btn_f.clicked.connect(self._draw_finance_bar)
         cl.addWidget(lbl_p)
         cl.addWidget(self.cmb_period)
@@ -805,25 +785,25 @@ class AnalyticsDashboardWindow(QMainWindow):
         lay.addWidget(ctrl)
         splitter = QSplitter(Qt.Orientation.Horizontal)
         pie_w = QWidget()
-        pie_w.setStyleSheet(f"background:{_BG};")
+        pie_w.setStyleSheet(f"background: {c.BG_CARD}; border: 1px solid {c.BORDER}; border-radius: 10px;")
         pie_l = QVBoxLayout(pie_w)
         pie_l.setContentsMargins(0, 0, 4, 0)
         lbl_pie = QLabel("Recouvrement des Frais Scolaires")
-        lbl_pie.setStyleSheet(f"color:{_MUTED}; font-weight:bold; font-size:12px;")
+        lbl_pie.setStyleSheet("font-weight:bold; font-size:12px;")
         lbl_pie.setAlignment(Qt.AlignmentFlag.AlignCenter)
         pie_l.addWidget(lbl_pie)
         self.fin_chart = FinancePieChart()
         pie_l.addWidget(self.fin_chart)
         splitter.addWidget(pie_w)
         bar_w = QWidget()
-        bar_w.setStyleSheet(f"background:{_BG};")
+        bar_w.setStyleSheet(f"background: {c.BG_CARD}; border: 1px solid {c.BORDER}; border-radius: 10px;")
         bar_l = QVBoxLayout(bar_w)
         bar_l.setContentsMargins(4, 0, 0, 0)
         lbl_bar = QLabel("Évolution Financière Mensuelle")
-        lbl_bar.setStyleSheet(f"color:{_MUTED}; font-weight:bold; font-size:12px;")
+        lbl_bar.setStyleSheet("font-weight:bold; font-size:12px;")
         lbl_bar.setAlignment(Qt.AlignmentFlag.AlignCenter)
         bar_l.addWidget(lbl_bar)
-        self.fin_bar_fig = Figure(figsize=(7, 5), tight_layout=True, facecolor=_CARD)
+        self.fin_bar_fig = Figure(figsize=(7, 5), tight_layout=True, facecolor=c.BG_CARD)
         self.fin_bar_canvas = FigureCanvas(self.fin_bar_fig)
         bar_l.addWidget(self.fin_bar_canvas)
         splitter.addWidget(bar_w)
@@ -833,7 +813,7 @@ class AnalyticsDashboardWindow(QMainWindow):
 
     def _tab_exports(self) -> QWidget:
         w = QWidget()
-        w.setStyleSheet(f"background:{_BG};")
+        c = ThemeManager.get_colors()
         lay = QVBoxLayout(w)
         lay.setContentsMargins(20, 20, 20, 20)
         lay.setSpacing(16)
@@ -845,16 +825,16 @@ class AnalyticsDashboardWindow(QMainWindow):
             b.setCursor(Qt.CursorShape.PointingHandCursor)
             b.setMinimumHeight(90)
             b.setStyleSheet(
-                f"QPushButton {{ background:{_CARD}; border:1px solid {_BORDER}; border-radius:10px; "
+                f"QPushButton {{ background:{c.BG_CARD}; border:1px solid {c.BORDER}; border-radius:10px; "
                 f"text-align:left; padding:10px; border-left:5px solid {accent}; }} "
-                f"QPushButton:hover {{ background:{_CARD2}; border-left:5px solid {accent}; }}"
+                f"QPushButton:hover {{ background:{c.BG_MAIN}; border-left:5px solid {accent}; }}"
             )
             inner = QVBoxLayout(b)
             inner.setContentsMargins(12, 6, 12, 6)
             t = QLabel(title)
             t.setStyleSheet(f"font-size:14px; font-weight:bold; color:{accent}; border:none; background:transparent;")
             d = QLabel(desc)
-            d.setStyleSheet(f"font-size:11px; color:{_MUTED}; border:none; background:transparent;")
+            d.setStyleSheet(f"font-size:11px; color:{c.TEXT_SECONDARY}; border:none; background:transparent;")
             inner.addWidget(t)
             inner.addWidget(d)
             inner.addStretch()
@@ -885,14 +865,14 @@ class AnalyticsDashboardWindow(QMainWindow):
         self.progress_bar = QProgressBar()
         self.progress_bar.setFixedHeight(16)
         self.progress_bar.setStyleSheet(
-            f"QProgressBar {{ border:none; border-radius:4px; background:{_CARD2}; color:{_TEXT}; }} "
+            "QProgressBar { border:none; border-radius:4px; } "
             "QProgressBar::chunk { background:#3b82f6; border-radius:4px; }"
         )
         self.progress_bar.hide()
         lay.addWidget(self.progress_bar)
         self.status_lbl = QLabel("")
         self.status_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.status_lbl.setStyleSheet(f"font-size:12px; color:{_MUTED}; font-weight:bold;")
+        self.status_lbl.setStyleSheet("font-size:12px; font-weight:bold;")
         lay.addWidget(self.status_lbl)
         lay.addStretch()
         return w
@@ -980,12 +960,14 @@ class AnalyticsDashboardWindow(QMainWindow):
         self.kpi_paid.set_value(f"{paid / total_due * 100:.1f}%" if total_due > 0 else "—")
 
     def _draw_histogram(self) -> None:
+        c = _chart_colors()
         class_id = self.cmb_hist.currentData()
+        self.hist_fig.patch.set_facecolor(c["figure"])
         self.hist_fig.clear()
         ax = self.hist_fig.add_subplot(111)
-        ax.set_facecolor(_CARD2)
+        ax.set_facecolor(c["panel"])
         if not class_id:
-            ax.text(0.5, 0.5, "Sélectionnez une classe", ha="center", va="center", fontsize=13, color=_MUTED)
+            ax.text(0.5, 0.5, "Sélectionnez une classe", ha="center", va="center", fontsize=13, color=c["muted"])
             ax.axis("off")
             self.hist_canvas.draw()
             return
@@ -1001,38 +983,43 @@ class AnalyticsDashboardWindow(QMainWindow):
         except Exception as exc:
             AppLogger.error("AnalyticsDashboard", f"histogram: {exc}")
         if not grades:
-            ax.text(0.5, 0.5, "Aucune note disponible", ha="center", va="center", fontsize=13, color=_MUTED)
+            ax.text(0.5, 0.5, "Aucune note disponible", ha="center", va="center", fontsize=13, color=c["muted"])
             ax.axis("off")
             self.hist_canvas.draw()
             return
         grades = [max(0.0, min(float(g), float(max_score))) for g in grades]
         step = max_score / 5
         bins = [round(i * step, 2) for i in range(6)]
-        ax.hist(grades, bins=bins, color=_ACCENT, edgecolor=_BORDER, alpha=0.85, rwidth=0.88)
+        ax.hist(grades, bins=bins, color=c["accent"], edgecolor=c["border"], alpha=0.85, rwidth=0.88)
         ax.set_xlim(0, max_score)
-        ax.set_xlabel(f"Notes sur {int(max_score)}", fontsize=10, color=_MUTED)
-        ax.set_ylabel("Nombre d\'élèves", fontsize=10, color=_MUTED)
+        ax.set_xlabel(f"Notes sur {int(max_score)}", fontsize=10, color=c["muted"])
+        ax.set_ylabel("Nombre d\'élèves", fontsize=10, color=c["muted"])
         class_name = self.cmb_hist.currentText()
         ax.set_title(
-            f"Distribution des Notes — {class_name}\nAnnée: {year_label}", fontsize=12, fontweight="bold", color=_TEXT
+            f"Distribution des Notes — {class_name}\nAnnée: {year_label}",
+            fontsize=12,
+            fontweight="bold",
+            color=c["text"],
         )
         avg = sum(grades) / len(grades)
-        ax.axvline(avg, color="#ef5350", linestyle="--", linewidth=2, label=f"Moyenne: {avg:.1f}/{int(max_score)}")
-        ax.legend(facecolor=_CARD, labelcolor=_MUTED)
+        ax.axvline(avg, color=c["danger"], linestyle="--", linewidth=2, label=f"Moyenne: {avg:.1f}/{int(max_score)}")
+        ax.legend(facecolor=c["panel"], labelcolor=c["muted"])
         ax.grid(axis="y", alpha=0.25, linestyle="--")
-        ax.tick_params(colors=_MUTED)
+        ax.tick_params(colors=c["muted"])
         for spine in ax.spines.values():
-            spine.set_color(_BORDER)
+            spine.set_color(c["border"])
         ax.spines["top"].set_visible(False)
         ax.spines["right"].set_visible(False)
         self.hist_fig.tight_layout()
         self.hist_canvas.draw()
 
     def _draw_finance_bar(self) -> None:
+        c = _chart_colors()
         period = self.cmb_period.currentText()
+        self.fin_bar_fig.patch.set_facecolor(c["figure"])
         self.fin_bar_fig.clear()
         ax = self.fin_bar_fig.add_subplot(111)
-        ax.set_facecolor(_CARD2)
+        ax.set_facecolor(c["panel"])
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
@@ -1041,7 +1028,7 @@ class AnalyticsDashboardWindow(QMainWindow):
                 expense_data = repo.get_monthly_expense_totals(period)
         except Exception as exc:
             AppLogger.error("AnalyticsDashboard", f"finance bar: {exc}")
-            ax.text(0.5, 0.5, "Erreur de chargement", ha="center", va="center", color="#ef5350", fontsize=12)
+            ax.text(0.5, 0.5, "Erreur de chargement", ha="center", va="center", color=c["danger"], fontsize=12)
             ax.axis("off")
             self.fin_bar_canvas.draw()
             return
@@ -1049,7 +1036,7 @@ class AnalyticsDashboardWindow(QMainWindow):
         exp_dict = {r[0]: r[1] or 0 for r in expense_data}
         months = sorted(set(inc_dict) | set(exp_dict))
         if not months:
-            ax.text(0.5, 0.5, "Aucune donnée financière", ha="center", va="center", color=_MUTED, fontsize=12)
+            ax.text(0.5, 0.5, "Aucune donnée financière", ha="center", va="center", color=c["muted"], fontsize=12)
             ax.axis("off")
             self.fin_bar_canvas.draw()
             return
@@ -1058,16 +1045,16 @@ class AnalyticsDashboardWindow(QMainWindow):
         x = range(len(months))
         ww = 0.35
         ax.bar([i - ww / 2 for i in x], inc, ww, label="Recettes", color="#66bb6a")
-        ax.bar([i + ww / 2 for i in x], exp, ww, label="Dépenses", color="#ef5350")
+        ax.bar([i + ww / 2 for i in x], exp, ww, label="Dépenses", color=c["danger"])
         ax.set_xticks(list(x))
         ax.set_xticklabels(months, rotation=45, ha="right")
-        ax.set_ylabel("Montant (FCFA)", fontsize=10, color=_MUTED)
-        ax.set_title(f"Évolution Financière ({period})", fontsize=11, fontweight="bold", color=_TEXT)
-        ax.legend(facecolor=_CARD, labelcolor=_MUTED)
+        ax.set_ylabel("Montant (FCFA)", fontsize=10, color=c["muted"])
+        ax.set_title(f"Évolution Financière ({period})", fontsize=11, fontweight="bold", color=c["text"])
+        ax.legend(facecolor=c["panel"], labelcolor=c["muted"])
         ax.grid(axis="y", alpha=0.2, linestyle="--")
-        ax.tick_params(colors=_MUTED)
+        ax.tick_params(colors=c["muted"])
         for spine in ax.spines.values():
-            spine.set_color(_BORDER)
+            spine.set_color(c["border"])
         ax.spines["top"].set_visible(False)
         ax.spines["right"].set_visible(False)
         self.fin_bar_fig.tight_layout()
@@ -1142,7 +1129,7 @@ class AnalyticsDashboardWindow(QMainWindow):
         self.progress_bar.show()
         self.progress_bar.setValue(0)
         self.status_lbl.setText("⏳ Génération en cours…")
-        self.status_lbl.setStyleSheet(f"color:{_MUTED}; font-weight:bold;")
+        self.status_lbl.setStyleSheet(f"color:{ThemeManager.get_colors().TEXT_SECONDARY}; font-weight:bold;")
         self._report_worker = ReportWorker(f"excel_{report_type}", params)
         self._report_worker.progress.connect(self.progress_bar.setValue)
         self._report_worker.finished.connect(self._on_export_done)
