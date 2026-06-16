@@ -158,3 +158,84 @@ class TestGetNextClass:
         }
         class_id, name = svc.get_next_class(class_map, 1, 10, "Admis")
         assert class_id is None  # no exact order=2 exists → end of cycle
+
+
+# ──────────────────────────────────────────────
+# calculate_rank — standard competition ranking (1224) with ex aequo ties
+# ──────────────────────────────────────────────
+
+
+class TestCalculateRank:
+    def _ranks(self, result):
+        return {s["id"]: s["rank"] for s in result}
+
+    def test_basic_descending_order(self, svc):
+        students = [
+            {"id": 1, "average": 12.0},
+            {"id": 2, "average": 18.0},
+            {"id": 3, "average": 9.0},
+        ]
+        result = svc.calculate_rank(students, "average")
+        # sorted descending and ranked 1,2,3
+        assert [s["id"] for s in result] == [2, 1, 3]
+        assert self._ranks(result) == {2: 1, 1: 2, 3: 3}
+
+    def test_two_way_tie_shares_rank_and_skips_next(self, svc):
+        # 1224 ranking: two students tied at 1st → both rank 1, next is rank 3
+        students = [
+            {"id": 1, "average": 15.0},
+            {"id": 2, "average": 15.0},
+            {"id": 3, "average": 10.0},
+        ]
+        result = svc.calculate_rank(students, "average")
+        ranks = self._ranks(result)
+        assert ranks[1] == 1 and ranks[2] == 1
+        assert ranks[3] == 3  # not 2 — the tied pair consumed ranks 1 and 2
+
+    def test_tie_in_the_middle(self, svc):
+        students = [
+            {"id": 1, "average": 18.0},
+            {"id": 2, "average": 14.0},
+            {"id": 3, "average": 14.0},
+            {"id": 4, "average": 11.0},
+        ]
+        result = svc.calculate_rank(students, "average")
+        assert self._ranks(result) == {1: 1, 2: 2, 3: 2, 4: 4}
+
+    def test_three_way_tie(self, svc):
+        students = [
+            {"id": 1, "average": 13.0},
+            {"id": 2, "average": 13.0},
+            {"id": 3, "average": 13.0},
+            {"id": 4, "average": 8.0},
+        ]
+        result = svc.calculate_rank(students, "average")
+        assert self._ranks(result) == {1: 1, 2: 1, 3: 1, 4: 4}
+
+    def test_all_tied(self, svc):
+        students = [{"id": i, "average": 10.0} for i in range(1, 5)]
+        result = svc.calculate_rank(students, "average")
+        assert all(s["rank"] == 1 for s in result)
+
+    def test_float_noise_still_ties(self, svc):
+        # Mathematically equal averages that differ by FP noise must still tie.
+        a = 40.0 / 3.0
+        b = (10.0 + 20.0 + 10.0) / 3.0  # also 13.333..., computed differently
+        students = [{"id": 1, "average": a}, {"id": 2, "average": b}]
+        result = svc.calculate_rank(students, "average")
+        assert result[0]["rank"] == 1 and result[1]["rank"] == 1
+
+    def test_custom_key_name(self, svc):
+        students = [
+            {"id": 1, "general_average": 9.0},
+            {"id": 2, "general_average": 16.0},
+        ]
+        result = svc.calculate_rank(students, "general_average")
+        assert self._ranks(result) == {2: 1, 1: 2}
+
+    def test_single_student(self, svc):
+        students = [{"id": 1, "average": 14.0}]
+        assert svc.calculate_rank(students, "average")[0]["rank"] == 1
+
+    def test_empty_list(self, svc):
+        assert svc.calculate_rank([], "average") == []

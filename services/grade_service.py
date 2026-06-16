@@ -50,6 +50,30 @@ class GradeService:
         else:
             return "Insuffisant / راسب"
 
+    def calculate_rank(self, students: list[dict], key_name: str = "average") -> list[dict]:
+        """Assign competition ranks (standard "1224" style) by ``key_name`` descending.
+
+        Students with an equal value share the same rank (ex aequo); the next
+        distinct value takes the rank corresponding to its position, so a tie at
+        rank 2 is followed by rank 4. Comparison uses a small epsilon so values
+        that are mathematically equal but differ by floating-point noise still tie.
+
+        Mutates each dict by setting ``["rank"]`` and returns ``students`` sorted
+        descending by ``key_name``.
+        """
+        students.sort(key=lambda s: s[key_name], reverse=True)
+        prev_value: float | None = None
+        prev_rank = 0
+        for position, student in enumerate(students, start=1):
+            value = float(student[key_name])
+            if prev_value is not None and abs(value - prev_value) < 1e-9:
+                student["rank"] = prev_rank
+            else:
+                student["rank"] = position
+                prev_rank = position
+                prev_value = value
+        return students
+
     def get_next_class(
         self, class_map: dict, current_class_id: int, cycle_id: int, decision: str
     ) -> tuple[int | None, str]:

@@ -34,6 +34,9 @@ dark_mode_end_time = 06:00
 [SECURITY]
 password_min_length = 8
 session_timeout_minutes = 60
+# Leave empty: a unique Fernet key is auto-generated on first run and saved here.
+# Never commit a real key. Used to encrypt secrets at rest (e.g. SMTP password).
+fernet_key =
 
 [LOGGING]
 enable_logging = True
