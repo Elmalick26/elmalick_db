@@ -46,6 +46,7 @@ from ui_components import (
     styled_input,
 )
 from ui_styles import ModuleHeaderWidget, ThemeManager, friendly_db_error, get_module_caps, get_tabs_style
+from validators import format_errors, validate_staff
 
 STAFF_LIST_OUTPUT_MODE = get_report_output_mode("staff_list_mode", "save")
 
@@ -751,6 +752,10 @@ class ModernStaffManagement(QMainWindow):
 
     def _save_staff_from_dialog(self, dialog: "StaffDialog", values: dict, staff_id: int | None) -> None:
         """Copier la photo et enregistrer les données via le repository."""
+        errors = validate_staff(values)
+        if errors:
+            QMessageBox.warning(self, "بيانات غير صالحة / Données invalides", format_errors(errors))
+            return
         try:
             db = DatabaseManager()
             new_photo = dialog.get_new_photo_path()
