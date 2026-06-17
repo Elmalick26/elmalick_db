@@ -54,6 +54,7 @@ from ui_styles import (
     get_module_caps,
     get_tabs_style,
 )
+from validators import format_errors, validate_student
 
 STUDENT_LIST_OUTPUT_MODE = get_report_output_mode("student_list_mode", "save")
 
@@ -1019,6 +1020,10 @@ class ModernStudentManagement(QMainWindow):
 
     def _save_new_student(self, values: dict):
         """يحفظ طالباً جديداً من قيم الـ Dialog."""
+        errors = validate_student(values)
+        if errors:
+            QMessageBox.warning(self, "بيانات غير صالحة / Données invalides", format_errors(errors))
+            return
         try:
             photo_path = self._persist_photo(values.get("photo_path"), new_id=None)
             if photo_path:
@@ -1054,6 +1059,10 @@ class ModernStudentManagement(QMainWindow):
 
     def _save_edit_student(self, student_id: int, values: dict):
         """يحدّث بيانات طالب موجود من قيم الـ Dialog."""
+        errors = validate_student(values)
+        if errors:
+            QMessageBox.warning(self, "بيانات غير صالحة / Données invalides", format_errors(errors))
+            return
         try:
             photo_path = self._persist_photo(values.get("photo_path"), new_id=student_id)
             if photo_path:
