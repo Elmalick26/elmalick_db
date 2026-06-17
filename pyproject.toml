@@ -45,9 +45,8 @@ ignore_errors = true
 module = ["PyQt6.*", "fpdf.*", "matplotlib.*", "psycopg2.*", "bcrypt.*", "jose.*"]
 ignore_missing_imports = true
 
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-addopts = "-q --tb=short"
+# pytest config is in pytest.ini (takes priority over this section)
+# [tool.pytest.ini_options] intentionally removed to avoid duplication
 qt_api = "pyqt6"
 filterwarnings = ["ignore::DeprecationWarning"]
 
