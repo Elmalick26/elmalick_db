@@ -31,3 +31,13 @@ def test_source_uses_oo_figure_not_pyplot():
     assert "import matplotlib.pyplot" not in src
     assert "plt.subplots" not in src
     assert "Figure(" in src
+
+
+def test_oo_figure_constructs_with_axes():
+    # finance_dashboard.Figure must be the real object-oriented matplotlib
+    # Figure — not a MagicMock leaked from test_analytics_dashboard. Build one
+    # directly and confirm the axes it creates are owned by the figure (the
+    # canvas-owned, pyplot-free construction the dashboard relies on).
+    fig = finance_dashboard.Figure(figsize=(4, 3))
+    ax = fig.add_subplot(111)
+    assert ax.figure is fig

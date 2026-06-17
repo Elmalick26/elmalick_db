@@ -19,15 +19,37 @@ from unittest.mock import MagicMock, PropertyMock, patch
 import pytest
 
 # ── Stubs للمكتبات الثقيلة ──────────────────────────────────
-# نُنشئ stubs قبل أي import حقيقي
+# نُنشئ stubs قبل أي import حقيقي، لكن نطبّقها فقط داخل ``patch.dict`` أثناء
+# استيراد analytics_dashboard حتى لا تتسرّب إلى وحدات اختبار أخرى.
+#
+# Why patch.dict (and not sys.modules mutation): a previous version pushed the
+# Matplotlib stubs into sys.modules permanently. With real Matplotlib installed,
+# ``sys.modules.setdefault("matplotlib.figure", ...)`` kept the *real* module
+# object, and ``fig_mod.Figure = MagicMock`` then mutated the real module's
+# ``Figure`` attribute process-wide and never restored it. That leaked the mock
+# into the whole pytest session, so unrelated modules (e.g. finance_dashboard)
+# imported a MagicMock instead of the real Figure.
+#
+# analytics_dashboard binds its own references to Figure/FigureCanvas/plt at
+# import time, so once it is imported under patch.dict the stubs can be torn
+# down again and its tests keep working through those bound references.
 
 
-def _make_qt_stubs():
-    """إنشاء stubs لـ PyQt6 و Matplotlib لتجنب حاجة الشاشة."""
-    # Matplotlib backend stub
+def _make_qt_stubs() -> dict:
+    """Build stub modules for PyQt6 و Matplotlib (no screen / no real render).
+
+    Returns a mapping for ``patch.dict(sys.modules, ...)``; nothing is written
+    to sys.modules here, so the stubs cannot leak. Fresh module objects are
+    created for every Matplotlib entry (never the real ones), so the real
+    ``matplotlib.figure.Figure`` is never mutated.
+    """
+    modules: dict = {}
+
+    # Matplotlib backend stub — always replace (scoped) so chart construction
+    # is mocked during import without touching the real matplotlib modules.
     mpl_stub = types.ModuleType("matplotlib")
     mpl_stub.use = lambda *a, **kw: None
-    sys.modules.setdefault("matplotlib", mpl_stub)
+    modules["matplotlib"] = mpl_stub
 
     for sub in [
         "matplotlib.pyplot",
@@ -36,23 +58,20 @@ def _make_qt_stubs():
         "matplotlib.backends.backend_qt5agg",
         "matplotlib.backends.backend_qtagg",  # PyQt6 backend (Python 3.14)
     ]:
-        m = types.ModuleType(sub)
-        sys.modules.setdefault(sub, m)
+        modules[sub] = types.ModuleType(sub)
 
-    fig_mod = sys.modules["matplotlib.figure"]
-    fig_mod.Figure = MagicMock
+    modules["matplotlib.figure"].Figure = MagicMock
 
     # Stub both backends (qt5agg = legacy, qtagg = PyQt6)
     for _canvas_mod_name in ("matplotlib.backends.backend_qt5agg", "matplotlib.backends.backend_qtagg"):
-        _canvas_mod = sys.modules[_canvas_mod_name]
-        _canvas_mod.FigureCanvasQTAgg = MagicMock
-    canvas_mod = sys.modules["matplotlib.backends.backend_qt5agg"]
+        modules[_canvas_mod_name].FigureCanvasQTAgg = MagicMock
 
-    plt_mod = sys.modules["matplotlib.pyplot"]
+    plt_mod = modules["matplotlib.pyplot"]
     plt_mod.cm = MagicMock()
     plt_mod.cm.RdYlGn = MagicMock(return_value=["#aaa"])
 
-    # PyQt6 stubs
+    # PyQt6 stubs — only for modules not already importable, so a real PyQt6
+    # install (which provides QFileDialog etc.) is preserved.
     for mod_name in [
         "PyQt6",
         "PyQt6.QtWidgets",
@@ -60,7 +79,11 @@ def _make_qt_stubs():
         "PyQt6.QtGui",
     ]:
         if mod_name not in sys.modules:
-            sys.modules[mod_name] = types.ModuleType(mod_name)
+            modules[mod_name] = types.ModuleType(mod_name)
+
+    if "PyQt6.QtWidgets" not in modules:
+        # Real PyQt6 present — no widget stubs needed.
+        return modules
 
     def _make_class(name, *bases):
         return type(
@@ -98,7 +121,7 @@ def _make_qt_stubs():
             },
         )
 
-    widgets = sys.modules["PyQt6.QtWidgets"]
+    widgets = modules["PyQt6.QtWidgets"]
     for cls_name in [
         "QMainWindow",
         "QWidget",
@@ -136,7 +159,7 @@ def _make_qt_stubs():
     widgets.QFrame.Shape = MagicMock()
     widgets.QFrame.Shape.StyledPanel = 1
 
-    core = sys.modules["PyQt6.QtCore"]
+    core = modules["PyQt6.QtCore"]
     core.Qt = MagicMock()
     core.QThread = type(
         "QThread",
@@ -152,23 +175,21 @@ def _make_qt_stubs():
     core.QSize = MagicMock()
     core.QTime = MagicMock()
 
-    gui = sys.modules["PyQt6.QtGui"]
+    gui = modules["PyQt6.QtGui"]
     gui.QFont = MagicMock()
     gui.QColor = MagicMock()
     gui.QBrush = MagicMock()
     gui.QAction = MagicMock()
 
+    return modules
 
-_make_qt_stubs()
 
 # ── Stubs للوحدات الداخلية ───────────────────────────────────
 db_stub = types.ModuleType("database_setup")
 db_stub.DatabaseManager = MagicMock()
-sys.modules["database_setup"] = db_stub
 
 logger_stub = types.ModuleType("app_logger")
 logger_stub.AppLogger = MagicMock()
-sys.modules["app_logger"] = logger_stub
 
 ui_stub = types.ModuleType("ui_styles")
 ui_stub.ThemeManager = MagicMock()
@@ -191,7 +212,6 @@ class _FakeKpiCard:
 
 ui_stub.KpiCard = _FakeKpiCard
 ui_stub.get_module_caps = MagicMock(return_value={"can_write": True, "can_delete": True})
-sys.modules["ui_styles"] = ui_stub
 
 svc_stub = types.ModuleType("services.grade_service")
 
@@ -221,22 +241,48 @@ svc_stub.GradeService = _FakeGradeService
 # Note: we don't override sys.modules["services.grade_service"] here to avoid
 # breaking test_grade_service.py. Handler tests inject _FakeGradeService directly.
 
-# ── Import du module sous test ────────────────────────────────
-from analytics_dashboard import (
-    AnalyticsDashboardWindow,
-    AnalyticsWorker,
-    AttendanceLineChart,
-    FinancePieChart,
-    GradesBarChart,
-    KpiCard,
+# ── Import du module sous test, sous des stubs *scoped* ──────────
+# All stubs live only inside this patch.dict; on exit sys.modules is restored
+# (real matplotlib/PyQt6, real app_logger/ui_styles for other test modules).
+# analytics_dashboard binds its own references during the import below, so it
+# keeps working afterwards — nothing leaks into unrelated test modules.
+_stub_modules = _make_qt_stubs()
+_stub_modules.update(
+    {
+        "database_setup": db_stub,
+        "app_logger": logger_stub,
+        "ui_styles": ui_stub,
+    }
 )
+# Note: services.grade_service is intentionally NOT stubbed in sys.modules to
+# avoid breaking test_grade_service.py. Handler tests inject _FakeGradeService.
 
-# Release stubs from sys.modules after analytics_dashboard is already imported.
-# analytics_dashboard holds its own references to the stub objects, so tests
-# continue to work. Removing the stubs here prevents them from leaking into
-# unrelated test modules (e.g. test_logging_phase6 which needs the real app_logger).
-for _stub_mod in ("database_setup", "app_logger", "ui_styles"):
-    sys.modules.pop(_stub_mod, None)
+# NOTE: do NOT use patch.dict(sys.modules, ...) here. patch.dict restores a full
+# snapshot on exit, which EVICTS any C-extension module imported during the block
+# (numpy, cryptography, …). Those extensions cannot be initialised twice, so a
+# later test importing them fails with "cannot load module more than once" /
+# "PyO3 module may only be initialized once". Instead apply the stubs, import the
+# module (which binds its own Figure/Canvas/etc. references), then restore ONLY the
+# stubbed keys — leaving everything else imported during the block intact.
+_MISSING = object()
+_saved_stub_state = {k: sys.modules.get(k, _MISSING) for k in _stub_modules}
+sys.modules.update(_stub_modules)
+try:
+    import analytics_dashboard
+    from analytics_dashboard import (
+        AnalyticsDashboardWindow,
+        AnalyticsWorker,
+        AttendanceLineChart,
+        FinancePieChart,
+        GradesBarChart,
+        KpiCard,
+    )
+finally:
+    for _k, _v in _saved_stub_state.items():
+        if _v is _MISSING:
+            sys.modules.pop(_k, None)
+        else:
+            sys.modules[_k] = _v
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -439,10 +485,9 @@ class TestGradesBarChart:
         bar_mock.get_height.return_value = 1.0
         c.ax.barh.return_value = [bar_mock]
 
-        import sys
-
-        plt_mod = sys.modules["matplotlib.pyplot"]
-        plt_mod.cm.RdYlGn.return_value = ["#aaa"]
+        # analytics_dashboard bound the stub pyplot at import time; poke that
+        # same object (not sys.modules, which now holds real matplotlib again).
+        analytics_dashboard.plt.cm.RdYlGn.return_value = ["#aaa"]
 
         c.update_data(["Maths", "Physique"], [15.0, 12.0], [3.0, 2.0])
         c.ax.barh.assert_called_once()
