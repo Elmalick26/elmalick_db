@@ -135,6 +135,8 @@ class ImportWorker(QThread):
 
         db = DatabaseManager()
         for idx, data in enumerate(self.rows):
+            if self.isInterruptionRequested():  # cooperative cancel (window closed)
+                break
             try:
                 # Résoudre le fصل pour cette ligne:
                 # si une colonne 'class_name' est renseignée et reconnue → on l'utilise,

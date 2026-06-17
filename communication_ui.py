@@ -128,6 +128,8 @@ class EmailWorker(QThread):
             server.login(self.smtp_config['email'], self.smtp_config['password'])
 
             for i, (rid, rname, remail) in enumerate(self.recipients):
+                if self.isInterruptionRequested():  # cooperative cancel (window closed)
+                    break
                 if not remail or "@" not in remail:
                     self._failed += 1
                     self.log_signal.emit(str(remail or rname), "Échec", "Email invalide")

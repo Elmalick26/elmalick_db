@@ -99,6 +99,8 @@ class MigrationCalculator(QThread):
 
                 total = max(len(students), 1)
                 for i, (std_id, fname, lname, class_id) in enumerate(students):
+                    if self.isInterruptionRequested():  # cooperative cancel (window closed)
+                        break
                     cycle_id = class_map.get(class_id, {}).get('cycle', 0)
                     subjects = []
                     try:
