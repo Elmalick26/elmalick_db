@@ -336,17 +336,17 @@ class NewFeatureWindow(QMainWindow):
         super().__init__()
         self.setWindowTitle("Feature Name")
         self.config = ConfigManager()
-        
+
         # Apply theme
         ThemeManager.apply_theme(self)
-        
+
         # Initialize UI
         self.init_ui()
-    
+
     def init_ui(self):
         # Build user interface
         pass
-    
+
     def load_data(self):
         db = DatabaseManager()
         with db.get_connection() as conn:
@@ -419,7 +419,7 @@ version = 1.0
 icon_path = assets/app_icon.png
 app_name = El Malick Gest
 school_name = El Malick School Management System
-school_location = 
+school_location =
 theme = light                            # light or dark
 debug_mode = False
 language = ar                            # ar for Arabic, fr for French
@@ -591,5 +591,59 @@ python main_dashbord.py
 
 ---
 
-**Last Updated**: April 3, 2026
-**Version**: 1.0
+**Last Updated**: May 25, 2026
+**Version**: 2.0 (v2.0.0-rc1)
+
+---
+
+## 12. Release v2.0.0 — Lessons Learned (Retrospective T12.4)
+
+*Completed: 25 مايو 2026 — Sprint T1–T12*
+
+### ما الذي سار بشكل جيد ✅
+
+- **Migration governance (T3–T9)**: سلسلة Alembic 001→007 بـ downgrade() كاملة منذ البداية أنقذت الموقف أكثر من مرة.
+- **Test-first approach (T2, T11)**: الوصول إلى 944 اختباراً ورفع التغطية من 42%→88% على security_utils كشف أخطاء حقيقية (print() في الإنتاج، bcrypt edge cases).
+- **Error codes موحدة (T8)**: `error_codes.py` + retry × 3 جعل debugging أسهل بكثير في بيئة الإنتاج.
+- **RBAC Matrix (T5–T7)**: توثيق `ROLE_CAPABILITIES` في ملف واحد منع تضارب الصلاحيات بين 18 وحدة.
+- **Performance baseline قبل الإصلاح (T9–T10)**: توثيق `SLOW_QUERY_CANDIDATES` أولاً جعل قياس تأثير CTE rewrite موثوقاً.
+
+### ما يجب تحسينه في الدورة القادمة 🔧
+
+- **Print statements في الكود الإنتاجي**: اكتُشف واحد في `staff_management.py` متأخراً — يُضاف grep script لـ CI يرفض أي `print(` خارج ملفات الاختبار.
+- **Backup freshness monitoring**: خلال التطوير ارتفع عمر أحدث نسخة احتياطية إلى >700h — يُضاف تحقق يومي تلقائي via `hypercare_monitor.py`.
+- **Coverage tracking مستمر**: تغطية security_utils كانت 42% قبل T11 — يُضاف حد أدنى 70% كـ CI check من البداية.
+- **API smoke tests مبكرًا**: `smoke_tests.py` يجب أن يُنشأ مع أول endpoint وليس في T12.
+
+### الأوامر المرجعية الجديدة (v2.0)
+
+```bash
+# Smoke tests (بعد كل نشر)
+python smoke_tests.py --url http://prod-server:8000
+
+# Hypercare daily check
+python hypercare_monitor.py --save
+
+# Security/coverage check
+.venv\Scripts\python.exe -m pytest tests/test_security_utils.py -v --tb=short
+
+# Migration check
+.venv\Scripts\alembic.exe current
+.venv\Scripts\alembic.exe upgrade head
+
+# Full test suite
+.venv\Scripts\python.exe -m pytest tests/ -p no:qt --tb=no
+```
+
+### الملفات المضافة في v2.0
+
+| الملف | الغرض |
+|-------|-------|
+| `smoke_tests.py` | اختبارات الدخان بعد النشر (4 أقسام) |
+| `hypercare_monitor.py` | مراقبة يومية خلال Hypercare |
+| `ISSUES_LOG.md` | تتبع P1/P2 مع SLA table |
+| `RELEASE_NOTES.md` | ملاحظات الإصدار v2.0.0-rc1 |
+| `RUNBOOK.md` | دليل النشر والـ Rollback |
+| `school_data/backup_restore_drill_2026-05-25.json` | تقرير Drill الاحتياطي |
+| `school_data/hypercare_2026-05-25.json` | أول تقرير Hypercare |
+| `services/performance_monitor.py` | Baseline + Comparison report |
