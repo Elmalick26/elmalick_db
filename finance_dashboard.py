@@ -1,9 +1,9 @@
 ﻿import sys
 from datetime import datetime
 
-import matplotlib.pyplot as plt
 from fpdf import FPDF
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
+from matplotlib.figure import Figure
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QColor, QFont
 from PyQt6.QtWidgets import (
@@ -147,7 +147,11 @@ class ModernFinanceDashboard(BaseWindow):
 
         # Chart Container
         self.chart_frame, chart_layout = create_card("Analyse des Flux / تحليل التدفقات", with_shadow=True)
-        self.figure, self.ax = plt.subplots(figsize=(5, 4), dpi=100)
+        # Use the object-oriented Figure so it is owned by the canvas and
+        # garbage-collected — the pyplot helper keeps a global reference that would
+        # leak a figure every time this dashboard is rebuilt.
+        self.figure = Figure(figsize=(5, 4), dpi=100)
+        self.ax = self.figure.add_subplot(111)
         self.figure.patch.set_facecolor(colors.BG_CARD)
         self.ax.set_facecolor(colors.BG_CARD)
         self.canvas = FigureCanvas(self.figure)
