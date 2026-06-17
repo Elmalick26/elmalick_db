@@ -63,7 +63,7 @@ pip install -r requirements_api.txt
    .venv/bin/python -m alembic upgrade head          # Linux/macOS
    ```
 
-   The current head is revision **009**.
+   The current head is revision **010**.
 
 ## Configuration & secrets
 

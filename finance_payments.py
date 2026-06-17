@@ -2,7 +2,6 @@
 import sys
 from datetime import date, datetime
 
-import psycopg2
 from fpdf import FPDF
 from PyQt6.QtCore import QDate, Qt
 from PyQt6.QtGui import QColor, QFont
@@ -178,7 +177,6 @@ class StudentPaymentWindow(BaseWindow):
     def __init__(self):
         super().__init__(title="Caisse & Paiements / الصندوق والمدفوعات", min_width=1100, min_height=700)
 
-        self.init_db()
         self.init_ui()
         self.load_classes()
         self._load_kpi_stats()
@@ -186,24 +184,6 @@ class StudentPaymentWindow(BaseWindow):
     def _rgba(self, hex_color, alpha=35):
         color = QColor(hex_color)
         return f"rgba({color.red()}, {color.green()}, {color.blue()}, {alpha})"
-
-    def init_db(self):
-        db = DatabaseManager()
-        with db.get_connection() as conn:
-            cursor = conn.cursor()
-            try:
-                # إضافة SAVEPOINT لضمان عدم توقف البرنامج إذا كان الفهرس موجوداً
-                cursor.execute("SAVEPOINT sp_idx;")
-                cursor.execute("CREATE INDEX IF NOT EXISTS idx_payments_student ON Payments(student_id)")
-                cursor.execute("CREATE INDEX IF NOT EXISTS idx_payments_date ON Payments(transaction_date)")
-                cursor.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_payments_student_date ON Payments(student_id, transaction_date)"
-                )
-                cursor.execute("CREATE INDEX IF NOT EXISTS idx_student_dues_paid ON StudentDues(is_paid)")
-                cursor.execute("RELEASE SAVEPOINT sp_idx;")
-            except psycopg2.Error as e:
-                cursor.execute("ROLLBACK TO SAVEPOINT sp_idx;")
-                AppLogger.warning("FinancePayments", f"Error creating indexes: {e}")
 
     def get_active_year_id(self):
         try:

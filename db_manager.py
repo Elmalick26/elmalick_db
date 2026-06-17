@@ -173,7 +173,7 @@ class DatabaseManager:
     # ── Migration Drift Check (T3.2) ─────────────────────────────────────────
 
     #: Dernière révision Alembic connue — mettre à jour après chaque nouveau fichier de version
-    _LATEST_ALEMBIC_REVISION: str = "009"
+    _LATEST_ALEMBIC_REVISION: str = "010"
 
     def _check_migration_drift(self) -> None:
         """Compare la révision Alembic en base avec la dernière révision connue.

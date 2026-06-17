@@ -33,7 +33,7 @@ set DB_PASSWORD=<mot-de-passe-fort>
 
 # 4. Appliquer les migrations Alembic
 .venv\Scripts\python.exe -m alembic upgrade head
-# Résultat attendu: Running upgrade ... -> 009
+# Résultat attendu: Running upgrade ... -> 010
 
 # 5. Vérifier la dérive de schéma (optionnel)
 .venv\Scripts\python.exe -c "from database_setup import DatabaseManager; db = DatabaseManager(); db.initialize()"
