@@ -445,3 +445,39 @@ class TestBulletinListStudentIdsInClass:
         cursor.fetchall.return_value = []
         result = repo.list_student_ids_in_class(class_id=1, year_id=1)
         assert result == []
+
+
+class TestBulletinGetGradesMapForStudents:
+    def test_empty_student_ids_returns_empty_without_query(self):
+        repo, cursor = _make_repo()
+        result = repo.get_grades_map_for_students([], year_id=1)
+        assert result == {}
+        cursor.execute.assert_not_called()  # no DB round-trip for an empty class
+
+    def test_builds_map_keyed_by_student_subject_assessment(self):
+        repo, cursor = _make_repo()
+        cursor.fetchall.return_value = [
+            (1, 10, 100, 15.0),
+            (1, 10, 101, 12.0),
+            (2, 10, 100, 9.0),
+        ]
+        result = repo.get_grades_map_for_students([1, 2], year_id=1)
+        assert result == {(1, 10, 100): 15.0, (1, 10, 101): 12.0, (2, 10, 100): 9.0}
+
+    def test_keeps_first_preferred_row_ignores_duplicates(self):
+        # ORDER BY puts the preferred row (year match / highest id) first; the
+        # bulk builder must keep it and ignore later rows for the same key.
+        repo, cursor = _make_repo()
+        cursor.fetchall.return_value = [
+            (1, 10, 100, 18.0),  # preferred — kept
+            (1, 10, 100, 5.0),  # NULL-year / older — ignored
+        ]
+        result = repo.get_grades_map_for_students([1], year_id=1)
+        assert result == {(1, 10, 100): 18.0}
+
+    def test_year_zero_uses_no_year_filter_branch(self):
+        repo, cursor = _make_repo()
+        cursor.fetchall.return_value = [(1, 10, 100, 11.0)]
+        result = repo.get_grades_map_for_students([1], year_id=0)
+        assert result == {(1, 10, 100): 11.0}
+        cursor.execute.assert_called_once()

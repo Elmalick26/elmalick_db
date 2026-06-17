@@ -191,6 +191,42 @@ class BulletinRepository:
         row = cursor.fetchone()
         return row[0] if row else 0
 
+    def get_grades_map_for_students(self, student_ids: list[int], year_id: int) -> dict:
+        """Bulk variant of get_grade_score for a whole class in a single query.
+
+        Returns a dict keyed by (student_id, subject_id, assessment_id) holding the
+        latest score, applying the same selection rule as get_grade_score: prefer a
+        row matching ``year_id`` over a NULL-year row, then the highest ``id``.
+        Missing combinations are simply absent (callers default to 0).
+        """
+        if not student_ids:
+            return {}
+        cursor = self.conn.cursor()
+        if year_id:
+            cursor.execute(
+                """SELECT student_id, subject_id, assessment_id, score
+                   FROM Grades
+                   WHERE student_id = ANY(%s) AND (year_id=%s OR year_id IS NULL)
+                   ORDER BY student_id, subject_id, assessment_id,
+                            CASE WHEN year_id=%s THEN 0 ELSE 1 END, id DESC""",
+                (list(student_ids), year_id, year_id),
+            )
+        else:
+            cursor.execute(
+                """SELECT student_id, subject_id, assessment_id, score
+                   FROM Grades
+                   WHERE student_id = ANY(%s)
+                   ORDER BY student_id, subject_id, assessment_id, id DESC""",
+                (list(student_ids),),
+            )
+        grades: dict = {}
+        for student_id, subject_id, assessment_id, score in cursor.fetchall():
+            key = (student_id, subject_id, assessment_id)
+            # ORDER BY puts the preferred row first; keep it, ignore the rest.
+            if key not in grades:
+                grades[key] = score
+        return grades
+
     def get_table_columns(self, table_name: str) -> set:
         """Return column names for a table via information_schema."""
         cursor = self.conn.cursor()
