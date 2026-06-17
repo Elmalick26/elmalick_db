@@ -239,3 +239,36 @@ class TestCalculateRank:
 
     def test_empty_list(self, svc):
         assert svc.calculate_rank([], "average") == []
+
+
+# ──────────────────────────────────────────────
+# get_honor_mention — mention bands (/20)
+# ──────────────────────────────────────────────
+
+
+class TestGetHonorMention:
+    def test_excellent_at_18(self, svc):
+        assert svc.get_honor_mention(18) == "Excellent / ممتاز"
+
+    def test_tres_bien_at_16(self, svc):
+        assert svc.get_honor_mention(16) == "Très Bien / جيد جداً"
+
+    def test_bien_at_14(self, svc):
+        assert svc.get_honor_mention(14) == "Bien / جيد"
+
+    def test_assez_bien_at_12(self, svc):
+        assert svc.get_honor_mention(12) == "Assez Bien / مقبول"
+
+    def test_passable_at_10(self, svc):
+        assert svc.get_honor_mention(10) == "Passable / ضعيف"
+
+    def test_insufficient_below_10(self, svc):
+        assert svc.get_honor_mention(9.99) == "Insuffisant / راسب"
+
+    def test_just_below_band_drops_one_level(self, svc):
+        # Boundaries are inclusive lower bounds: 17.99 is "Très Bien", not "Excellent".
+        assert svc.get_honor_mention(17.99) == "Très Bien / جيد جداً"
+
+    def test_accepts_int_and_str(self, svc):
+        assert svc.get_honor_mention(20) == "Excellent / ممتاز"
+        assert svc.get_honor_mention("15") == "Bien / جيد"  # float() coercion
