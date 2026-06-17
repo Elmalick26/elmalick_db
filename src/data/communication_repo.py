@@ -4,6 +4,22 @@ from __future__ import annotations
 
 from typing import Any
 
+import security_utils
+
+
+def _maybe_decrypt(value: Any) -> Any:
+    """Decrypt a stored secret, tolerating legacy plaintext values.
+
+    Rows written before encryption was added hold the password in clear text;
+    decrypt_value raises on those, so we fall back to returning the raw value.
+    """
+    if not value:
+        return value
+    try:
+        return security_utils.decrypt_value(value)
+    except Exception:
+        return value
+
 
 class CommunicationRepository:
     def __init__(self, conn: Any) -> None:
@@ -32,14 +48,27 @@ class CommunicationRepository:
     def get_email_settings(self) -> tuple | None:
         cursor = self.conn.cursor()
         cursor.execute("SELECT * FROM EmailSettings LIMIT 1")
-        return cursor.fetchone()
+        row = cursor.fetchone()
+        if not row:
+            return row
+        # Decrypt the password column (located by name so SELECT * order is irrelevant).
+        try:
+            cols = [d[0] for d in cursor.description]
+        except (TypeError, AttributeError):
+            cols = []
+        if "email_password" in cols:
+            idx = cols.index("email_password")
+            row = tuple(_maybe_decrypt(v) if i == idx else v for i, v in enumerate(row))
+        return row
 
     def upsert_email_settings(self, smtp_server: str, smtp_port: str, email_address: str, email_password: str) -> None:
+        # Encrypt the SMTP password at rest (Fernet); empty stays empty.
+        stored_password = security_utils.encrypt_value(email_password) if email_password else email_password
         cursor = self.conn.cursor()
         cursor.execute("DELETE FROM EmailSettings")
         cursor.execute(
             "INSERT INTO EmailSettings (smtp_server, smtp_port, email_address, email_password) VALUES (%s,%s,%s,%s)",
-            (smtp_server, smtp_port, email_address, email_password),
+            (smtp_server, smtp_port, email_address, stored_password),
         )
 
     # --- Recipients ---
