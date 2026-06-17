@@ -26,6 +26,11 @@ logs/
 config.ini
 .env
 
+# Database dumps / backups (data — never commit)
+backup_*.sql
+import_*.sql
+*.dump
+
 # Python virtual environments
 .venv/
 venv/
