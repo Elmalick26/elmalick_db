@@ -1,16 +1,11 @@
-import os
+﻿import os
 import sys
-from datetime import date, datetime
 
 from fpdf import FPDF
 from PyQt6.QtCore import QDate, Qt
 from PyQt6.QtWidgets import (
     QApplication,
-    QComboBox,
     QDoubleSpinBox,
-    QFrame,
-    QGridLayout,
-    QGroupBox,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -32,127 +27,15 @@ from print_export_service import get_report_output_mode, output_pdf
 from repositories.finance_repo import FinanceRepository
 from repositories.grades_repo import GradesRepository
 from repositories.student_repo import StudentRepository
-from ui_styles import (
-    Colors,
-    ModuleHeaderWidget,
-    ThemeManager,
-    apply_shadow_to_widget,
-    get_card_style,
-    get_module_caps,
-    get_table_style,
-    get_tabs_style,
-)
+from ui_styles import ModuleHeaderWidget, ThemeManager, get_module_caps, get_tabs_style
 
 GRADES_SHEET_OUTPUT_MODE = get_report_output_mode("grades_sheet_mode", "print")
 
-try:
-    import arabic_reshaper
-    from bidi.algorithm import get_display
-
-    ARABIC_SUPPORT = True
-except ModuleNotFoundError:
-    ARABIC_SUPPORT = False
-
-
-def _get_arabic_font_files():
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    families = [
-        {
-            "regular": os.path.join(base_dir, "Fonts", "Amiri", "Amiri-Regular.ttf"),
-            "bold": os.path.join(base_dir, "Fonts", "Amiri", "Amiri-Bold.ttf"),
-            "italic": os.path.join(base_dir, "Fonts", "Amiri", "Amiri-Italic.ttf"),
-            "bold_italic": os.path.join(base_dir, "Fonts", "Amiri", "Amiri-BoldItalic.ttf"),
-        },
-        {
-            "regular": os.path.join(base_dir, "Fonts", "Noto_Naskh_Arabic", "static", "NotoNaskhArabic-Regular.ttf"),
-            "bold": os.path.join(base_dir, "Fonts", "Noto_Naskh_Arabic", "static", "NotoNaskhArabic-Bold.ttf"),
-            "italic": os.path.join(base_dir, "Fonts", "Noto_Naskh_Arabic", "static", "NotoNaskhArabic-Regular.ttf"),
-            "bold_italic": os.path.join(base_dir, "Fonts", "Noto_Naskh_Arabic", "static", "NotoNaskhArabic-Bold.ttf"),
-        },
-        {
-            "regular": os.path.join(base_dir, "Fonts", "Cairo", "static", "Cairo-Regular.ttf"),
-            "bold": os.path.join(base_dir, "Fonts", "Cairo", "static", "Cairo-Bold.ttf"),
-            "italic": os.path.join(base_dir, "Fonts", "Cairo", "static", "Cairo-Regular.ttf"),
-            "bold_italic": os.path.join(base_dir, "Fonts", "Cairo", "static", "Cairo-Bold.ttf"),
-        },
-        {
-            "regular": os.path.join(base_dir, "fonts", "Amiri-Regular.ttf"),
-            "bold": os.path.join(base_dir, "fonts", "Amiri-Bold.ttf"),
-            "italic": os.path.join(base_dir, "fonts", "Amiri-Italic.ttf"),
-            "bold_italic": os.path.join(base_dir, "fonts", "Amiri-BoldItalic.ttf"),
-        },
-        {
-            "regular": os.path.join(base_dir, "fonts", "NotoNaskhArabic-Regular.ttf"),
-            "bold": os.path.join(base_dir, "fonts", "NotoNaskhArabic-Bold.ttf"),
-            "italic": os.path.join(base_dir, "fonts", "NotoNaskhArabic-Regular.ttf"),
-            "bold_italic": os.path.join(base_dir, "fonts", "NotoNaskhArabic-Bold.ttf"),
-        },
-        {
-            "regular": os.path.join(base_dir, "fonts", "Cairo-Regular.ttf"),
-            "bold": os.path.join(base_dir, "fonts", "Cairo-Bold.ttf"),
-            "italic": os.path.join(base_dir, "fonts", "Cairo-Regular.ttf"),
-            "bold_italic": os.path.join(base_dir, "fonts", "Cairo-Bold.ttf"),
-        },
-    ]
-
-    for family in families:
-        if os.path.exists(family["regular"]):
-            return {
-                "regular": family["regular"],
-                "bold": family["bold"] if os.path.exists(family["bold"]) else family["regular"],
-                "italic": family["italic"] if os.path.exists(family["italic"]) else family["regular"],
-                "bold_italic": (
-                    family["bold_italic"]
-                    if os.path.exists(family["bold_italic"])
-                    else family["bold"] if os.path.exists(family["bold"]) else family["regular"]
-                ),
-            }
-    return None
-
-
-def _contains_arabic(text):
-    if text is None:
-        return False
-    if not isinstance(text, str):
-        text = str(text)
-    return any("\u0600" <= ch <= "\u06FF" or "\u0750" <= ch <= "\u077F" or "\u08A0" <= ch <= "\u08FF" for ch in text)
-
-
-def _prepare_pdf_text(text):
-    if text is None:
-        return ""
-    if not isinstance(text, str):
-        text = str(text)
-    if _contains_arabic(text) and ARABIC_SUPPORT:
-        try:
-            reshaped = arabic_reshaper.reshape(text)
-            return get_display(reshaped)
-        except Exception:
-            return text
-    return text
-
-
-def _sanitize_latin(text):
-    if text is None:
-        return ""
-    if not isinstance(text, str):
-        text = str(text)
-    return text.encode('latin-1', 'ignore').decode('latin-1')
-
-
-def _register_arabic_font(pdf):
-    font_files = _get_arabic_font_files()
-    if not font_files:
-        return False
-    try:
-        pdf.add_font("ArabicFont", style="", fname=font_files["regular"])
-        pdf.add_font("ArabicFont", style="B", fname=font_files["bold"])
-        pdf.add_font("ArabicFont", style="I", fname=font_files["italic"])
-        pdf.add_font("ArabicFont", style="BI", fname=font_files["bold_italic"])
-        return True
-    except Exception:
-        return False
-
+from pdf_helpers import ARABIC_SUPPORT
+from pdf_helpers import prepare_pdf_text as _prepare_pdf_text
+from pdf_helpers import sanitize_latin as _sanitize_latin
+from pdf_helpers import setup_pdf_arabic_font
+from ui_components import card_frame, style_table, styled_combo
 
 # --- فئة تقارير PDF الرسمية ---
 
@@ -164,7 +47,8 @@ class GradesSheetPDF(FPDF):
         self.school_info = None
         self.font_name = "Helvetica"
         self.arabic_font_ready = False
-        if _register_arabic_font(self):
+        if ARABIC_SUPPORT:
+            setup_pdf_arabic_font(self)
             self.font_name = "ArabicFont"
             self.arabic_font_ready = True
 
@@ -180,7 +64,7 @@ class GradesSheetPDF(FPDF):
         left_x, left_y = 10, 5
         self.set_xy(left_x, left_y)
         self.set_font(self.font_name, '', 8)
-        if self.school_info:
+        if self.school_info and len(self.school_info) > 7:
             republic = self.sanitize(self.school_info[1])
             self.cell(80, 3, republic, 0, 1, 'L')
             ia_text = self.sanitize(self.school_info[2])
@@ -256,8 +140,8 @@ class StudentGradesWindow(QMainWindow):
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
         self.main_layout = QVBoxLayout(self.central_widget)
-        self.main_layout.setContentsMargins(20, 20, 20, 20)
-        self.main_layout.setSpacing(15)
+        self.main_layout.setContentsMargins(24, 20, 24, 20)
+        self.main_layout.setSpacing(16)
 
         # 1. En-tête unifié
         header = ModuleHeaderWidget(
@@ -281,11 +165,6 @@ class StudentGradesWindow(QMainWindow):
         self.setup_view_tab()
 
         self.main_layout.addWidget(self.tabs)
-
-    def create_card(self):
-        frame = QFrame()
-        frame.setStyleSheet(get_card_style())
-        return frame
 
     def _load_kpi_stats(self):
         """Charge les statistiques globales des notes dans les KPI Cards."""
@@ -320,83 +199,83 @@ class StudentGradesWindow(QMainWindow):
         cleaned = str(text).strip().replace(" ", "_")
         return "".join(ch for ch in cleaned if ch.isalnum() or ch in "-_")
 
-    def styled_combo(self):
-        combo = QComboBox()
-        colors = ThemeManager.get_colors()
-        combo.setStyleSheet(
-            f"QComboBox {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }} QComboBox:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}"
-        )
-        combo.setMinimumHeight(40)
-        return combo
-
-    def style_table(self, table):
-        table.setShowGrid(False)
-        table.setAlternatingRowColors(True)
-        table.verticalHeader().setVisible(False)
-        table.setStyleSheet(get_table_style())
-
     # ---------------------------------------------------------
     # TAB 1: Saisie (الإدخال)
     # ---------------------------------------------------------
     def setup_entry_tab(self):
         tab = QWidget()
         layout = QVBoxLayout(tab)
-        layout.setSpacing(15)
-        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(10)
+        layout.setContentsMargins(14, 14, 14, 14)
 
-        filter_card = self.create_card()
-        filter_layout = QGridLayout(filter_card)
-        filter_layout.setContentsMargins(20, 20, 20, 20)
-        filter_layout.setSpacing(15)
+        filter_card = card_frame()
+        vlay_f = QVBoxLayout(filter_card)
+        vlay_f.setContentsMargins(12, 10, 12, 10)
+        vlay_f.setSpacing(8)
 
-        self.combo_class = self.styled_combo()
+        self.combo_class = styled_combo(min_height=32)
         self.combo_class.currentIndexChanged.connect(self.on_class_changed_entry)
 
-        self.combo_subject = self.styled_combo()
-        self.combo_period = self.styled_combo()
+        self.combo_subject = styled_combo(min_height=32)
+        self.combo_subject.addItem("- Matière -", None)
+
+        self.combo_period = styled_combo(min_height=32)
+        self.combo_period.addItem("- Période -", None)
         self.combo_period.currentIndexChanged.connect(self.load_assessments_entry)
 
-        self.combo_assessment = self.styled_combo()
+        self.combo_assessment = styled_combo(min_height=32)
+        self.combo_assessment.addItem("- Évaluation -", None)
 
         btn_load = QPushButton("📥 Charger / تحميل")
         btn_load.setCursor(Qt.CursorShape.PointingHandCursor)
         colors = ThemeManager.get_colors()
+        btn_load.setFixedHeight(32)
         btn_load.setStyleSheet(
-            f"QPushButton {{ background-color: {colors.PRIMARY}; color: white; font-weight: bold; padding: 10px; border-radius: 6px; border: none; }} QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}"
+            f"QPushButton {{ background: qlineargradient(x1:0,y1:0,x2:1,y2:0,"
+            f" stop:0 {colors.PRIMARY}, stop:1 {colors.PRIMARY_HOVER});"
+            f" color: white; font-weight: bold; font-size:11px;"
+            f" padding: 4px 16px; border-radius: 7px; border: none; }}"
+            f"QPushButton:hover {{ background: {colors.PRIMARY_DARK}; }}"
         )
         btn_load.clicked.connect(self.load_grading_sheet)
 
-        filter_layout.addWidget(QLabel("Classe:"), 0, 0)
-        filter_layout.addWidget(self.combo_class, 0, 1)
-        filter_layout.addWidget(QLabel("Matiere:"), 0, 2)
-        filter_layout.addWidget(self.combo_subject, 0, 3)
-        filter_layout.addWidget(QLabel("Periode:"), 1, 0)
-        filter_layout.addWidget(self.combo_period, 1, 1)
-        filter_layout.addWidget(QLabel("Evaluation:"), 1, 2)
-        filter_layout.addWidget(self.combo_assessment, 1, 3)
-        filter_layout.addWidget(btn_load, 1, 4)
+        row1_g = QHBoxLayout()
+        row1_g.setSpacing(8)
+        row1_g.addWidget(self.combo_class, 1)
+        row1_g.addWidget(self.combo_subject, 1)
+
+        row2_g = QHBoxLayout()
+        row2_g.setSpacing(8)
+        row2_g.addWidget(self.combo_period, 1)
+        row2_g.addWidget(self.combo_assessment, 1)
+        row2_g.addWidget(btn_load)
+
+        vlay_f.addLayout(row1_g)
+        vlay_f.addLayout(row2_g)
 
         layout.addWidget(filter_card)
 
         self.table_grades = QTableWidget()
-        self.style_table(self.table_grades)
+        style_table(self.table_grades)
         self.table_grades.setColumnCount(5)
         self.table_grades.setHorizontalHeaderLabels(["ID", "Nom (FR)", "Nom (AR)", "Note", "Obs"])
         self.table_grades.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.table_grades.verticalHeader().setDefaultSectionSize(44)
         layout.addWidget(self.table_grades)
 
-        btn_print_blank = QPushButton("🖨️ Feuille Vierge / ورقة فارغة")
+        btn_print_blank = QPushButton("🖨️ Feuille Vierge")
         btn_print_blank.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_print_blank.setFixedHeight(38)
         btn_print_blank.setStyleSheet(
-            f"QPushButton {{ background-color: {colors.SECONDARY}; color: white; font-weight: bold; padding: 10px; border-radius: 6px; border: none; }} QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}"
+            f"QPushButton {{ background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 {colors.SECONDARY}, stop:1 #0284C7); color: white; font-weight: bold; font-size:11px; padding: 4px 14px; border-radius: 8px; border: none; }} QPushButton:hover {{ background: {colors.PRIMARY_HOVER}; }}"
         )
         btn_print_blank.clicked.connect(self.print_sheet)
 
-        self.btn_save = QPushButton("💾 Enregistrer / حفظ")
+        self.btn_save = QPushButton("💾 Enregistrer")
         self.btn_save.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_save.setFixedHeight(38)
         self.btn_save.setStyleSheet(
-            f"QPushButton {{ background-color: {colors.SUCCESS}; color: white; font-weight: bold; padding: 10px; border-radius: 6px; border: none; }} QPushButton:hover {{ background-color: {colors.SUCCESS_HOVER}; }}"
+            f"QPushButton {{ background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 {colors.SUCCESS}, stop:1 #16A34A); color: white; font-weight: bold; font-size:11px; padding: 4px 14px; border-radius: 8px; border: none; }} QPushButton:hover {{ background: {colors.SUCCESS_HOVER}; }}"
         )
         self.btn_save.clicked.connect(self.save_grades)
 
@@ -411,34 +290,35 @@ class StudentGradesWindow(QMainWindow):
     def setup_view_tab(self):
         tab = QWidget()
         layout = QVBoxLayout(tab)
-        layout.setSpacing(15)
-        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(10)
+        layout.setContentsMargins(14, 14, 14, 14)
 
-        search_card = self.create_card()
+        search_card = card_frame()
         slayout = QHBoxLayout(search_card)
-        slayout.setContentsMargins(20, 20, 20, 20)
-        slayout.setSpacing(15)
+        slayout.setContentsMargins(12, 10, 12, 10)
+        slayout.setSpacing(8)
 
-        self.combo_view_class = self.styled_combo()
+        self.combo_view_class = styled_combo(min_height=32)
         self.combo_view_class.addItem("Toutes les classes", None)
         self.combo_view_class.currentIndexChanged.connect(self.on_view_class_changed)
 
-        self.combo_view_period = self.styled_combo()
+        self.combo_view_period = styled_combo(min_height=32)
         self.combo_view_period.addItem("Toutes les périodes", None)
         self.combo_view_period.currentIndexChanged.connect(self.search_grades)
 
         self.txt_search_student = QLineEdit()
         self.txt_search_student.setPlaceholderText("Nom de l'etudiant...")
-        self.txt_search_student.setMinimumHeight(38)
+        self.txt_search_student.setFixedHeight(32)
         colors = ThemeManager.get_colors()
         self.txt_search_student.setStyleSheet(
-            f"QLineEdit {{ padding: 6px 10px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }} QLineEdit:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}"
+            f"QLineEdit {{ padding: 4px 10px; border: 1.5px solid {colors.INPUT_BORDER}; border-radius: 7px; background-color: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; font-size: 11px; }} QLineEdit:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background-color: {colors.INPUT_BG_FOCUS}; }}"
         )
 
         btn_search = QPushButton("🔍 Rechercher")
         btn_search.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_search.setFixedHeight(32)
         btn_search.setStyleSheet(
-            f"QPushButton {{ background-color: {colors.SECONDARY}; color: white; font-weight: bold; padding: 10px; border-radius: 6px; border: none; }} QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}"
+            f"QPushButton {{ background-color: transparent; color: {colors.PRIMARY}; font-weight: bold; font-size:11px; padding: 4px 14px; border-radius: 7px; border: 1.5px solid {colors.PRIMARY}; }} QPushButton:hover {{ background-color: {colors.PRIMARY_LIGHT}; }}"
         )
         btn_search.clicked.connect(self.search_grades)
 
@@ -450,7 +330,7 @@ class StudentGradesWindow(QMainWindow):
         layout.addWidget(search_card)
 
         self.table_view = QTableWidget()
-        self.style_table(self.table_view)
+        style_table(self.table_view)
         self.table_view.setColumnCount(7)
         self.table_view.setHorizontalHeaderLabels(["Date", "Classe", "Eleve", "Matiere", "Eval", "Note", "Obs"])
         self.table_view.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
@@ -521,7 +401,9 @@ class StudentGradesWindow(QMainWindow):
     def on_class_changed_entry(self):
         class_id = self.combo_class.currentData()
         self.combo_subject.clear()
+        self.combo_subject.addItem("- Matière -", None)
         self.combo_period.clear()
+        self.combo_period.addItem("- Période -", None)
         if not class_id:
             return
 
@@ -540,7 +422,6 @@ class StudentGradesWindow(QMainWindow):
                 for s in subjects:
                     self.combo_subject.addItem(f"{s[1]} (Coef: {s[3]})", s[0])
 
-                self.combo_period.addItem("- Période -", None)
                 for p in repo.list_periods_for_class_year(class_id, active_year):
                     self.combo_period.addItem(p[1], p[0])
         except Exception as e:
@@ -549,6 +430,7 @@ class StudentGradesWindow(QMainWindow):
     def load_assessments_entry(self):
         period_id = self.combo_period.currentData()
         self.combo_assessment.clear()
+        self.combo_assessment.addItem("- Évaluation -", None)
         if not period_id:
             return
         try:

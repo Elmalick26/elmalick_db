@@ -10,6 +10,7 @@ api/auth.py — نظام المصادقة عبر JWT لـ FastAPI
 from __future__ import annotations
 
 import os
+import sys
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -18,17 +19,33 @@ from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from jose import JWTError, jwt
 from pydantic import BaseModel
 
-import sys
-
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from database_setup import DatabaseManager
-from app_logger import AppLogger
-from repositories.login_repo import LoginRepository
 from api.limiter import limiter
+from app_logger import AppLogger
+from database_setup import DatabaseManager
+from repositories.login_repo import LoginRepository
 
 # ────────────────────────────────────────── config
-SECRET_KEY: str = os.environ.get("ELMALICK_API_SECRET", "change-me-in-production-!!!")
+_SECRET_KEY_DEFAULT = "change-me-in-production-!!!"
+SECRET_KEY: str = os.environ.get("ELMALICK_API_SECRET", _SECRET_KEY_DEFAULT)
+
+# Fail-fast : refuser le démarrage en production avec le secret par défaut
+if SECRET_KEY == _SECRET_KEY_DEFAULT:
+    _env = os.environ.get("ELMALICK_ENV", "development").lower()
+    if _env == "production" or getattr(sys, "frozen", False):
+        raise RuntimeError(
+            "[SECURITY] ELMALICK_API_SECRET est identique à la valeur par défaut insécurisée. "
+            "Définissez la variable d'environnement ELMALICK_API_SECRET avant de lancer l'API en production."
+        )
+    import warnings as _warnings
+
+    _warnings.warn(
+        "[SECURITY] ELMALICK_API_SECRET utilise la valeur par défaut — "
+        "NE JAMAIS utiliser en production. Définissez ELMALICK_API_SECRET=<clé-forte>.",
+        stacklevel=2,
+    )
+
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 

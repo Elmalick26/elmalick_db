@@ -1,23 +1,17 @@
-import os
+﻿import os
 import sys
 from datetime import date, datetime
 
-import psycopg2
 from fpdf import FPDF
-from PyQt6.QtCore import QDate, Qt
-from PyQt6.QtGui import QColor, QFont
+from PyQt6.QtCore import QDate, Qt, QTime, QTimer
+from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QApplication,
     QCheckBox,
     QComboBox,
-    QDateEdit,
-    QFrame,
-    QGridLayout,
-    QGroupBox,
     QHBoxLayout,
     QHeaderView,
     QLabel,
-    QLineEdit,
     QMainWindow,
     QMessageBox,
     QPushButton,
@@ -35,86 +29,19 @@ from print_export_service import get_report_output_mode, output_pdf
 from repositories.attendance_repo import AttendanceRepository
 from repositories.finance_repo import FinanceRepository
 from repositories.student_repo import StudentRepository
-from ui_styles import (
-    Colors,
-    ModuleHeaderWidget,
-    ThemeManager,
-    apply_shadow_to_widget,
-    get_card_style,
-    get_table_style,
-    get_tabs_style,
-)
+from ui_styles import ModuleHeaderWidget, ThemeManager, friendly_db_error, get_module_caps, get_tabs_style
 
 ATTENDANCE_REPORT_OUTPUT_MODE = get_report_output_mode("student_attendance_mode", "save")
 
-try:
-    import arabic_reshaper
-    from bidi.algorithm import get_display
-
-    ARABIC_SUPPORT = True
-except ModuleNotFoundError:
-    ARABIC_SUPPORT = False
-
-
-def _get_arabic_font_path():
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    candidates = [
-        os.path.join(base_dir, "fonts", "Amiri-Regular.ttf"),
-        os.path.join(base_dir, "fonts", "NotoNaskhArabic-Regular.ttf"),
-        os.path.join(base_dir, "fonts", "Cairo-Regular.ttf"),
-        os.path.join(base_dir, "Fonts", "Amiri", "Amiri-Regular.ttf"),
-        os.path.join(base_dir, "Fonts", "Noto_Naskh_Arabic", "NotoNaskhArabic-Regular.ttf"),
-        os.path.join(base_dir, "Fonts", "Cairo", "Cairo-Regular.ttf"),
-    ]
-    for path in candidates:
-        if os.path.exists(path):
-            return path
-    return None
-
-
-def _contains_arabic(text):
-    if text is None:
-        return False
-    if not isinstance(text, str):
-        text = str(text)
-    return any("\u0600" <= ch <= "\u06FF" or "\u0750" <= ch <= "\u077F" or "\u08A0" <= ch <= "\u08FF" for ch in text)
-
-
-def _prepare_pdf_text(text):
-    if text is None:
-        return ""
-    if not isinstance(text, str):
-        text = str(text)
-    if _contains_arabic(text) and ARABIC_SUPPORT:
-        try:
-            reshaped = arabic_reshaper.reshape(text)
-            return get_display(reshaped)
-        except Exception:
-            return text
-    return text
-
-
-def _sanitize_latin(text):
-    if text is None:
-        return ""
-    if not isinstance(text, str):
-        text = str(text)
-    return text.encode('latin-1', 'ignore').decode('latin-1')
-
-
-def _register_arabic_font(pdf):
-    font_path = _get_arabic_font_path()
-    if not font_path:
-        return False
-    try:
-        pdf.add_font("ArabicFont", "", font_path, uni=True)
-        pdf.add_font("ArabicFont", "B", font_path, uni=True)
-        pdf.add_font("ArabicFont", "I", font_path, uni=True)
-        pdf.add_font("ArabicFont", "BI", font_path, uni=True)
-        return True
-    except Exception:
-        return False
-
+from pdf_helpers import ARABIC_SUPPORT
+from pdf_helpers import (
+    contains_arabic as _contains_arabic,  # FIX 1: alias was `sanitize` but both AttendancePDF.sanitize() and; sanitize_text() called `_sanitize_latin(text)` — NameError on every; non-Arabic cell, aborting all three PDF report types.
+)
+from pdf_helpers import find_arabic_font_path as _get_arabic_font_path
+from pdf_helpers import prepare_pdf_text as _prepare_pdf_text
+from pdf_helpers import sanitize_latin as _sanitize_latin
+from pdf_helpers import setup_pdf_arabic_font
+from ui_components import card_frame, style_table, styled_combo, styled_date_edit, styled_time_edit
 
 # --- فئة تقارير PDF الرسمية ---
 
@@ -125,7 +52,7 @@ class AttendancePDF(FPDF):
         self.school_info = school_info
         self.font_name = "Helvetica"
         self.arabic_font_ready = False
-        if _register_arabic_font(self):
+        if setup_pdf_arabic_font(self):
             self.font_name = "ArabicFont"
             self.arabic_font_ready = True
 
@@ -139,7 +66,8 @@ class AttendancePDF(FPDF):
         self.set_xy(left_x, left_y)
         self.set_font(self.font_name, '', 8)
 
-        if self.school_info:
+        # FIX 3: Added len > 7 guard — indices 1–7 raised IndexError on partial tuples.
+        if self.school_info and len(self.school_info) > 7:
             republic = self.sanitize(self.school_info[1])
             self.cell(80, 3, republic, 0, 1, 'L')
             ia_text = self.sanitize(self.school_info[2])
@@ -221,13 +149,106 @@ class StudentAttendanceWindow(QMainWindow):
         except Exception:
             return None
 
-    def on_entry_class_changed(self):
+    def get_entry_period_context(self, class_id, date_sel, year_id):
+        if not class_id or not date_sel or year_id == -1:
+            return None, None
+        try:
+            db = DatabaseManager()
+            with db.get_connection() as conn:
+                repo = AttendanceRepository(conn)
+                period_id = repo.resolve_period_id_for_class_date(class_id, date_sel, year_id)
+                if not period_id:
+                    return None, None
+                for current_period_id, period_name in repo.get_periods_for_class(class_id, year_id):
+                    if current_period_id == period_id:
+                        return period_id, period_name
+                return period_id, None
+        except Exception:
+            return None, None
+
+    def _format_slot_time_value(self, value):
+        if hasattr(value, "strftime"):
+            return value.strftime("%H:%M")
+        text = str(value or "")
+        return text[:5] if len(text) >= 5 else text
+
+    def get_entry_slot_context(self, class_id, date_sel, time_sel):
+        if not class_id or not date_sel or not time_sel:
+            return None, None
+        try:
+            db = DatabaseManager()
+            with db.get_connection() as conn:
+                repo = AttendanceRepository(conn)
+                slot = repo.resolve_timetable_slot_context_for_class_datetime(class_id, date_sel, time_sel)
+                if not slot:
+                    return None, None
+                slot_id, start_time, end_time, subject_name = slot
+                label = f"{subject_name or 'Séance planifiée'} ({self._format_slot_time_value(start_time)}-{self._format_slot_time_value(end_time)})"
+                return slot_id, label
+        except Exception:
+            return None, None
+
+    def refresh_entry_slot_options(self):
         class_id = self.combo_class_entry.currentData()
-        active_year = self.get_active_year_id()
-        self.combo_period_entry.clear()
-        self.combo_period_entry.addItem("Toutes les périodes", None)
-        for period_id, period_name in self.get_periods_for_class(class_id, active_year):
-            self.combo_period_entry.addItem(period_name, period_id)
+        date_sel = self.date_entry.date().toString("yyyy-MM-dd") if hasattr(self, "date_entry") else ""
+        current_slot_id = self.combo_slot_entry.currentData() if hasattr(self, "combo_slot_entry") else None
+
+        self.combo_slot_entry.blockSignals(True)
+        self.combo_slot_entry.clear()
+        self.combo_slot_entry.addItem("Séance automatique selon l'heure", None)
+
+        if class_id and date_sel:
+            try:
+                db = DatabaseManager()
+                with db.get_connection() as conn:
+                    slots = AttendanceRepository(conn).list_timetable_slots_for_class_date(class_id, date_sel)
+                for slot_id, start_time, end_time, subject_name in slots:
+                    start_txt = self._format_slot_time_value(start_time)
+                    end_txt = self._format_slot_time_value(end_time)
+                    slot_label = f"{start_txt}-{end_txt} | {subject_name or 'Séance'}"
+                    self.combo_slot_entry.addItem(slot_label, slot_id)
+            except Exception:
+                pass
+
+        if current_slot_id is not None:
+            idx = self.combo_slot_entry.findData(current_slot_id)
+            if idx >= 0:
+                self.combo_slot_entry.setCurrentIndex(idx)
+        self.combo_slot_entry.blockSignals(False)
+
+    def on_entry_slot_changed(self):
+        slot_id = self.combo_slot_entry.currentData()
+        if not slot_id:
+            self.load_students_for_entry()
+            return
+
+        slot_label = self.combo_slot_entry.currentText()
+        time_range = slot_label.split("|", 1)[0].strip() if "|" in slot_label else ""
+        start_txt = time_range.split("-", 1)[0].strip() if "-" in time_range else ""
+        start_time = QTime.fromString(start_txt, "HH:mm")
+        if start_time.isValid():
+            self.time_entry.blockSignals(True)
+            self.time_entry.setTime(start_time)
+            self.time_entry.blockSignals(False)
+        self.load_students_for_entry()
+
+    def on_entry_time_changed(self):
+        class_id = self.combo_class_entry.currentData()
+        date_sel = self.date_entry.date().toString("yyyy-MM-dd") if hasattr(self, "date_entry") else ""
+        time_sel = self.time_entry.time().toString("HH:mm") if hasattr(self, "time_entry") else ""
+
+        slot_id, _ = self.get_entry_slot_context(class_id, date_sel, time_sel)
+        self.combo_slot_entry.blockSignals(True)
+        if slot_id:
+            idx = self.combo_slot_entry.findData(slot_id)
+            self.combo_slot_entry.setCurrentIndex(idx if idx >= 0 else 0)
+        else:
+            self.combo_slot_entry.setCurrentIndex(0)
+        self.combo_slot_entry.blockSignals(False)
+        self.load_students_for_entry()
+
+    def on_entry_class_changed(self):
+        self.refresh_entry_slot_options()
         self.load_students_for_entry()
 
     def on_report_class_changed(self):
@@ -237,14 +258,64 @@ class StudentAttendanceWindow(QMainWindow):
         self.combo_period_report.addItem("Toutes les périodes", None)
         for period_id, period_name in self.get_periods_for_class(class_id, active_year):
             self.combo_period_report.addItem(period_name, period_id)
+        self.load_subjects_for_report()
+        self.load_slots_for_report()
         self.load_students_for_report_combo()
+
+    def on_report_subject_changed(self):
+        self.load_slots_for_report()
+
+    def _format_report_slot_label(self, row):
+        day_name = str(row[1] or "")
+        start_txt = self._format_slot_time_value(row[2])
+        end_txt = self._format_slot_time_value(row[3])
+        subject_name = str(row[4] or "Séance")
+        return f"{day_name} | {start_txt}-{end_txt} | {subject_name}"
+
+    def load_subjects_for_report(self):
+        class_id = self.combo_class_report.currentData()
+        self.combo_subject_report.clear()
+        self.combo_subject_report.addItem("Toutes les matières", None)
+
+        try:
+            db = DatabaseManager()
+            with db.get_connection() as conn:
+                rows = AttendanceRepository(conn).list_subjects_for_report(class_id)
+            for subject_id, subject_name in rows:
+                self.combo_subject_report.addItem(subject_name, subject_id)
+        except Exception as e:
+            AppLogger.error("StudentAttendance", f"Error loading report subjects: {e}")
+
+    def load_slots_for_report(self):
+        class_id = self.combo_class_report.currentData()
+        subject_id = self.combo_subject_report.currentData() if hasattr(self, "combo_subject_report") else None
+        self.combo_slot_report.clear()
+        self.combo_slot_report.addItem("Toutes les séances", None)
+
+        if not class_id:
+            return
+
+        try:
+            db = DatabaseManager()
+            with db.get_connection() as conn:
+                rows = AttendanceRepository(conn).list_slots_for_report(class_id, subject_id)
+            for row in rows:
+                self.combo_slot_report.addItem(self._format_report_slot_label(row), row[0])
+        except Exception as e:
+            AppLogger.error("StudentAttendance", f"Error loading report slots: {e}")
+
+    def apply_rbac(self, role: str) -> None:
+        """تطبيق صلاحيات الأزرار بناءً على دور المستخدم — يُستدعى من MainWindow."""
+        caps = get_module_caps(role, "student_attendance")
+        self.btn_save_all.setEnabled(caps["can_write"])
+        self.btn_save_all.setVisible(caps["can_write"])
 
     def init_ui(self):
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
         self.main_layout = QVBoxLayout(self.central_widget)
-        self.main_layout.setContentsMargins(20, 20, 20, 20)
-        self.main_layout.setSpacing(15)
+        self.main_layout.setContentsMargins(24, 20, 24, 20)
+        self.main_layout.setSpacing(16)
 
         # 1. Header
         header = ModuleHeaderWidget(
@@ -269,107 +340,108 @@ class StudentAttendanceWindow(QMainWindow):
 
         self.main_layout.addWidget(self.tabs)
 
-    def create_card(self):
-        frame = QFrame()
-        frame.setStyleSheet(get_card_style())
-        apply_shadow_to_widget(frame)
-        return frame
-
-    def styled_combo(self):
-        combo = QComboBox()
-        colors = ThemeManager.get_colors()
-        combo.setStyleSheet(
-            f"""
-            QComboBox {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }}
-            QComboBox:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}
-        """
-        )
-        combo.setMinimumHeight(38)
-        return combo
-
-    def styled_date(self):
-        de = QDateEdit()
-        de.setCalendarPopup(True)
-        colors = ThemeManager.get_colors()
-        de.setStyleSheet(
-            f"QDateEdit {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }}"
-        )
-        de.setMinimumHeight(38)
-        return de
-
-    def style_table(self, table):
-        table.setShowGrid(False)
-        table.setAlternatingRowColors(True)
-        table.verticalHeader().setVisible(False)
-        table.verticalHeader().setDefaultSectionSize(44)
-        table.setStyleSheet(get_table_style())
-
     def setup_daily_entry_tab(self):
         tab = QWidget()
         layout = QVBoxLayout(tab)
-        layout.setSpacing(15)
-        layout.setContentsMargins(20, 20, 20, 20)
+        layout.setSpacing(10)
+        layout.setContentsMargins(14, 14, 14, 14)
 
-        filter_card = self.create_card()
-        grid = QGridLayout(filter_card)
-        grid.setContentsMargins(20, 20, 20, 20)
-        grid.setSpacing(15)
+        filter_card = card_frame(with_shadow=True)
+        vlay_entry = QVBoxLayout(filter_card)
+        vlay_entry.setContentsMargins(12, 10, 12, 10)
+        vlay_entry.setSpacing(8)
 
-        self.combo_class_entry = self.styled_combo()
+        self.combo_class_entry = styled_combo(min_height=32)
         self.combo_class_entry.addItem("Choisir une Classe...", None)
         self.combo_class_entry.currentIndexChanged.connect(self.on_entry_class_changed)
 
-        self.combo_period_entry = self.styled_combo()
-        self.combo_period_entry.addItem("Toutes les périodes", None)
-        self.combo_period_entry.currentIndexChanged.connect(self.load_students_for_entry)
+        self.combo_slot_entry = styled_combo(min_height=32)
+        self.combo_slot_entry.addItem("Séance automatique selon l'heure", None)
+        self.combo_slot_entry.currentIndexChanged.connect(self.on_entry_slot_changed)
 
-        self.date_entry = self.styled_date()
+        self.lbl_period_entry_auto = QLabel("Détectée automatiquement selon la date / تُحدَّد تلقائياً حسب التاريخ")
+        self.lbl_period_entry_auto.setStyleSheet("font-weight: 600;")
+        self.lbl_slot_entry_auto = QLabel(
+            "Séance détectée automatiquement selon l'heure / تُحدَّد الحصة تلقائياً حسب الوقت"
+        )
+        self.lbl_slot_entry_auto.setStyleSheet("font-weight: 600;")
+
+        self.date_entry = styled_date_edit(min_height=32)
         self.date_entry.setDate(QDate.currentDate())
+        self.date_entry.dateChanged.connect(self.refresh_entry_slot_options)
         self.date_entry.dateChanged.connect(self.load_students_for_entry)
 
+        self.time_entry = styled_time_edit(min_height=32)
+        self.time_entry.setTime(QTime.currentTime())
+        self.time_entry.timeChanged.connect(self.on_entry_time_changed)
+
+        colors = ThemeManager.get_colors()
         btn_load = QPushButton("📥 Charger / تحميل")
         btn_load.setCursor(Qt.CursorShape.PointingHandCursor)
-        colors = ThemeManager.get_colors()
+        btn_load.setFixedHeight(32)
         btn_load.setStyleSheet(
-            f"""
-            QPushButton {{ background-color: {colors.PRIMARY}; color: white; padding: 10px; border-radius: 6px; font-weight: bold; border: none; }}
-            QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}
-        """
+            f"QPushButton {{ background: qlineargradient(x1:0,y1:0,x2:1,y2:0,"
+            f" stop:0 {colors.PRIMARY}, stop:1 {colors.PRIMARY_HOVER});"
+            f" color: white; padding: 4px 16px; border-radius: 7px;"
+            f" font-weight: bold; font-size: 11px; border: none; }}"
+            f"QPushButton:hover {{ background: {colors.PRIMARY_DARK}; }}"
         )
         btn_load.clicked.connect(self.load_students_for_entry)
 
-        grid.addWidget(QLabel("Classe:"), 0, 0)
-        grid.addWidget(self.combo_class_entry, 0, 1)
-        grid.addWidget(QLabel("Période:"), 0, 2)
-        grid.addWidget(self.combo_period_entry, 0, 3)
-        grid.addWidget(QLabel("Date:"), 1, 0)
-        grid.addWidget(self.date_entry, 1, 1)
-        grid.addWidget(btn_load, 1, 3)
+        # Row 1: Classe + Date + Heure
+        row1_entry = QHBoxLayout()
+        row1_entry.setSpacing(8)
+        lbl_cl = QLabel("Classe:")
+        lbl_cl.setFixedWidth(48)
+        row1_entry.addWidget(lbl_cl)
+        row1_entry.addWidget(self.combo_class_entry, 2)
+        row1_entry.addSpacing(6)
+        lbl_dt = QLabel("Date:")
+        lbl_dt.setFixedWidth(36)
+        row1_entry.addWidget(lbl_dt)
+        row1_entry.addWidget(self.date_entry, 1)
+        row1_entry.addSpacing(6)
+        lbl_hr = QLabel("Heure:")
+        lbl_hr.setFixedWidth(44)
+        row1_entry.addWidget(lbl_hr)
+        row1_entry.addWidget(self.time_entry, 1)
+
+        # Row 2: Séance + btn_load
+        row2_entry = QHBoxLayout()
+        row2_entry.setSpacing(8)
+        lbl_sc = QLabel("Séance:")
+        lbl_sc.setFixedWidth(48)
+        row2_entry.addWidget(lbl_sc)
+        row2_entry.addWidget(self.combo_slot_entry, 3)
+        row2_entry.addStretch()
+        row2_entry.addWidget(btn_load)
+
+        vlay_entry.addLayout(row1_entry)
+        vlay_entry.addLayout(row2_entry)
 
         layout.addWidget(filter_card)
 
         self.table_entry = QTableWidget()
-        self.style_table(self.table_entry)
+        style_table(self.table_entry)
         self.table_entry.setColumnCount(7)
         self.table_entry.setHorizontalHeaderLabels(["ID", "Élève", "Statut", "Justifié", "Motif", "Notes", "Action"])
         self.table_entry.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         layout.addWidget(self.table_entry)
 
-        btn_save_all = QPushButton("💾 Enregistrer / حفظ")
-        btn_save_all.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_save_all.setStyleSheet(
-            f"""
-            QPushButton {{
-                background-color: {colors.SUCCESS}; color: white; padding: 12px; font-weight: bold;
-                font-size: 14px; border-radius: 8px; border: none;
-            }}
-            QPushButton:hover {{ background-color: {colors.SUCCESS_HOVER}; }}
-        """
+        self.btn_save_all = QPushButton("💾 Enregistrer / حفظ")
+        self.btn_save_all.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_save_all.setMinimumHeight(40)
+        self.btn_save_all.setStyleSheet(
+            f"QPushButton {{ background: qlineargradient(x1:0,y1:0,x2:1,y2:0,"
+            f" stop:0 {colors.SUCCESS}, stop:1 #16A34A);"
+            f" color: white; padding: 10px; font-weight: bold; font-size: 13px;"
+            f" border-radius: 8px; border: none; }}"
+            f"QPushButton:hover {{ background: {colors.SUCCESS_HOVER}; }}"
         )
-        btn_save_all.clicked.connect(self.save_daily_attendance)
-        layout.addWidget(btn_save_all)
+        self.btn_save_all.clicked.connect(self.save_daily_attendance)
+        layout.addWidget(self.btn_save_all)
 
-        self.tabs.addTab(tab, "  📝 Pointage Journalier / تسجيل يومي  ")
+        self.tabs.addTab(tab, "  📝 Pointage par séance / تسجيل الحصة  ")
 
     # ---------------------------------------------------------
     # TAB 2: Reports
@@ -380,90 +452,119 @@ class StudentAttendanceWindow(QMainWindow):
         layout.setSpacing(10)
         layout.setContentsMargins(14, 14, 14, 14)
 
-        filter_card = self.create_card()
-        grid = QGridLayout(filter_card)
-        grid.setContentsMargins(12, 12, 12, 12)
-        grid.setHorizontalSpacing(10)
-        grid.setVerticalSpacing(8)
+        filter_card = card_frame(with_shadow=True)
+        vlay_rep = QVBoxLayout(filter_card)
+        vlay_rep.setContentsMargins(12, 10, 12, 10)
+        vlay_rep.setSpacing(8)
 
-        self.combo_class_report = self.styled_combo()
+        self.combo_class_report = styled_combo(min_height=32)
         self.combo_class_report.addItem("Toutes les classes", None)
         self.combo_class_report.currentIndexChanged.connect(self.on_report_class_changed)
+        self.combo_class_report.currentIndexChanged.connect(self._schedule_report_refresh)
 
-        self.combo_period_report = self.styled_combo()
+        self.combo_period_report = styled_combo(min_height=32)
         self.combo_period_report.addItem("Toutes les périodes", None)
+        self.combo_period_report.currentIndexChanged.connect(self._schedule_report_refresh)
 
-        self.combo_student_report = self.styled_combo()
+        self.combo_subject_report = styled_combo(min_height=32)
+        self.combo_subject_report.addItem("Toutes les matières", None)
+        self.combo_subject_report.currentIndexChanged.connect(self.on_report_subject_changed)
+        self.combo_subject_report.currentIndexChanged.connect(self._schedule_report_refresh)
+
+        self.combo_slot_report = styled_combo(min_height=32)
+        self.combo_slot_report.addItem("Toutes les séances", None)
+        self.combo_slot_report.currentIndexChanged.connect(self._schedule_report_refresh)
+
+        self.combo_student_report = styled_combo(min_height=32)
         self.combo_student_report.addItem("Tous les élèves", None)
+        self.combo_student_report.currentIndexChanged.connect(self._schedule_report_refresh)
 
-        self.date_from = self.styled_date()
+        self.date_from = styled_date_edit(min_height=32)
         self.date_from.setDate(QDate.currentDate().addMonths(-1))
+        self.date_from.dateChanged.connect(self._schedule_report_refresh)
 
-        self.date_to = self.styled_date()
+        self.date_to = styled_date_edit(min_height=32)
         self.date_to.setDate(QDate.currentDate())
+        self.date_to.dateChanged.connect(self._schedule_report_refresh)
 
-        grid.addWidget(QLabel("Classe:"), 0, 0)
-        grid.addWidget(self.combo_class_report, 0, 1)
-        grid.addWidget(QLabel("Période:"), 0, 2)
-        grid.addWidget(self.combo_period_report, 0, 3)
-        grid.addWidget(QLabel("Élève:"), 1, 0)
-        grid.addWidget(self.combo_student_report, 1, 1)
-        grid.addWidget(QLabel("Du (من):"), 1, 2)
-        grid.addWidget(self.date_from, 1, 3)
-        grid.addWidget(QLabel("Au (إلى):"), 2, 0)
-        grid.addWidget(self.date_to, 2, 1)
+        self._report_refresh_timer = QTimer(self)
+        self._report_refresh_timer.setSingleShot(True)
+        self._report_refresh_timer.setInterval(350)
+        self._report_refresh_timer.timeout.connect(self.preview_report_data)
 
-        btn_layout = QHBoxLayout()
-        btn_layout.setSpacing(10)
-
-        btn_style = "QPushButton { color: white; font-weight: bold; border-radius: 6px; padding: 10px; border: none; }"
         colors = ThemeManager.get_colors()
+        btn_style = (
+            "QPushButton { color: white; font-weight: bold; border-radius: 7px;"
+            " padding: 4px 12px; border: none; min-height: 32px; font-size: 11px; }"
+        )
 
-        btn_daily_pdf = QPushButton("📄 Journalier (Journal)")
+        btn_daily_pdf = QPushButton("📄 Journalier")
         btn_daily_pdf.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_daily_pdf.setStyleSheet(btn_style + f"QPushButton {{ background-color: {colors.WARNING}; }}")
+        btn_daily_pdf.setStyleSheet(
+            btn_style + f"QPushButton {{ background: qlineargradient(x1:0,y1:0,x2:1,y2:0,"
+            f" stop:0 {colors.WARNING}, stop:1 #D97706); }}"
+        )
         btn_daily_pdf.clicked.connect(lambda: self.generate_pdf_report("daily"))
 
-        btn_indiv_pdf = QPushButton("👤 Individuel (Historique)")
+        btn_indiv_pdf = QPushButton("👤 Individuel")
         btn_indiv_pdf.setCursor(Qt.CursorShape.PointingHandCursor)
         btn_indiv_pdf.setStyleSheet(
-            btn_style
-            + f"QPushButton {{ background-color: {colors.PRIMARY}; }} QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}"
+            btn_style + f"QPushButton {{ background: qlineargradient(x1:0,y1:0,x2:1,y2:0,"
+            f" stop:0 {colors.PRIMARY}, stop:1 {colors.PRIMARY_HOVER}); }}"
+            f" QPushButton:hover {{ background: {colors.PRIMARY_DARK}; }}"
         )
         btn_indiv_pdf.clicked.connect(lambda: self.generate_pdf_report("individual"))
 
-        btn_global_pdf = QPushButton("📊 Statistiques (Stats)")
+        btn_global_pdf = QPushButton("📊 Stats")
         btn_global_pdf.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_global_pdf.setStyleSheet(btn_style + f"QPushButton {{ background-color: {colors.SECONDARY}; }}")
+        btn_global_pdf.setStyleSheet(
+            btn_style + f"QPushButton {{ background: qlineargradient(x1:0,y1:0,x2:1,y2:0,"
+            f" stop:0 {colors.SECONDARY}, stop:1 #0284C7); }}"
+        )
         btn_global_pdf.clicked.connect(lambda: self.generate_pdf_report("stats"))
 
-        btn_layout.addWidget(btn_daily_pdf)
-        btn_layout.addWidget(btn_indiv_pdf)
-        btn_layout.addWidget(btn_global_pdf)
+        # Row 1: 4 combos — placeholder text replaces labels
+        row1_rep = QHBoxLayout()
+        row1_rep.setSpacing(8)
+        row1_rep.addWidget(self.combo_class_report, 1)
+        row1_rep.addWidget(self.combo_period_report, 1)
+        row1_rep.addWidget(self.combo_student_report, 1)
+        row1_rep.addWidget(self.combo_subject_report, 1)
 
-        grid.addLayout(btn_layout, 2, 2, 1, 2)
+        # Row 2: slot combo + date range + PDF buttons
+        row2_rep = QHBoxLayout()
+        row2_rep.setSpacing(8)
+        row2_rep.addWidget(self.combo_slot_report, 2)
+        lbl_du = QLabel("Du:")
+        lbl_du.setStyleSheet("font-size:11px;")
+        row2_rep.addWidget(lbl_du)
+        row2_rep.addWidget(self.date_from, 1)
+        lbl_arrow = QLabel("→")
+        lbl_arrow.setStyleSheet("font-size:13px;")
+        row2_rep.addWidget(lbl_arrow)
+        row2_rep.addWidget(self.date_to, 1)
+        row2_rep.addSpacing(8)
+        row2_rep.addWidget(btn_daily_pdf)
+        row2_rep.addWidget(btn_indiv_pdf)
+        row2_rep.addWidget(btn_global_pdf)
+
+        vlay_rep.addLayout(row1_rep)
+        vlay_rep.addLayout(row2_rep)
+
         layout.addWidget(filter_card)
 
         layout.addWidget(QLabel("Aperçu Rapide / معاينة سريعة:"))
         self.table_report = QTableWidget()
-        self.style_table(self.table_report)
-        self.table_report.setColumnCount(5)
-        self.table_report.setHorizontalHeaderLabels(["Date", "Élève", "Classe", "Statut", "Motif"])
+        style_table(self.table_report)
+        self.table_report.setColumnCount(7)
+        self.table_report.setHorizontalHeaderLabels(["Date", "Heure", "Matière", "Élève", "Classe", "Statut", "Motif"])
         self.table_report.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         layout.addWidget(self.table_report)
 
-        btn_preview = QPushButton("🔍 Rechercher / بحث")
-        btn_preview.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_preview.setStyleSheet(
-            f"""
-            QPushButton {{ background-color: {colors.TEXT_SECONDARY}; color: white; padding: 8px; border-radius: 6px; font-weight: bold; border: none; }}
-            QPushButton:hover {{ background-color: {colors.TEXT_PRIMARY}; }}
-        """
-        )
-        btn_preview.clicked.connect(self.preview_report_data)
-        layout.addWidget(btn_preview)
-
         self.tabs.addTab(tab, "  📈 Rapports & Statistiques / التقارير  ")
+
+    def _schedule_report_refresh(self):
+        self._report_refresh_timer.start()
 
     # ---------------------------------------------------------
     # Logic: Data Loading
@@ -519,8 +620,6 @@ class StudentAttendanceWindow(QMainWindow):
 
             self.combo_class_entry.clear()
             self.combo_class_entry.addItem("Choisir une Classe...", None)
-            self.combo_period_entry.clear()
-            self.combo_period_entry.addItem("Toutes les périodes", None)
 
             self.combo_class_report.clear()
             self.combo_class_report.addItem("Toutes les classes", None)
@@ -536,9 +635,11 @@ class StudentAttendanceWindow(QMainWindow):
     # ===== تعديل مهم: جلب الطلاب من SCN بناءً على السنة النشطة =====
     def load_students_for_entry(self):
         class_id = self.combo_class_entry.currentData()
-        period_id = self.combo_period_entry.currentData()
         date_sel = self.date_entry.date().toString("yyyy-MM-dd")
+        time_sel = self.time_entry.time().toString("HH:mm") if hasattr(self, "time_entry") else ""
         self.table_entry.setRowCount(0)
+        self.lbl_period_entry_auto.setText("Détectée automatiquement")
+        self.lbl_slot_entry_auto.setText("Détectée automatiquement")
 
         if not class_id:
             return
@@ -551,8 +652,29 @@ class StudentAttendanceWindow(QMainWindow):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                rows = AttendanceRepository(conn).load_students_for_attendance(
-                    class_id, date_sel, active_year, period_id
+                repo = AttendanceRepository(conn)
+                resolved_period_id, resolved_period_name = self.get_entry_period_context(
+                    class_id, date_sel, active_year
+                )
+                self.lbl_period_entry_auto.setText(
+                    resolved_period_name or "Aucune période ne couvre cette date / لا توجد فترة تغطي هذا التاريخ"
+                )
+                if not resolved_period_id:
+                    return
+
+                resolved_slot_id, resolved_slot_label = self.get_entry_slot_context(class_id, date_sel, time_sel)
+                self.lbl_slot_entry_auto.setText(
+                    resolved_slot_label or "Aucune séance programmée à cette heure / لا توجد حصة مبرمجة في هذا الوقت"
+                )
+                if not resolved_slot_id:
+                    return
+
+                rows = repo.load_students_for_attendance(
+                    class_id,
+                    date_sel,
+                    active_year,
+                    resolved_period_id,
+                    resolved_slot_id,
                 )
 
             for r in rows:
@@ -614,8 +736,8 @@ class StudentAttendanceWindow(QMainWindow):
 
     def save_daily_attendance(self):
         class_id = self.combo_class_entry.currentData()
-        period_id = self.combo_period_entry.currentData()
         date_sel = self.date_entry.date().toString("yyyy-MM-dd")
+        time_sel = self.time_entry.time().toString("HH:mm") if hasattr(self, "time_entry") else ""
 
         if not class_id:
             QMessageBox.warning(self, "Attention", "Veuillez sélectionner une classe.")
@@ -629,7 +751,25 @@ class StudentAttendanceWindow(QMainWindow):
             db = DatabaseManager()
             with db.get_connection() as conn:
                 repo = AttendanceRepository(conn)
-                resolved_period_id = period_id or self.resolve_period_id_for_class_date(class_id, date_sel, active_year)
+                resolved_period_id, _ = self.get_entry_period_context(class_id, date_sel, active_year)
+                if not resolved_period_id:
+                    QMessageBox.warning(
+                        self,
+                        "Attention",
+                        "Aucune période académique ne couvre cette date pour cette classe. / لا توجد فترة أكاديمية تغطي هذا التاريخ لهذا الفصل.",
+                    )
+                    return
+                resolved_slot_id, resolved_slot_label = self.get_entry_slot_context(class_id, date_sel, time_sel)
+                if not resolved_slot_id:
+                    QMessageBox.warning(
+                        self,
+                        "Attention",
+                        (
+                            resolved_slot_label
+                            or "Aucune séance programmée ne correspond à cette classe, cette date et cette heure. / لا توجد حصة مبرمجة تطابق هذا الفصل وهذا التاريخ وهذا الوقت."
+                        ),
+                    )
+                    return
                 for row in range(self.table_entry.rowCount()):
                     sid = int(self.table_entry.item(row, 0).text())
                     status = self.table_entry.cellWidget(row, 2).currentText()
@@ -637,12 +777,24 @@ class StudentAttendanceWindow(QMainWindow):
                     reason = self.table_entry.item(row, 4).text()
                     notes = self.table_entry.item(row, 5).text()
                     repo.upsert_attendance(
-                        sid, date_sel, status, is_justified, reason, notes, active_year, resolved_period_id
+                        sid,
+                        date_sel,
+                        status,
+                        is_justified,
+                        reason,
+                        notes,
+                        active_year,
+                        resolved_period_id,
+                        resolved_slot_id,
                     )
                 conn.commit()
-            QMessageBox.information(self, "Succès", "Données enregistrées avec succès!")
+            QMessageBox.information(
+                self,
+                "Succès",
+                f"Données enregistrées avec succès pour {resolved_slot_label or 'la séance sélectionnée'}!",
+            )
         except Exception as e:
-            QMessageBox.critical(self, "Erreur", str(e))
+            QMessageBox.critical(self, "Erreur", friendly_db_error(e))
 
     # ---------------------------------------------------------
     # Logic: Reports
@@ -672,8 +824,10 @@ class StudentAttendanceWindow(QMainWindow):
             idx = self.table_report.rowCount()
             self.table_report.insertRow(idx)
             self.table_report.setItem(idx, 0, QTableWidgetItem(str(r['date']) if r['date'] else ""))
-            self.table_report.setItem(idx, 1, QTableWidgetItem(r['name']))
-            self.table_report.setItem(idx, 2, QTableWidgetItem(r['class']))
+            self.table_report.setItem(idx, 1, QTableWidgetItem(r['time_range']))
+            self.table_report.setItem(idx, 2, QTableWidgetItem(r['subject']))
+            self.table_report.setItem(idx, 3, QTableWidgetItem(r['name']))
+            self.table_report.setItem(idx, 4, QTableWidgetItem(r['class']))
 
             # Color coding the status for visual clarity
             status_item = QTableWidgetItem(r['status'])
@@ -681,17 +835,19 @@ class StudentAttendanceWindow(QMainWindow):
                 status_item.setForeground(QColor(239, 68, 68))  # Red
             elif r['status'] == 'Retard':
                 status_item.setForeground(QColor(245, 158, 11))  # Orange
-            self.table_report.setItem(idx, 3, status_item)
+            self.table_report.setItem(idx, 5, status_item)
 
             motif = r['reason']
             if r['justifie']:
                 motif += " (Justifié)"
-            self.table_report.setItem(idx, 4, QTableWidgetItem(motif))
+            self.table_report.setItem(idx, 6, QTableWidgetItem(motif))
 
     # ===== تعديل مهم: تقرير الحضور يعتمد على SCN وليس S.class_id =====
     def fetch_report_data(self):
         cid = self.combo_class_report.currentData()
         pid = self.combo_period_report.currentData()
+        subject_id = self.combo_subject_report.currentData() if hasattr(self, "combo_subject_report") else None
+        slot_id = self.combo_slot_report.currentData() if hasattr(self, "combo_slot_report") else None
         sid = self.combo_student_report.currentData()
         d_from = self.date_from.date().toString("yyyy-MM-dd")
         d_to = self.date_to.date().toString("yyyy-MM-dd")
@@ -701,10 +857,34 @@ class StudentAttendanceWindow(QMainWindow):
             db = DatabaseManager()
             with db.get_connection() as conn:
                 rows = AttendanceRepository(conn).fetch_report_data(
-                    active_year, d_from, d_to, class_id=cid, student_id=sid, period_id=pid
+                    active_year,
+                    d_from,
+                    d_to,
+                    class_id=cid,
+                    student_id=sid,
+                    period_id=pid,
+                    subject_id=subject_id,
+                    timetable_slot_id=slot_id,
                 )
+
+            def _format_time_range(start_time, end_time):
+                if not start_time or not end_time:
+                    return "Journalier"
+                start_txt = str(start_time)[:5]
+                end_txt = str(end_time)[:5]
+                return f"{start_txt}-{end_txt}"
+
             return [
-                {'date': r[0], 'name': r[1], 'class': r[2], 'status': r[3], 'justifie': r[4], 'reason': r[5]}
+                {
+                    'date': r[0],
+                    'name': r[1],
+                    'class': r[2],
+                    'status': r[3],
+                    'justifie': r[4],
+                    'reason': r[5],
+                    'time_range': _format_time_range(r[6], r[7]),
+                    'subject': r[8] or 'Séance non précisée',
+                }
                 for r in rows
             ]
         except Exception as e:
@@ -808,15 +988,19 @@ class StudentAttendanceWindow(QMainWindow):
 
             else:
                 pdf.cell(30, 10, "Date", 1, 0, 'C', True)
-                pdf.cell(60, 10, "Eleve", 1, 0, 'C', True)
+                pdf.cell(30, 10, "Heure", 1, 0, 'C', True)
+                pdf.cell(40, 10, "Matiere", 1, 0, 'C', True)
+                pdf.cell(45, 10, "Eleve", 1, 0, 'C', True)
                 pdf.cell(30, 10, "Statut", 1, 0, 'C', True)
-                pdf.cell(70, 10, "Motif / Remarque", 1, 1, 'C', True)
+                pdf.cell(45, 10, "Motif / Remarque", 1, 1, 'C', True)
 
                 apply_table_body_style(pdf, pdf.font_name, 10)
                 for idx, row in enumerate(data):
                     set_zebra_row_fill(pdf, idx)
                     pdf.cell(30, 10, str(row['date']), 1, 0, 'L', True)
-                    pdf.cell(60, 10, self.sanitize_text(row['name']), 1, 0, 'L', True)
+                    pdf.cell(30, 10, self.sanitize_text(row['time_range']), 1, 0, 'C', True)
+                    pdf.cell(40, 10, self.sanitize_text(row['subject']), 1, 0, 'L', True)
+                    pdf.cell(45, 10, self.sanitize_text(row['name']), 1, 0, 'L', True)
 
                     status_txt = self.sanitize_text(row['status'])
                     if row['justifie']:
@@ -825,7 +1009,7 @@ class StudentAttendanceWindow(QMainWindow):
                     pdf.cell(30, 10, status_txt, 1, 0, 'C', True)
 
                     motif = self.sanitize_text(row['reason']) if row['reason'] else "-"
-                    pdf.cell(70, 10, motif, 1, 1, 'L', True)
+                    pdf.cell(45, 10, motif, 1, 1, 'L', True)
 
             output_pdf(
                 pdf,

@@ -67,49 +67,34 @@ class FinanceRepository:
     # ──────────────────────────────────────────────
 
     def list_late_payers(self, year_id: int, as_of_date: str) -> list[tuple]:
-        """Return (full_name, class_name, invoice_list, total_debt) for overdue active students."""
+        """Return (full_name, class_name, invoice_list, total_debt) for overdue active students.
+
+        Uses a CTE to pre-aggregate payments once per due, eliminating the
+        previous O(n×m) pattern of 6 correlated subqueries per row.
+        """
         cursor = self.conn.cursor()
         cursor.execute(
             """
+            WITH paid AS (
+                SELECT COALESCE(due_id, month_index) AS due_id_eff,
+                       SUM(amount_paid)              AS total_paid
+                FROM MonthlyPaymentsStatus
+                GROUP BY COALESCE(due_id, month_index)
+            )
             SELECT TRIM(COALESCE(S.first_name_fr, '') || ' ' || COALESCE(S.last_name_fr, '')),
                    C.class_name_fr,
                    STRING_AGG(COALESCE(D.fee_description, D.fee_type), ', '),
-                   SUM(
-                       CASE
-                           WHEN (D.net_amount - COALESCE((
-                               SELECT SUM(MPS.amount_paid)
-                               FROM MonthlyPaymentsStatus MPS
-                               WHERE MPS.due_id = D.id OR (MPS.due_id IS NULL AND MPS.month_index = D.id)
-                           ), 0)) > 0
-                           THEN (D.net_amount - COALESCE((
-                               SELECT SUM(MPS2.amount_paid)
-                               FROM MonthlyPaymentsStatus MPS2
-                               WHERE MPS2.due_id = D.id OR (MPS2.due_id IS NULL AND MPS2.month_index = D.id)
-                           ), 0))
-                           ELSE 0
-                       END
-                   )
+                   SUM(GREATEST(D.net_amount - COALESCE(P.total_paid, 0), 0))
             FROM StudentDues D
             JOIN Students S ON D.student_id = S.id
-            JOIN StudentClassNumbers SCN ON S.id = SCN.student_id AND SCN.year_id = D.year_id
+            JOIN StudentClassNumbers SCN
+                 ON S.id = SCN.student_id AND SCN.year_id = D.year_id
             JOIN Classes C ON SCN.class_id = C.id
-            WHERE D.year_id = %s AND D.is_paid = 0 AND D.due_date <= %s AND S.status = 'Active'
-            GROUP BY S.id, C.class_name_fr
-            HAVING SUM(
-                CASE
-                    WHEN (D.net_amount - COALESCE((
-                        SELECT SUM(MPS3.amount_paid)
-                        FROM MonthlyPaymentsStatus MPS3
-                        WHERE MPS3.due_id = D.id OR (MPS3.due_id IS NULL AND MPS3.month_index = D.id)
-                    ), 0)) > 0
-                    THEN (D.net_amount - COALESCE((
-                        SELECT SUM(MPS4.amount_paid)
-                        FROM MonthlyPaymentsStatus MPS4
-                        WHERE MPS4.due_id = D.id OR (MPS4.due_id IS NULL AND MPS4.month_index = D.id)
-                    ), 0))
-                    ELSE 0
-                END
-            ) > 0
+            LEFT JOIN paid P ON P.due_id_eff = D.id
+            WHERE D.year_id = %s AND D.is_paid = 0
+              AND D.due_date <= %s AND S.status = 'Active'
+            GROUP BY S.id, S.last_name_fr, S.first_name_fr, C.class_name_fr
+            HAVING SUM(GREATEST(D.net_amount - COALESCE(P.total_paid, 0), 0)) > 0
             ORDER BY S.last_name_fr, S.first_name_fr
             """,
             (year_id, as_of_date),

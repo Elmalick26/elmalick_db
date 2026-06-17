@@ -317,10 +317,12 @@ def initialize_schema(db_manager) -> None:  # noqa: C901
                 notes TEXT,
                 year_id INTEGER,
                 period_id INTEGER,
+             timetable_slot_id INTEGER,
                 recorded_by TEXT,
                 FOREIGN KEY (student_id) REFERENCES Students(id) ON DELETE CASCADE,
                 FOREIGN KEY (year_id) REFERENCES AcademicYears(id),
-                FOREIGN KEY (period_id) REFERENCES AcademicPeriods(id)
+             FOREIGN KEY (period_id) REFERENCES AcademicPeriods(id),
+             FOREIGN KEY (timetable_slot_id) REFERENCES Timetable(id) ON DELETE SET NULL
            )
         """
         )
@@ -368,7 +370,9 @@ def initialize_schema(db_manager) -> None:  # noqa: C901
                 observation TEXT,
                 year_id INTEGER,
                 period_id INTEGER,
-                FOREIGN KEY (student_id) REFERENCES Students(id)
+                timetable_slot_id INTEGER,
+                FOREIGN KEY (student_id) REFERENCES Students(id),
+                FOREIGN KEY (timetable_slot_id) REFERENCES Timetable(id) ON DELETE SET NULL
             )
         """
         )
@@ -797,9 +801,11 @@ def initialize_schema(db_manager) -> None:  # noqa: C901
         _ensure_column("Grades", "year_id", "INTEGER")
         _ensure_column("StudentAttendance", "year_id", "INTEGER")
         _ensure_column("StudentAttendance", "period_id", "INTEGER")
+        _ensure_column("StudentAttendance", "timetable_slot_id", "INTEGER")
         _ensure_column("StudentAttendance", "recorded_by", "TEXT")
         _ensure_column("StudentDiscipline", "year_id", "INTEGER")
         _ensure_column("StudentDiscipline", "period_id", "INTEGER")
+        _ensure_column("StudentDiscipline", "timetable_slot_id", "INTEGER")
         _ensure_column("StudentDiscipline", "sanction", "TEXT")
         _ensure_column("StudentDiscipline", "points_deducted", "REAL DEFAULT 0")
         _ensure_column("StudentDiscipline", "observation", "TEXT")
@@ -868,9 +874,11 @@ def initialize_schema(db_manager) -> None:  # noqa: C901
             "CREATE INDEX IF NOT EXISTS idx_attendance_student_year_status ON StudentAttendance(student_id, year_id, status)",
             "CREATE INDEX IF NOT EXISTS idx_attendance_year ON StudentAttendance(year_id)",
             "CREATE INDEX IF NOT EXISTS idx_attendance_year_period ON StudentAttendance(year_id, period_id)",
+            "CREATE INDEX IF NOT EXISTS idx_attendance_year_slot ON StudentAttendance(year_id, timetable_slot_id)",
             "CREATE INDEX IF NOT EXISTS idx_discipline_student_year ON StudentDiscipline(student_id, year_id)",
             "CREATE INDEX IF NOT EXISTS idx_discipline_year ON StudentDiscipline(year_id)",
             "CREATE INDEX IF NOT EXISTS idx_discipline_year_period ON StudentDiscipline(year_id, period_id)",
+            "CREATE INDEX IF NOT EXISTS idx_discipline_year_slot ON StudentDiscipline(year_id, timetable_slot_id)",
             "CREATE INDEX IF NOT EXISTS idx_payments_date ON Payments(transaction_date)",
             "CREATE INDEX IF NOT EXISTS idx_expenses_date ON Expenses(expense_date)",
             "CREATE INDEX IF NOT EXISTS idx_student_dues_student_year ON StudentDues(student_id, year_id)",
@@ -878,6 +886,7 @@ def initialize_schema(db_manager) -> None:  # noqa: C901
             # Critical composite indexes for analytics queries
             "CREATE INDEX IF NOT EXISTS idx_grades_student_year ON Grades(student_id, year_id)",
             "CREATE INDEX IF NOT EXISTS idx_attendance_student_date ON StudentAttendance(student_id, date)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS uq_attendance_student_date_slot ON StudentAttendance(student_id, date, year_id, timetable_slot_id) WHERE timetable_slot_id IS NOT NULL",
             "CREATE INDEX IF NOT EXISTS idx_scn_class_year ON StudentClassNumbers(class_id, year_id)",
         ]
         for stmt in reporting_index_statements:

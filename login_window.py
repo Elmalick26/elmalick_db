@@ -16,6 +16,7 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QVBoxLayout,
+    QWidget,
 )
 
 import security_utils
@@ -45,7 +46,7 @@ class LoginWindow(QDialog):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Connexion / تسجيل الدخول")
-        self.setFixedSize(520, 600)
+        self.setFixedSize(460, 620)
         icon_path = _resolve_app_icon_path()
         if icon_path:
             self.setWindowIcon(QIcon(icon_path))
@@ -90,139 +91,236 @@ class LoginWindow(QDialog):
             AppLogger.error("LoginWindow", f"Erreur lors de la vérification de l'administrateur: {str(e)}")
 
     def init_ui(self):
-        # إعداد النمط العام — يستخدم ThemeManager تلقائياً (light أو dark)
         colors = ThemeManager.get_colors()
         dark = ThemeManager.is_dark_mode()
-        # خلفية بتدرج لوني (gradient) تستجيب للثيم
-        grad_top = "#0F172A" if dark else "#1E293B"
-        grad_bot = "#1E3A5F" if dark else "#2D4A7A"
+
+        # ── خلفية متدرجة ───────────────────────────────────────
+        grad_top = "#080D1A" if dark else "#0F1629"
+        grad_bot = "#1A2744" if dark else "#1E3A5F"
         self.setStyleSheet(
             f"""
             QDialog {{
-                background: qlineargradient(x1:0, y1:0, x2:0, y2:1,
-                    stop:0 {grad_top}, stop:1 {grad_bot});
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 {grad_top}, stop:0.5 #162040, stop:1 {grad_bot});
                 font-family: 'Segoe UI', 'Cairo', sans-serif;
             }}
         """
         )
 
-        # التنسيق الرئيسي
-        main_layout = QVBoxLayout(self)
-        main_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        main_layout.setContentsMargins(50, 40, 50, 30)
+        root = QVBoxLayout(self)
+        root.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        root.setContentsMargins(36, 28, 36, 20)
+        root.setSpacing(0)
 
-        # إنشاء حاوية (Card)
+        # ════════════════════════════════════════════════════
+        #  البطاقة الرئيسية
+        # ════════════════════════════════════════════════════
         self.card = QFrame()
         self.card.setObjectName("LoginCard")
         self.card.setStyleSheet(
             f"""
             QFrame#LoginCard {{
                 background-color: {colors.BG_CARD};
-                border-radius: 12px;
+                border-radius: 20px;
                 border: 1px solid {colors.BORDER};
             }}
         """
         )
-
-        # إضافة تأثير الظل — يُطبَّق دون opacity effect (لا nested painters)
         shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(35)
-        shadow.setColor(QColor(0, 0, 0, 80))
-        shadow.setOffset(0, 8)
+        shadow.setBlurRadius(50)
+        shadow.setColor(QColor(0, 0, 0, 100))
+        shadow.setOffset(0, 12)
         self.card.setGraphicsEffect(shadow)
 
-        # تنسيق محتوى البطاقة
-        card_layout = QVBoxLayout(self.card)
-        card_layout.setContentsMargins(35, 35, 35, 35)
-        card_layout.setSpacing(16)
+        card_lay = QVBoxLayout(self.card)
+        card_lay.setContentsMargins(0, 0, 0, 0)
+        card_lay.setSpacing(0)
 
-        # 0. شعار التطبيق (Logo)
+        # ── منطقة الشعار (Header Band) ──────────────────────
+        header = QFrame()
+        header.setFixedHeight(148)
+        header.setStyleSheet(
+            """
+            QFrame {{
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                    stop:0 #4F46E5, stop:1 #7C3AED);
+                border-top-left-radius: 20px;
+                border-top-right-radius: 20px;
+                border-bottom-left-radius: 0px;
+                border-bottom-right-radius: 0px;
+            }}
+        """
+        )
+        hdr_lay = QVBoxLayout(header)
+        hdr_lay.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        hdr_lay.setSpacing(6)
+
         lbl_logo = QLabel("🏫")
         lbl_logo.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        lbl_logo.setFont(QFont("Segoe UI Emoji", 44))
-        lbl_logo.setStyleSheet("background: transparent; margin-bottom: 4px;")
-        card_layout.addWidget(lbl_logo)
+        lbl_logo.setFont(QFont("Segoe UI Emoji", 36))
+        lbl_logo.setStyleSheet("background: transparent; color: white;")
+        hdr_lay.addWidget(lbl_logo)
 
-        # 1. العنوان الرئيسي
-        lbl_title = QLabel("El Malick Gest\nنظام إدارة المدارس")
+        lbl_app = QLabel("El Malick Gest")
+        lbl_app.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lbl_app.setStyleSheet(
+            """
+            color: white; font-size: 20px; font-weight: 800;
+            letter-spacing: 0.5px; background: transparent;
+        """
+        )
+        hdr_lay.addWidget(lbl_app)
+
+        lbl_sub = QLabel("نظام إدارة المدارس — Système de Gestion Scolaire")
+        lbl_sub.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        lbl_sub.setStyleSheet("color: rgba(255,255,255,0.75); font-size: 11px; background: transparent;")
+        hdr_lay.addWidget(lbl_sub)
+
+        card_lay.addWidget(header)
+
+        # ── منطقة النموذج (Form Area) ───────────────────────
+        form_frame = QWidget()
+        form_frame.setStyleSheet("background: transparent;")
+        form_lay = QVBoxLayout(form_frame)
+        form_lay.setContentsMargins(36, 28, 36, 28)
+        form_lay.setSpacing(14)
+
+        # — عنوان النموذج —
+        lbl_title = QLabel("Connexion / تسجيل الدخول")
         lbl_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
         lbl_title.setStyleSheet(
             f"""
-            QLabel {{
-                color: {colors.TEXT_PRIMARY};
-                font-size: 24px;
-                font-weight: 800;
-                margin-bottom: 15px;
-            }}
+            color: {colors.TEXT_PRIMARY}; font-size: 16px;
+            font-weight: 700; background: transparent;
         """
         )
-        card_layout.addWidget(lbl_title)
+        form_lay.addWidget(lbl_title)
+        form_lay.addSpacing(4)
 
-        # 2. حقل اسم المستخدم
+        # — حقل اسم المستخدم —
+        form_lay.addWidget(self._make_label("👤  Nom d'utilisateur / اسم المستخدم", colors))
         self.txt_user = QLineEdit()
-        self.txt_user.setPlaceholderText("Nom d'utilisateur / اسم المستخدم")
-        self.txt_user.setMinimumHeight(48)
-        self.apply_input_style(self.txt_user)
-        card_layout.addWidget(self.txt_user)
+        self.txt_user.setPlaceholderText("admin")
+        self.txt_user.setMinimumHeight(46)
+        self._style_input(self.txt_user, colors)
+        form_lay.addWidget(self.txt_user)
 
-        # 3. حقل كلمة المرور
+        # — حقل كلمة المرور —
+        form_lay.addWidget(self._make_label("🔒  Mot de passe / كلمة المرور", colors))
+        pass_row = QHBoxLayout()
+        pass_row.setSpacing(0)
         self.txt_pass = QLineEdit()
-        self.txt_pass.setPlaceholderText("Mot de passe / كلمة المرور")
+        self.txt_pass.setPlaceholderText("••••••••")
         self.txt_pass.setEchoMode(QLineEdit.EchoMode.Password)
-        self.txt_pass.setMinimumHeight(48)
-        self.apply_input_style(self.txt_pass)
-        # السماح بتسجيل الدخول عند الضغط على Enter في حقل كلمة المرور
+        self.txt_pass.setMinimumHeight(46)
+        self._style_input(self.txt_pass, colors)
         self.txt_pass.returnPressed.connect(self.check_login)
-        card_layout.addWidget(self.txt_pass)
 
-        # مسافة إضافية
-        card_layout.addSpacing(15)
-
-        # 4. زر الدخول (Deep Slate Style)
-        btn_login = QPushButton("Connexion / تسجيل الدخول")
-        btn_login.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_login.setMinimumHeight(52)
-        btn_login.setStyleSheet(
+        # زر إظهار/إخفاء
+        self._pass_visible = False
+        self.btn_eye = QPushButton("👁")
+        self.btn_eye.setFixedSize(46, 46)
+        self.btn_eye.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_eye.setToolTip("إظهار / إخفاء كلمة المرور")
+        self.btn_eye.setStyleSheet(
             f"""
             QPushButton {{
-                background-color: {colors.PRIMARY};
-                color: white;
-                font-weight: bold;
+                background: {colors.INPUT_BG};
+                border: 1.5px solid {colors.INPUT_BORDER};
+                border-left: none;
+                border-top-right-radius: 8px;
+                border-bottom-right-radius: 8px;
+                border-top-left-radius: 0px;
+                border-bottom-left-radius: 0px;
                 font-size: 16px;
-                border-radius: 8px;
+                color: {colors.TEXT_SECONDARY};
+                font-family: "Segoe UI Emoji";
+            }}
+            QPushButton:hover {{ background: {colors.BORDER}; color: {colors.PRIMARY}; }}
+        """
+        )
+        self.btn_eye.clicked.connect(self._toggle_password_visibility)
+        # تعديل input ليفقد border-radius الجهة اليمنى
+        self.txt_pass.setStyleSheet(
+            self.txt_pass.styleSheet().replace(
+                "border-radius: 8px",
+                "border-radius: 8px; border-top-right-radius: 0px; border-bottom-right-radius: 0px;",
+            )
+        )
+        pass_row.addWidget(self.txt_pass, 1)
+        pass_row.addWidget(self.btn_eye)
+        form_lay.addLayout(pass_row)
+
+        # — رسالة الخطأ inline —
+        self.lbl_error = QLabel("")
+        self.lbl_error.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_error.setFixedHeight(24)
+        self.lbl_error.setStyleSheet(
+            f"""
+            color: {colors.DANGER}; font-size: 12px; font-weight: 600;
+            background: transparent;
+        """
+        )
+        self.lbl_error.hide()
+        form_lay.addWidget(self.lbl_error)
+
+        # — زر الدخول —
+        form_lay.addSpacing(4)
+        self.btn_login = QPushButton("  →  Connexion / تسجيل الدخول")
+        self.btn_login.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_login.setMinimumHeight(50)
+        self.btn_login.setStyleSheet(
+            f"""
+            QPushButton {{
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #4F46E5, stop:1 #7C3AED);
+                color: white;
+                font-weight: 700;
+                font-size: 15px;
+                border-radius: 10px;
                 border: none;
+                letter-spacing: 0.3px;
             }}
             QPushButton:hover {{
-                background-color: {colors.PRIMARY_HOVER};
+                background: qlineargradient(x1:0, y1:0, x2:1, y2:0,
+                    stop:0 #4338CA, stop:1 #6D28D9);
             }}
             QPushButton:pressed {{
-                background-color: {colors.PRIMARY_DARK};
+                background: #3730A3;
                 padding-top: 2px;
+            }}
+            QPushButton:disabled {{
+                background: {colors.BORDER};
+                color: {colors.TEXT_SECONDARY};
             }}
         """
         )
-        btn_login.clicked.connect(self.check_login)
-        card_layout.addWidget(btn_login)
+        self.btn_login.clicked.connect(self.check_login)
+        form_lay.addWidget(self.btn_login)
 
-        # إضافة البطاقة للتنسيق الرئيسي
-        main_layout.addWidget(self.card)
+        card_lay.addWidget(form_frame)
+        root.addWidget(self.card)
 
-        # Footer
-        lbl_footer = QLabel(
-            "v1.0 Professional Edition © 2026 Développé par El Malick\nجميع الحقوق محفوظة © 2026 التطوير بواسطة El Malick\nContact: elmalickdiouf26@gmail.com"
-        )
+        # ── Footer ───────────────────────────────────────────
+        lbl_footer = QLabel("v2.0 Professional © 2026 — elmalickdiouf26@gmail.com")
         lbl_footer.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        lbl_footer.setStyleSheet(f"color: {colors.TEXT_SECONDARY}; font-size: 11px; margin-top: 15px;")
-        main_layout.addWidget(lbl_footer)
+        lbl_footer.setStyleSheet("color: rgba(255,255,255,0.35); font-size: 10px; margin-top: 12px;")
+        root.addWidget(lbl_footer)
 
-    def apply_input_style(self, widget):
-        """دالة تنسيق الحقول بنمط Slate"""
-        colors = ThemeManager.get_colors()
+    # ── Helpers ──────────────────────────────────────────────
+    def _make_label(self, text: str, colors) -> QLabel:
+        lbl = QLabel(text)
+        lbl.setStyleSheet(
+            f"color: {colors.TEXT_SECONDARY}; font-size: 12px; font-weight: 600; background: transparent;"
+        )
+        return lbl
+
+    def _style_input(self, widget: QLineEdit, colors):
         widget.setStyleSheet(
             f"""
             QLineEdit {{
-                padding: 10px 15px;
-                border: 1px solid {colors.BORDER};
+                padding: 10px 14px;
+                border: 1.5px solid {colors.INPUT_BORDER};
                 border-radius: 8px;
                 background-color: {colors.INPUT_BG};
                 color: {colors.TEXT_PRIMARY};
@@ -234,6 +332,34 @@ class LoginWindow(QDialog):
             }}
         """
         )
+
+    def _toggle_password_visibility(self):
+        self._pass_visible = not self._pass_visible
+        if self._pass_visible:
+            self.txt_pass.setEchoMode(QLineEdit.EchoMode.Normal)
+            self.btn_eye.setText("🙈")
+        else:
+            self.txt_pass.setEchoMode(QLineEdit.EchoMode.Password)
+            self.btn_eye.setText("👁")
+
+    def _show_error(self, msg: str):
+        self.lbl_error.setText(f"⚠  {msg}")
+        self.lbl_error.show()
+        # اهتزاز خفيف للحقل
+        self.txt_pass.setStyleSheet(
+            self.txt_pass.styleSheet().replace("border: 1.5px solid", "border: 2px solid #DC2626; border:")
+        )
+        QTimer.singleShot(2500, self._clear_error)
+
+    def _clear_error(self):
+        self.lbl_error.hide()
+        colors = ThemeManager.get_colors()
+        self._style_input(self.txt_pass, colors)
+
+    def apply_input_style(self, widget):
+        """دالة تنسيق الحقول (للتوافق مع الكود القديم)"""
+        colors = ThemeManager.get_colors()
+        self._style_input(widget, colors)
 
     def _force_change_default_password(self, conn, user_id: int) -> bool:
         """
@@ -319,7 +445,11 @@ class LoginWindow(QDialog):
         pwd = self.txt_pass.text()
 
         if not user or not pwd:
+            self._show_error("الرجاء ملء جميع الحقول — Veuillez remplir tous les champs")
             return
+
+        self.btn_login.setEnabled(False)
+        self.btn_login.setText("  ⏳  جاري التحقق...")
 
         try:
             db = DatabaseManager()
@@ -329,13 +459,7 @@ class LoginWindow(QDialog):
                 # 1. Vérification du verrouillage persistant (DB)
                 _, is_locked = repo.get_lockout_status(user)
                 if is_locked:
-                    msg = QMessageBox(self)
-                    msg.setWindowTitle("Erreur / خطأ")
-                    msg.setText("Trop de tentatives. Réessayez plus tard.\nمحاولات كثيرة. حاول لاحقاً")
-                    msg.setIcon(QMessageBox.Icon.Warning)
-                    colors = ThemeManager.get_colors()
-                    msg.setStyleSheet(f"background-color: {colors.BG_CARD}; color: {colors.TEXT_PRIMARY};")
-                    msg.exec()
+                    self._show_error("محاولات كثيرة — تم تعليق الحساب مؤقتاً")
                     AppLogger.warning(
                         "LoginWindow",
                         f"Tentative de connexion bloquée pour l'utilisateur '{user}' (Verrouillage actif)",
@@ -348,7 +472,7 @@ class LoginWindow(QDialog):
 
                     if status != "Actif":
                         log_audit(conn, user, "LOGIN_DISABLED", user)
-                        QMessageBox.warning(self, "Erreur", "Ce compte est désactivé.\nهذا الحساب معطل.")
+                        self._show_error("هذا الحساب معطل — Ce compte est désactivé")
                         AppLogger.warning("LoginWindow", f"Tentative de connexion sur un compte désactivé '{user}'")
                         return
 
@@ -389,16 +513,11 @@ class LoginWindow(QDialog):
             QMessageBox.critical(self, "Erreur Critique", f"Erreur de base de données: {str(e)}")
             AppLogger.error("LoginWindow", f"Erreur critique lors de la connexion: {str(e)}")
             return
+        finally:
+            self.btn_login.setEnabled(True)
+            self.btn_login.setText("  →  Connexion / تسجيل الدخول")
 
-        msg = QMessageBox(self)
-        msg.setWindowTitle("Erreur / خطأ")
-        msg.setText("Nom d'utilisateur ou mot de passe incorrect.\nاسم المستخدم أو كلمة المرور غير صحيحة")
-        msg.setIcon(QMessageBox.Icon.Warning)
-        colors = ThemeManager.get_colors()
-        msg.setStyleSheet(f"background-color: {colors.BG_CARD}; color: {colors.TEXT_PRIMARY};")
-        msg.exec()
-
-        # مسح حقل كلمة المرور فقط لمزيد من الأمان
+        self._show_error("اسم المستخدم أو كلمة المرور غير صحيحة")
         self.txt_pass.clear()
 
 

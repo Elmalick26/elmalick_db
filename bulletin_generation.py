@@ -1,4 +1,4 @@
-import os
+﻿import os
 import sys
 from datetime import datetime
 
@@ -29,85 +29,33 @@ from app_logger import AppLogger
 from database_setup import DatabaseManager
 from print_export_service import get_report_output_mode, output_pdf
 from repositories.bulletin_repo import BulletinRepository
+from services.grade_service import GradeService
 from ui_styles import (
     Colors,
     ModuleHeaderWidget,
     ThemeManager,
     apply_shadow_to_widget,
     get_card_style,
+    get_module_caps,
     get_table_style,
     get_tabs_style,
 )
 
 BULLETIN_SUMMARY_OUTPUT_MODE = get_report_output_mode("bulletin_summary_mode", "save")
 
-try:
-    import arabic_reshaper
-    from bidi.algorithm import get_display
-
-    ARABIC_SUPPORT = True
-except ModuleNotFoundError:
-    ARABIC_SUPPORT = False
-
-
-def _get_arabic_font_path():
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    candidates = [
-        os.path.join(base_dir, "fonts", "Amiri-Regular.ttf"),
-        os.path.join(base_dir, "fonts", "NotoNaskhArabic-Regular.ttf"),
-        os.path.join(base_dir, "fonts", "Cairo-Regular.ttf"),
-        os.path.join(base_dir, "Fonts", "Amiri", "Amiri-Regular.ttf"),
-        os.path.join(base_dir, "Fonts", "Noto_Naskh_Arabic", "NotoNaskhArabic-Regular.ttf"),
-        os.path.join(base_dir, "Fonts", "Cairo", "Cairo-Regular.ttf"),
-    ]
-    for path in candidates:
-        if os.path.exists(path):
-            return path
-    return None
-
-
-def _contains_arabic(text):
-    if text is None:
-        return False
-    if not isinstance(text, str):
-        text = str(text)
-    return any("\u0600" <= ch <= "\u06FF" or "\u0750" <= ch <= "\u077F" or "\u08A0" <= ch <= "\u08FF" for ch in text)
-
-
-def _prepare_pdf_text(text):
-    if text is None:
-        return ""
-    if not isinstance(text, str):
-        text = str(text)
-    if _contains_arabic(text) and ARABIC_SUPPORT:
-        try:
-            reshaped = arabic_reshaper.reshape(text)
-            return get_display(reshaped)
-        except Exception:
-            return text
-    return text
-
-
-def _sanitize_latin(text):
-    if text is None:
-        return ""
-    if not isinstance(text, str):
-        text = str(text)
-    return text.encode('latin-1', 'ignore').decode('latin-1')
+from pdf_helpers import ARABIC_SUPPORT
+from pdf_helpers import contains_arabic as _contains_arabic
+from pdf_helpers import find_arabic_font_path as _get_arabic_font_path
+from pdf_helpers import get_pdf_font_name, is_arabic_font_ready
+from pdf_helpers import latin_fallback as _latin_fallback_text
+from pdf_helpers import prepare_pdf_text as _prepare_pdf_text
+from pdf_helpers import sanitize_latin as sanitize
+from pdf_helpers import setup_pdf_arabic_font
+from ui_components import card_frame, style_table, styled_combo
 
 
 def _register_arabic_font(pdf):
-    font_path = _get_arabic_font_path()
-    if not font_path:
-        return False
-    try:
-        pdf.add_font("ArabicFont", "", font_path, uni=True)
-        pdf.add_font("ArabicFont", "B", font_path, uni=True)
-        pdf.add_font("ArabicFont", "I", font_path, uni=True)
-        pdf.add_font("ArabicFont", "BI", font_path, uni=True)
-        return True
-    except Exception:
-        return False
+    return setup_pdf_arabic_font(pdf)
 
 
 # --- 1. محرك الحسابات المنطقي (Back-End Logic) ---
@@ -115,7 +63,7 @@ def _register_arabic_font(pdf):
 
 class GradeCalculator:
     def __init__(self):
-        pass
+        self._grade_service = GradeService()
 
     def get_class_context(self, class_id):
         db = DatabaseManager()
@@ -127,10 +75,9 @@ class GradeCalculator:
         return is_primary, max_score
 
     def calculate_rank(self, students_list, key_name='average'):
-        students_list.sort(key=lambda x: x[key_name], reverse=True)
-        for i, std in enumerate(students_list):
-            std['rank'] = i + 1
-        return students_list
+        # Delegates to the pure, unit-tested service. Handles ex aequo ties
+        # (standard competition ranking) instead of assigning sequential ranks.
+        return self._grade_service.calculate_rank(students_list, key_name)
 
     def get_class_subjects(self, repo, class_id):
         """إرجاع المواد الفعلية للفصل: من جدول الحصص أولاً، ثم مواد المرحلة."""
@@ -174,6 +121,10 @@ class GradeCalculator:
 
             assessments = repo.get_assessments_for_period(period_id)
 
+            # Fetch every grade for the class in ONE query instead of one query
+            # per (student × subject × assessment) — avoids the N+1 explosion.
+            grades_map = repo.get_grades_map_for_students([s[0] for s in students], year_id)
+
             class_results = []
 
             for std in students:
@@ -204,7 +155,7 @@ class GradeCalculator:
 
                     for assess in assessments:
                         assess_id, assess_name, assess_code, assess_w = assess
-                        score = self._get_grade_score(repo, std_id, sub_id, assess_id, year_id)
+                        score = grades_map.get((std_id, sub_id, assess_id), 0)
 
                         if not is_primary:
                             if 'DEV' in str(assess_code).upper() or 'DEVOIR' in str(assess_name).upper():
@@ -458,7 +409,7 @@ class CertificatePDF(FPDF):
     def sanitize(self, text):
         if self.arabic_font_ready:
             return _prepare_pdf_text(text)
-        return _sanitize_latin(text)
+        return sanitize(text)
 
     def _draw_official_header(self):
         left_x, left_y = 14, 14
@@ -577,7 +528,7 @@ class BulletinPDF(FPDF):
     def sanitize(self, text):
         if self.arabic_font_ready:
             return _prepare_pdf_text(text)
-        return _sanitize_latin(text)
+        return sanitize(text)
 
     def header(self):
         left_x, left_y = 10, 5
@@ -736,8 +687,10 @@ class BulletinPDF(FPDF):
         self.set_text_color(0, 0, 0)
         self.set_font(self.font_name, '', 9)
 
+        # FIX 4: Initialize h before the loop — if transcript is empty the discipline
+        # row and TOTAL row below the loop both reference h, causing NameError.
+        h = 7
         for item in data['transcript']:
-            h = 7
             if not is_primary:
                 self.cell(cols[0], h, self.sanitize(item['subject']), 1)
                 m_dev = f"{item['moy_devoir']:.2f}" if item['moy_devoir'] is not None else "-"
@@ -891,14 +844,18 @@ class BulletinGenerationWindow(QMainWindow):
         except Exception:
             return -1
 
+    def apply_rbac(self, role: str) -> None:
+        """تطبيق صلاحيات الأزرار بناءً على دور المستخدم — يُستدعى من MainWindow."""
+        caps = get_module_caps(role, "bulletin_generation")
+        self.btn_calc_batch.setEnabled(caps["can_write"])
+        self.btn_calc_batch.setVisible(caps["can_write"])
+
     def init_ui(self):
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
         self.layout = QVBoxLayout(self.central_widget)
-        self.layout.setContentsMargins(20, 20, 20, 20)
-        self.layout.setSpacing(15)
-
-        colors = ThemeManager.get_colors()
+        self.layout.setContentsMargins(24, 20, 24, 20)
+        self.layout.setSpacing(16)
 
         # En-tête unifié
         header = ModuleHeaderWidget(
@@ -924,24 +881,13 @@ class BulletinGenerationWindow(QMainWindow):
         self.layout.addWidget(self.tabs)
 
     def create_card(self):
-        frame = QFrame()
-        frame.setStyleSheet(get_card_style())
-        return frame
+        return card_frame()
 
     def styled_combo(self):
-        combo = QComboBox()
-        colors = ThemeManager.get_colors()
-        combo.setStyleSheet(
-            f"QComboBox {{ padding: 6px 10px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }} QComboBox:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}"
-        )
-        combo.setMinimumHeight(38)
-        return combo
+        return styled_combo()
 
     def style_table(self, table):
-        table.setShowGrid(False)
-        table.setAlternatingRowColors(True)
-        table.verticalHeader().setVisible(False)
-        table.setStyleSheet(get_table_style())
+        style_table(table)
 
     def _load_kpi_stats(self):
         """Charge les statistiques globales des bulletins."""
@@ -952,20 +898,22 @@ class BulletinGenerationWindow(QMainWindow):
                 # Nombre de classes actives
                 cursor.execute("SELECT COUNT(*) FROM Classes")
                 classes = cursor.fetchone()[0] or 0
-                # Nombre d'élèves actifs
-                cursor.execute("SELECT COUNT(*) FROM Students WHERE is_active = TRUE")
+                # FIX 3a: schema uses status='Active', not is_active=TRUE
+                cursor.execute("SELECT COUNT(*) FROM Students WHERE status = 'Active'")
                 students = cursor.fetchone()[0] or 0
-                # Nombre de bulletins générés (entrées dans Grades avec période)
                 cursor.execute("SELECT COUNT(DISTINCT student_id) FROM Grades")
                 generated = cursor.fetchone()[0] or 0
-                # Tableau d'honneur: étudiants avec moyenne >= seuil (ex: 15/20)
+                # FIX 3b: COUNT(DISTINCT...) inside GROUP BY always returns 1 per group.
+                # Use a subquery to count students whose per-student average >= 15.
                 cursor.execute(
-                    "SELECT COUNT(DISTINCT student_id) FROM Grades "
-                    "WHERE score IS NOT NULL "
-                    "GROUP BY student_id "
-                    "HAVING AVG(score) >= 15"
+                    "SELECT COUNT(*) FROM ("
+                    "  SELECT student_id FROM Grades "
+                    "  WHERE score IS NOT NULL "
+                    "  GROUP BY student_id "
+                    "  HAVING AVG(score) >= 15"
+                    ") sub"
                 )
-                honor = len(cursor.fetchall())
+                honor = cursor.fetchone()[0] or 0
 
             self._stat_classes.set_value(str(classes))
             self._stat_students.set_value(str(students))
@@ -981,9 +929,9 @@ class BulletinGenerationWindow(QMainWindow):
             spin.setPrefix(prefix)
         colors = ThemeManager.get_colors()
         spin.setStyleSheet(
-            f"QSpinBox {{ padding: 6px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }} QSpinBox:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}"
+            f"QSpinBox {{ padding: 9px 13px; border: 1.5px solid {colors.INPUT_BORDER}; border-radius: 8px; background-color: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }} QSpinBox:focus {{ border: 2px solid {colors.BORDER_FOCUS}; }}"
         )
-        spin.setMinimumHeight(38)
+        spin.setMinimumHeight(42)
         return spin
 
     def setup_batch_tab(self):
@@ -1000,19 +948,21 @@ class BulletinGenerationWindow(QMainWindow):
         self.combo_class_batch = self.styled_combo()
         self.combo_period_batch = self.styled_combo()
 
-        btn_calc_batch = QPushButton("1. Calculer & Aperçu")
-        btn_calc_batch.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_calc_batch = QPushButton("1. Calculer & Aperçu")
+        self.btn_calc_batch.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_calc_batch.setMinimumHeight(42)
         colors = ThemeManager.get_colors()
-        btn_calc_batch.setStyleSheet(
-            f"QPushButton {{ background-color: {colors.PRIMARY}; color: white; font-weight: bold; padding: 10px; border-radius: 6px; border: none; }} QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}"
+        self.btn_calc_batch.setStyleSheet(
+            # FIX 5: Added missing comma between gradient stop values
+            f"QPushButton {{ background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 {colors.PRIMARY}, stop:1 {colors.PRIMARY_HOVER}); color: white; font-weight: bold; padding: 10px; border-radius: 8px; border: none; }} QPushButton:hover {{ background: {colors.PRIMARY_DARK}; }}"
         )
-        btn_calc_batch.clicked.connect(self.calculate_batch_results)
+        self.btn_calc_batch.clicked.connect(self.calculate_batch_results)
 
         hlay.addWidget(QLabel("Classe:"))
         hlay.addWidget(self.combo_class_batch, 1)
         hlay.addWidget(QLabel("Période:"))
         hlay.addWidget(self.combo_period_batch, 1)
-        hlay.addWidget(btn_calc_batch)
+        hlay.addWidget(self.btn_calc_batch)
         layout.addWidget(filter_card)
 
         layout.addWidget(QLabel("Aperçu Rapide / معاينة النتائج:"))
@@ -1026,15 +976,17 @@ class BulletinGenerationWindow(QMainWindow):
         btn_layout = QHBoxLayout()
         btn_print_list = QPushButton("🖨️ Liste Récapitulative")
         btn_print_list.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_print_list.setMinimumHeight(42)
         btn_print_list.setStyleSheet(
-            f"QPushButton {{ background-color: {colors.BG_CARD}; color: {colors.TEXT_PRIMARY}; padding: 12px; font-weight: bold; border-radius: 8px; border: 1px solid {colors.BORDER}; }} QPushButton:hover {{ background-color: {colors.BG_MAIN}; }}"
+            f"QPushButton {{ background: transparent; color: {colors.PRIMARY}; font-weight: bold; padding: 10px 16px; border-radius: 8px; border: 1.5px solid {colors.PRIMARY}; }} QPushButton:hover {{ background-color: {colors.PRIMARY_LIGHT}; }}"
         )
         btn_print_list.clicked.connect(self.print_summary_list)
 
         btn_print_all = QPushButton("🖨️ Imprimer TOUS les Bulletins")
         btn_print_all.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_print_all.setMinimumHeight(46)
         btn_print_all.setStyleSheet(
-            f"QPushButton {{ background-color: {colors.SUCCESS}; color: white; padding: 12px; font-weight: bold; border-radius: 8px; border: none; }} QPushButton:hover {{ background-color: {colors.SUCCESS_HOVER}; }}"
+            f"QPushButton {{ background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 {colors.SUCCESS}, stop:1 #16A34A); color: white; padding: 12px; font-weight: bold; border-radius: 10px; border: none; }} QPushButton:hover {{ background: {colors.SUCCESS_HOVER}; }}"
         )
         btn_print_all.clicked.connect(self.print_all_bulletins)
 
@@ -1063,16 +1015,18 @@ class BulletinGenerationWindow(QMainWindow):
 
         btn_view = QPushButton("👁️ Afficher")
         btn_view.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_view.setMinimumHeight(42)
         colors = ThemeManager.get_colors()
         btn_view.setStyleSheet(
-            f"QPushButton {{ background-color: {colors.PRIMARY}; color: white; font-weight: bold; padding: 10px; border-radius: 6px; border: none; }} QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}"
+            f"QPushButton {{ background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 {colors.PRIMARY}, stop:1 {colors.PRIMARY_HOVER}); color: white; font-weight: bold; padding: 10px; border-radius: 8px; border: none; }} QPushButton:hover {{ background: {colors.PRIMARY_DARK}; }}"
         )
         btn_view.clicked.connect(self.view_individual)
 
         btn_print = QPushButton("🖨️ Imprimer")
         btn_print.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_print.setMinimumHeight(46)
         btn_print.setStyleSheet(
-            f"QPushButton {{ background-color: {colors.SUCCESS}; color: white; font-weight: bold; padding: 10px; border-radius: 6px; border: none; }} QPushButton:hover {{ background-color: {colors.SUCCESS_HOVER}; }}"
+            f"QPushButton {{ background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 {colors.SUCCESS}, stop:1 #16A34A); color: white; font-weight: bold; padding: 10px; border-radius: 10px; border: none; }} QPushButton:hover {{ background: {colors.SUCCESS_HOVER}; }}"
         )
         btn_print.clicked.connect(self.print_individual)
 
@@ -1143,9 +1097,10 @@ class BulletinGenerationWindow(QMainWindow):
 
         btn_calc = QPushButton("Afficher Liste")
         btn_calc.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_calc.setMinimumHeight(42)
         colors = ThemeManager.get_colors()
         btn_calc.setStyleSheet(
-            f"QPushButton {{ background-color: {colors.SECONDARY}; color: white; font-weight: bold; padding: 10px; border-radius: 6px; border: none; }} QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}"
+            f"QPushButton {{ background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 {colors.SECONDARY}, stop:1 #0284C7); color: white; font-weight: bold; padding: 10px; border-radius: 8px; border: none; }} QPushButton:hover {{ background: {colors.PRIMARY_HOVER}; }}"
         )
         btn_calc.clicked.connect(self.calculate_honor_roll)
 
@@ -1165,8 +1120,9 @@ class BulletinGenerationWindow(QMainWindow):
 
         btn_cert = QPushButton("🏆 Imprimer Attestations d'Excellence")
         btn_cert.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_cert.setMinimumHeight(46)
         btn_cert.setStyleSheet(
-            f"QPushButton {{ background-color: {colors.WARNING}; color: white; padding: 12px; font-weight: bold; border-radius: 8px; border: none; }} QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}"
+            f"QPushButton {{ background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 {colors.WARNING}, stop:1 #D97706); color: white; padding: 12px; font-weight: bold; border-radius: 10px; border: none; }} QPushButton:hover {{ background: #B45309; }}"
         )
         btn_cert.clicked.connect(self.print_certificates)
         layout.addWidget(btn_cert)
@@ -1337,7 +1293,7 @@ class BulletinGenerationWindow(QMainWindow):
                 pdf.cell(
                     80,
                     3,
-                    _prepare_pdf_text(republic) if font_name == "ArabicFont" else _sanitize_latin(republic),
+                    _prepare_pdf_text(republic) if font_name == "ArabicFont" else sanitize(republic),
                     0,
                     1,
                     'L',
@@ -1345,7 +1301,7 @@ class BulletinGenerationWindow(QMainWindow):
                 pdf.cell(
                     80,
                     3,
-                    _prepare_pdf_text(ia_text) if font_name == "ArabicFont" else _sanitize_latin(ia_text),
+                    _prepare_pdf_text(ia_text) if font_name == "ArabicFont" else sanitize(ia_text),
                     0,
                     1,
                     'L',
@@ -1353,7 +1309,7 @@ class BulletinGenerationWindow(QMainWindow):
                 pdf.cell(
                     80,
                     3,
-                    _prepare_pdf_text(ief_text) if font_name == "ArabicFont" else _sanitize_latin(ief_text),
+                    _prepare_pdf_text(ief_text) if font_name == "ArabicFont" else sanitize(ief_text),
                     0,
                     1,
                     'L',
@@ -1361,7 +1317,7 @@ class BulletinGenerationWindow(QMainWindow):
                 pdf.cell(
                     80,
                     3,
-                    _prepare_pdf_text(school_name) if font_name == "ArabicFont" else _sanitize_latin(school_name),
+                    _prepare_pdf_text(school_name) if font_name == "ArabicFont" else sanitize(school_name),
                     0,
                     1,
                     'L',
@@ -1372,7 +1328,7 @@ class BulletinGenerationWindow(QMainWindow):
                     (
                         _prepare_pdf_text(f"Auto N: {auth_text}")
                         if font_name == "ArabicFont"
-                        else _sanitize_latin(f"Auto N: {auth_text}")
+                        else sanitize(f"Auto N: {auth_text}")
                     ),
                     0,
                     1,
@@ -1384,7 +1340,7 @@ class BulletinGenerationWindow(QMainWindow):
                     (
                         _prepare_pdf_text(f"Lieu: {addr_text}")
                         if font_name == "ArabicFont"
-                        else _sanitize_latin(f"Lieu: {addr_text}")
+                        else sanitize(f"Lieu: {addr_text}")
                     ),
                     0,
                     1,
@@ -1396,7 +1352,7 @@ class BulletinGenerationWindow(QMainWindow):
                     (
                         _prepare_pdf_text(f"Tel: {phone_text}")
                         if font_name == "ArabicFont"
-                        else _sanitize_latin(f"Tel: {phone_text}")
+                        else sanitize(f"Tel: {phone_text}")
                     ),
                     0,
                     1,
@@ -1420,9 +1376,7 @@ class BulletinGenerationWindow(QMainWindow):
             pdf.set_text_color(15, 23, 42)
 
             title = f"Liste Récapitulative des Résultats - {self.combo_period_batch.currentText()} - {self.combo_class_batch.currentText()}"
-            pdf.cell(
-                0, 10, _prepare_pdf_text(title) if font_name == "ArabicFont" else _sanitize_latin(title), 0, 1, 'C'
-            )
+            pdf.cell(0, 10, _prepare_pdf_text(title) if font_name == "ArabicFont" else sanitize(title), 0, 1, 'C')
 
             pdf.set_font(font_name, title_style, 9)
             pdf.set_fill_color(30, 58, 95)
@@ -1430,7 +1384,7 @@ class BulletinGenerationWindow(QMainWindow):
             pdf.cell(
                 20,
                 8,
-                _prepare_pdf_text("Rang") if font_name == "ArabicFont" else _sanitize_latin("Rang"),
+                _prepare_pdf_text("Rang") if font_name == "ArabicFont" else sanitize("Rang"),
                 1,
                 0,
                 'C',
@@ -1439,7 +1393,7 @@ class BulletinGenerationWindow(QMainWindow):
             pdf.cell(
                 12,
                 8,
-                _prepare_pdf_text("N°") if font_name == "ArabicFont" else _sanitize_latin("N°"),
+                _prepare_pdf_text("N°") if font_name == "ArabicFont" else sanitize("N°"),
                 1,
                 0,
                 'C',
@@ -1448,7 +1402,7 @@ class BulletinGenerationWindow(QMainWindow):
             pdf.cell(
                 68,
                 8,
-                _prepare_pdf_text("Nom & Prénom") if font_name == "ArabicFont" else _sanitize_latin("Nom & Prénom"),
+                _prepare_pdf_text("Nom & Prénom") if font_name == "ArabicFont" else sanitize("Nom & Prénom"),
                 1,
                 0,
                 'C',
@@ -1457,7 +1411,7 @@ class BulletinGenerationWindow(QMainWindow):
             pdf.cell(
                 25,
                 8,
-                _prepare_pdf_text("Moyenne") if font_name == "ArabicFont" else _sanitize_latin("Moyenne"),
+                _prepare_pdf_text("Moyenne") if font_name == "ArabicFont" else sanitize("Moyenne"),
                 1,
                 0,
                 'C',
@@ -1466,7 +1420,7 @@ class BulletinGenerationWindow(QMainWindow):
             pdf.cell(
                 40,
                 8,
-                _prepare_pdf_text("Mention") if font_name == "ArabicFont" else _sanitize_latin("Mention"),
+                _prepare_pdf_text("Mention") if font_name == "ArabicFont" else sanitize("Mention"),
                 1,
                 0,
                 'C',
@@ -1475,7 +1429,7 @@ class BulletinGenerationWindow(QMainWindow):
             pdf.cell(
                 25,
                 8,
-                _prepare_pdf_text("Décision") if font_name == "ArabicFont" else _sanitize_latin("Décision"),
+                _prepare_pdf_text("Décision") if font_name == "ArabicFont" else sanitize("Décision"),
                 1,
                 1,
                 'C',
@@ -1490,11 +1444,11 @@ class BulletinGenerationWindow(QMainWindow):
             class_size = len(self.batch_results)
 
             for idx, res in enumerate(self.batch_results):
-                name_fr = _sanitize_latin(res['name'])
+                name_fr = sanitize(res['name'])
                 name_ar = res.get('name_ar', '') or ""
                 class_number = str(res.get('class_number') or "-")
                 name = f"[{class_number}] {name_fr} / {name_ar}" if name_ar else f"[{class_number}] {name_fr}"
-                name_out = _prepare_pdf_text(name) if font_name == "ArabicFont" else _sanitize_latin(name)
+                name_out = _prepare_pdf_text(name) if font_name == "ArabicFont" else sanitize(name)
                 avg = f"{res['general_average']:.2f}"
                 mention = calc.get_mention(res['general_average'], max_score)
                 dec = calc.get_decision(res['general_average'], is_primary, max_score)
@@ -1511,7 +1465,7 @@ class BulletinGenerationWindow(QMainWindow):
                 pdf.cell(
                     40,
                     8,
-                    _prepare_pdf_text(mention) if font_name == "ArabicFont" else _sanitize_latin(mention),
+                    _prepare_pdf_text(mention) if font_name == "ArabicFont" else sanitize(mention),
                     1,
                     0,
                     'C',
@@ -1520,7 +1474,7 @@ class BulletinGenerationWindow(QMainWindow):
                 pdf.cell(
                     25,
                     8,
-                    _prepare_pdf_text(dec) if font_name == "ArabicFont" else _sanitize_latin(dec),
+                    _prepare_pdf_text(dec) if font_name == "ArabicFont" else sanitize(dec),
                     1,
                     1,
                     'C',
@@ -1654,8 +1608,9 @@ class BulletinGenerationWindow(QMainWindow):
             with db.get_connection() as conn:
                 repo = BulletinRepository(conn)
                 school_info = repo.get_school_info()
-                cursor = conn.cursor()
-                year_id = GradeCalculator()._get_period_year_id(cursor, real_period_id)
+                # FIX 2: _get_period_year_id expects a BulletinRepository, not a raw cursor.
+                # Passing cursor caused AttributeError on every batch bulletin print.
+                year_id = GradeCalculator()._get_period_year_id(repo, real_period_id)
                 year_label = repo.get_year_label(year_id) or repo.get_last_year_label() or "202X-202X"
                 class_res = repo.get_class_names(class_id)
                 class_name = (
@@ -1758,8 +1713,8 @@ class BulletinGenerationWindow(QMainWindow):
                 pid = self.get_real_period_id(cid, pname)
 
                 if pid:
-                    cursor = conn.cursor()
-                    year_id = GradeCalculator()._get_period_year_id(cursor, pid)
+                    # FIX 2: pass repo, not cursor (same bug as generate_bulletins)
+                    year_id = GradeCalculator()._get_period_year_id(repo, pid)
                     year_label = repo.get_year_label(year_id) or "202X-202X"
                 else:
                     year_label = "202X-202X"

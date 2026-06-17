@@ -1,8 +1,8 @@
 """Regression tests for parent login v6.3 (student_code + bcrypt PIN)."""
 
+import asyncio
 import os
 import sys
-import asyncio
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -38,8 +38,8 @@ def _make_db_with_row(row):
 
 
 def _run_login(student_code, pin):
-    from starlette.requests import Request
     from starlette.datastructures import Headers
+    from starlette.requests import Request
 
     scope = {"type": "http", "method": "POST", "path": "/api/parent/login", "headers": [], "query_string": b""}
     fake_request = Request(scope)
@@ -71,8 +71,8 @@ def test_parent_login_hash_success_without_update():
 
     assert data["access_token"] == "tok_parent"
     assert data["student_code"] == "EMG-0001"
-    # Only the SELECT should execute; no UPDATE for already-hashed PIN.
-    assert cur.execute.call_count == 1
+    # SELECT + INSERT AuditLogs (log_audit on successful login)
+    assert cur.execute.call_count == 2
 
 
 def test_parent_login_hash_wrong_pin_returns_401():
@@ -98,7 +98,7 @@ def test_parent_login_migrates_plain_pin_to_hash():
         data = _run_login("EMG-0002", "9999")
 
     assert data["access_token"] == "tok_parent"
-    assert cur.execute.call_count == 2  # SELECT + UPDATE
+    assert cur.execute.call_count == 3  # SELECT + UPDATE(pin migration) + INSERT AuditLogs
     sql = cur.execute.call_args_list[1][0][0]
     assert "UPDATE Students SET parent_pin_hash" in sql
     conn.commit.assert_called_once()
@@ -126,7 +126,7 @@ def test_parent_login_first_access_sets_hash_and_clears_plain():
         data = _run_login("EMG-0003", "4567")
 
     assert data["student_code"] == "EMG-0003"
-    assert cur.execute.call_count == 2
+    assert cur.execute.call_count == 3  # SELECT + UPDATE(new PIN) + INSERT AuditLogs
     _, params = cur.execute.call_args_list[1][0]
     assert params[0]  # hash value not empty
     assert params[1] == 3

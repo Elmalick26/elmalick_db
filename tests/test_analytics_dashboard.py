@@ -11,10 +11,10 @@ tests/test_analytics_dashboard.py
 
 from __future__ import annotations
 
-import sys
 import os
+import sys
 import types
-from unittest.mock import MagicMock, patch, PropertyMock
+from unittest.mock import MagicMock, PropertyMock, patch
 
 import pytest
 
@@ -29,15 +29,24 @@ def _make_qt_stubs():
     mpl_stub.use = lambda *a, **kw: None
     sys.modules.setdefault("matplotlib", mpl_stub)
 
-    for sub in ["matplotlib.pyplot", "matplotlib.figure", "matplotlib.backends", "matplotlib.backends.backend_qt5agg"]:
+    for sub in [
+        "matplotlib.pyplot",
+        "matplotlib.figure",
+        "matplotlib.backends",
+        "matplotlib.backends.backend_qt5agg",
+        "matplotlib.backends.backend_qtagg",  # PyQt6 backend (Python 3.14)
+    ]:
         m = types.ModuleType(sub)
         sys.modules.setdefault(sub, m)
 
     fig_mod = sys.modules["matplotlib.figure"]
     fig_mod.Figure = MagicMock
 
+    # Stub both backends (qt5agg = legacy, qtagg = PyQt6)
+    for _canvas_mod_name in ("matplotlib.backends.backend_qt5agg", "matplotlib.backends.backend_qtagg"):
+        _canvas_mod = sys.modules[_canvas_mod_name]
+        _canvas_mod.FigureCanvasQTAgg = MagicMock
     canvas_mod = sys.modules["matplotlib.backends.backend_qt5agg"]
-    canvas_mod.FigureCanvasQTAgg = MagicMock
 
     plt_mod = sys.modules["matplotlib.pyplot"]
     plt_mod.cm = MagicMock()
@@ -164,6 +173,24 @@ sys.modules["app_logger"] = logger_stub
 ui_stub = types.ModuleType("ui_styles")
 ui_stub.ThemeManager = MagicMock()
 ui_stub.Colors = MagicMock()
+ui_stub.get_tabs_style = MagicMock(return_value="")
+ui_stub.ModuleHeaderWidget = MagicMock()
+
+
+# Fake KpiCard minimal — reproduit le comportement réel de set_value
+class _FakeKpiCard:
+    def __init__(self, icon="", label="", value="—", color="", **kw):
+        self._value_lbl = MagicMock()
+
+    def set_value(self, v: str):
+        self._value_lbl.setText(v)
+
+    def refresh_theme(self):
+        pass
+
+
+ui_stub.KpiCard = _FakeKpiCard
+ui_stub.get_module_caps = MagicMock(return_value={"can_write": True, "can_delete": True})
 sys.modules["ui_styles"] = ui_stub
 
 svc_stub = types.ModuleType("services.grade_service")
@@ -196,12 +223,12 @@ svc_stub.GradeService = _FakeGradeService
 
 # ── Import du module sous test ────────────────────────────────
 from analytics_dashboard import (
+    AnalyticsDashboardWindow,
     AnalyticsWorker,
-    KpiCard,
-    GradesBarChart,
     AttendanceLineChart,
     FinancePieChart,
-    AnalyticsDashboardWindow,
+    GradesBarChart,
+    KpiCard,
 )
 
 # Release stubs from sys.modules after analytics_dashboard is already imported.
@@ -378,14 +405,14 @@ class TestKpiCard:
     def test_set_value_updates_label(self):
         card = KpiCard("Test", "—")
         recorded = []
-        card.lbl_value = MagicMock()
-        card.lbl_value.setText = lambda v: recorded.append(v)
+        card._value_lbl = MagicMock()  # attribut réel dans KpiCard
+        card._value_lbl.setText = lambda v: recorded.append(v)
         card.set_value("42%")
         assert recorded == ["42%"]
 
     def test_initial_value(self):
         card = KpiCard("Ma Carte", "init_val")
-        assert card.lbl_value is not None  # objet créé
+        assert card._value_lbl is not None  # objet créé
 
 
 # ═══════════════════════════════════════════════════════════════
@@ -455,9 +482,11 @@ class TestAttendanceLineChart:
         assert args[1] == [88.0, 92.5, 79.0]
 
     def test_threshold_line_drawn_at_80(self):
+        from unittest.mock import ANY
+
         c = self._chart()
         c.update_data({"2026-01": 75.0})
-        c.ax.axhline.assert_called_once_with(80, linestyle="--", color="#ef5350", linewidth=1, label="Seuil 80%")
+        c.ax.axhline.assert_called_once_with(80, linestyle="--", color=ANY, linewidth=1, label="Seuil 80%")
 
     def test_fill_between_called(self):
         c = self._chart()

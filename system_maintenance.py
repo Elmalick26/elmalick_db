@@ -1,4 +1,4 @@
-import datetime
+﻿import datetime
 import os
 import shutil
 import subprocess
@@ -15,7 +15,6 @@ from PyQt6.QtWidgets import (
     QLabel,
     QMainWindow,
     QMessageBox,
-    QProgressBar,
     QPushButton,
     QTableWidget,
     QTableWidgetItem,
@@ -27,7 +26,8 @@ from app_logger import AppLogger
 from config_manager import ConfigManager
 from database_setup import DatabaseManager
 from db_path import find_pg_tool
-from ui_styles import Colors, ModuleHeaderWidget, ThemeManager, get_table_style
+from ui_components import style_table
+from ui_styles import ModuleHeaderWidget, ThemeManager, friendly_db_error, get_module_caps
 
 
 class SystemMaintenanceWindow(QMainWindow):
@@ -52,12 +52,22 @@ class SystemMaintenanceWindow(QMainWindow):
         self.init_ui()
         self.load_backups()
 
+    def apply_rbac(self, role: str) -> None:
+        """تطبيق صلاحيات الأزرار بناءً على دور المستخدم — يُستدعى من MainWindow."""
+        caps = get_module_caps(role, "system_maintenance")
+        self.btn_backup.setEnabled(caps["can_write"])
+        self.btn_backup.setVisible(caps["can_write"])
+        self.btn_export.setEnabled(caps["can_write"])
+        self.btn_export.setVisible(caps["can_write"])
+        self.btn_import.setEnabled(caps["can_write"])
+        self.btn_import.setVisible(caps["can_write"])
+
     def init_ui(self):
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
         self.main_layout = QVBoxLayout(self.central_widget)
-        self.main_layout.setContentsMargins(20, 20, 20, 20)
-        self.main_layout.setSpacing(15)
+        self.main_layout.setContentsMargins(24, 20, 24, 20)
+        self.main_layout.setSpacing(16)
 
         # 1. Header
         header = ModuleHeaderWidget(
@@ -75,7 +85,7 @@ class SystemMaintenanceWindow(QMainWindow):
         action_group.setStyleSheet(
             f"""
             QGroupBox {{
-                background-color: {colors.BG_CARD}; border-radius: 12px; padding: 15px;
+                background-color: {colors.BG_CARD}; border-radius: 16px; padding: 15px;
                 border: 1px solid {colors.BORDER}; font-weight: bold; color: {colors.TEXT_SECONDARY}; margin-top: 10px;
             }}
             QGroupBox::title {{ subcontrol-origin: margin; subcontrol-position: top left; padding: 0 5px; left: 10px; }}
@@ -87,53 +97,35 @@ class SystemMaintenanceWindow(QMainWindow):
         h_layout.setContentsMargins(20, 30, 20, 20)
 
         # Create Backup Button
-        btn_backup = QPushButton(" Créer une Sauvegarde Maintenant")
-        btn_backup.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_backup.setMinimumHeight(50)
-        btn_backup.setStyleSheet(
-            f"""
-            QPushButton {{
-                background-color: {colors.SUCCESS}; color: white; font-weight: bold;
-                font-size: 14px; border-radius: 8px; border: none;
-            }}
-            QPushButton:hover {{ background-color: {colors.SUCCESS_HOVER}; }}
-        """
+        self.btn_backup = QPushButton(" Créer une Sauvegarde Maintenant")
+        self.btn_backup.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_backup.setMinimumHeight(50)
+        self.btn_backup.setStyleSheet(
+            f"QPushButton {{ background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 {colors.SUCCESS}, stop:1 #16A34A); color: white; font-weight: bold; font-size: 14px; border-radius: 10px; border: none; }} QPushButton:hover {{ background: {colors.SUCCESS_HOVER}; }}"
         )
-        btn_backup.clicked.connect(self.create_backup)
+        self.btn_backup.clicked.connect(self.create_backup)
 
         # Export Button
-        btn_export = QPushButton(" Exporter vers USB/Disque")
-        btn_export.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_export.setMinimumHeight(50)
-        btn_export.setStyleSheet(
-            f"""
-            QPushButton {{
-                background-color: {colors.PRIMARY}; color: white; font-weight: bold;
-                font-size: 14px; border-radius: 8px; border: none;
-            }}
-            QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}
-        """
+        self.btn_export = QPushButton(" Exporter vers USB/Disque")
+        self.btn_export.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_export.setMinimumHeight(50)
+        self.btn_export.setStyleSheet(
+            f"QPushButton {{ background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 {colors.PRIMARY}, stop:1 {colors.PRIMARY_HOVER}); color: white; font-weight: bold; font-size: 14px; border-radius: 10px; border: none; }} QPushButton:hover {{ background: {colors.PRIMARY_DARK}; }}"
         )
-        btn_export.clicked.connect(self.export_backup)
+        self.btn_export.clicked.connect(self.export_backup)
 
         # Import Button
-        btn_import = QPushButton(" Importer depuis USB/Disque")
-        btn_import.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_import.setMinimumHeight(50)
-        btn_import.setStyleSheet(
-            f"""
-            QPushButton {{
-                background-color: {colors.SECONDARY}; color: white; font-weight: bold;
-                font-size: 14px; border-radius: 8px; border: none;
-            }}
-            QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}
-        """
+        self.btn_import = QPushButton(" Importer depuis USB/Disque")
+        self.btn_import.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_import.setMinimumHeight(50)
+        self.btn_import.setStyleSheet(
+            f"QPushButton {{ background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 {colors.SECONDARY}, stop:1 #0284C7); color: white; font-weight: bold; font-size: 14px; border-radius: 10px; border: none; }} QPushButton:hover {{ background: {colors.PRIMARY_HOVER}; }}"
         )
-        btn_import.clicked.connect(self.import_backup)
+        self.btn_import.clicked.connect(self.import_backup)
 
-        h_layout.addWidget(btn_backup)
-        h_layout.addWidget(btn_export)
-        h_layout.addWidget(btn_import)
+        h_layout.addWidget(self.btn_backup)
+        h_layout.addWidget(self.btn_export)
+        h_layout.addWidget(self.btn_import)
         self.main_layout.addWidget(action_group)
 
         # 3. Backups List
@@ -142,7 +134,7 @@ class SystemMaintenanceWindow(QMainWindow):
         self.main_layout.addWidget(lbl_list)
 
         self.table_backups = QTableWidget()
-        self.style_table(self.table_backups)
+        style_table(self.table_backups)
         self.table_backups.setColumnCount(4)
         self.table_backups.setHorizontalHeaderLabels(["Nom du Fichier", "Date de Création", "Taille", "Actions"])
         self.table_backups.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
@@ -160,12 +152,6 @@ class SystemMaintenanceWindow(QMainWindow):
         lbl_note.setStyleSheet(f"color: {colors.DANGER}; font-style: italic; background: transparent;")
         fl.addWidget(lbl_note)
         self.main_layout.addWidget(footer_frame)
-
-    def style_table(self, table):
-        table.setShowGrid(False)
-        table.setAlternatingRowColors(True)
-        table.verticalHeader().setVisible(False)
-        table.setStyleSheet(get_table_style())
 
     def load_backups(self):
         self.table_backups.setRowCount(0)
@@ -211,20 +197,14 @@ class SystemMaintenanceWindow(QMainWindow):
                 btn_restore = QPushButton("Restaurer")
                 btn_restore.setCursor(Qt.CursorShape.PointingHandCursor)
                 btn_restore.setStyleSheet(
-                    f"""
-                    QPushButton {{ background-color: {colors.WARNING}; color: white; font-weight: bold; border-radius: 4px; padding: 5px; border: none; }}
-                    QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}
-                """
+                    f"QPushButton {{ background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 {colors.WARNING}, stop:1 #D97706); color: white; font-weight: bold; border-radius: 6px; padding: 5px 10px; border: none; }} QPushButton:hover {{ background: #B45309; }}"
                 )
                 btn_restore.clicked.connect(lambda ch, fname=f: self.restore_backup(fname))
 
                 btn_delete = QPushButton("Supprimer")
                 btn_delete.setCursor(Qt.CursorShape.PointingHandCursor)
                 btn_delete.setStyleSheet(
-                    f"""
-                    QPushButton {{ background-color: {colors.DANGER}; color: white; font-weight: bold; border-radius: 4px; padding: 5px; border: none; }}
-                    QPushButton:hover {{ background-color: {colors.DANGER_HOVER}; }}
-                """
+                    f"QPushButton {{ background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 {colors.DANGER}, stop:1 #EF4444); color: white; font-weight: bold; border-radius: 6px; padding: 5px 10px; border: none; }} QPushButton:hover {{ background: {colors.DANGER_HOVER}; }}"
                 )
                 btn_delete.clicked.connect(lambda ch, fname=f: self.delete_backup(fname))
 
@@ -429,7 +409,7 @@ class SystemMaintenanceWindow(QMainWindow):
                 os.remove(os.path.join(self.backup_dir, filename))
                 self.load_backups()
             except Exception as e:
-                QMessageBox.critical(self, "Erreur", str(e))
+                QMessageBox.critical(self, "Erreur", friendly_db_error(e))
 
 
 if __name__ == "__main__":

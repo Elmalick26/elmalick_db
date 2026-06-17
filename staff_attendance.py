@@ -1,17 +1,13 @@
-import os
+﻿import os
 import sys
 from datetime import date, datetime
 
-import psycopg2
+# FIX 5: Removed `import psycopg2` — never referenced in this file.
 from fpdf import FPDF
 from PyQt6.QtCore import QDate, Qt, QTime
-from PyQt6.QtWidgets import (
+from PyQt6.QtWidgets import (  # FIX 5: Removed QDateEdit, QFrame, QGridLayout, QGroupBox — none directly instantiated.
     QApplication,
     QComboBox,
-    QDateEdit,
-    QFrame,
-    QGridLayout,
-    QGroupBox,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -32,86 +28,24 @@ from database_setup import DatabaseManager
 from pdf_report_style import apply_table_body_style, apply_table_header_style, set_zebra_row_fill
 from print_export_service import get_report_output_mode, output_pdf
 from repositories.staff_repo import StaffRepository
-from ui_styles import (
-    Colors,
+from ui_styles import (  # FIX 5: Removed Colors, apply_shadow_to_widget, get_card_style, get_table_style — unused.
     ModuleHeaderWidget,
     ThemeManager,
-    apply_shadow_to_widget,
-    get_card_style,
-    get_table_style,
+    get_module_caps,
     get_tabs_style,
 )
 
 STAFF_ATTENDANCE_REPORT_OUTPUT_MODE = get_report_output_mode("staff_attendance_mode", "save")
 
-try:
-    import arabic_reshaper
-    from bidi.algorithm import get_display
+from pdf_helpers import (
+    prepare_pdf_text as _prepare_pdf_text,  # FIX 1: Renamed alias sanitize_latin as sanitize → _sanitize_latin so the; instance method StaffAttendancePDF.sanitize() can call _sanitize_latin(text); without NameError.  The old alias `sanitize` conflicted with the method name; and was shadowed inside the class, so _sanitize_latin(text) was never resolvable.; FIX 5: Removed 6 unused imports: ARABIC_SUPPORT, contains_arabic,; find_arabic_font_path, get_pdf_font_name, is_arabic_font_ready, latin_fallback.
+)
+from pdf_helpers import sanitize_latin as _sanitize_latin
+from pdf_helpers import setup_pdf_arabic_font
+from ui_components import card_frame, style_table, styled_combo, styled_date_edit
 
-    ARABIC_SUPPORT = True
-except ModuleNotFoundError:
-    ARABIC_SUPPORT = False
-
-
-def _get_arabic_font_path():
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    candidates = [
-        os.path.join(base_dir, "fonts", "Amiri-Regular.ttf"),
-        os.path.join(base_dir, "fonts", "NotoNaskhArabic-Regular.ttf"),
-        os.path.join(base_dir, "fonts", "Cairo-Regular.ttf"),
-        os.path.join(base_dir, "Fonts", "Amiri", "Amiri-Regular.ttf"),
-        os.path.join(base_dir, "Fonts", "Noto_Naskh_Arabic", "NotoNaskhArabic-Regular.ttf"),
-        os.path.join(base_dir, "Fonts", "Cairo", "Cairo-Regular.ttf"),
-    ]
-    for path in candidates:
-        if os.path.exists(path):
-            return path
-    return None
-
-
-def _contains_arabic(text):
-    if text is None:
-        return False
-    if not isinstance(text, str):
-        text = str(text)
-    return any("\u0600" <= ch <= "\u06FF" or "\u0750" <= ch <= "\u077F" or "\u08A0" <= ch <= "\u08FF" for ch in text)
-
-
-def _prepare_pdf_text(text):
-    if text is None:
-        return ""
-    if not isinstance(text, str):
-        text = str(text)
-    if _contains_arabic(text) and ARABIC_SUPPORT:
-        try:
-            reshaped = arabic_reshaper.reshape(text)
-            return get_display(reshaped)
-        except Exception:
-            return text
-    return text
-
-
-def _sanitize_latin(text):
-    if text is None:
-        return ""
-    if not isinstance(text, str):
-        text = str(text)
-    return text.encode('latin-1', 'ignore').decode('latin-1')
-
-
-def _register_arabic_font(pdf):
-    font_path = _get_arabic_font_path()
-    if not font_path:
-        return False
-    try:
-        pdf.add_font("ArabicFont", "", font_path, uni=True)
-        pdf.add_font("ArabicFont", "B", font_path, uni=True)
-        pdf.add_font("ArabicFont", "I", font_path, uni=True)
-        pdf.add_font("ArabicFont", "BI", font_path, uni=True)
-        return True
-    except Exception:
-        return False
-
+# FIX 6: Removed _register_arabic_font() pass-through wrapper — setup_pdf_arabic_font
+# is called directly below; the wrapper added no value.
 
 # --- فئة تقارير PDF للحضور ---
 
@@ -122,7 +56,7 @@ class StaffAttendancePDF(FPDF):
         self.school_info = school_info
         self.font_name = "Helvetica"
         self.arabic_font_ready = False
-        if _register_arabic_font(self):
+        if setup_pdf_arabic_font(self):
             self.font_name = "ArabicFont"
             self.arabic_font_ready = True
 
@@ -136,7 +70,9 @@ class StaffAttendancePDF(FPDF):
         self.set_xy(left_x, left_y)
         self.set_font(self.font_name, '', 8)
 
-        if self.school_info:
+        # FIX 4: Added len > 7 guard — same pattern as pdf_report_style.py Screen 18.
+        # school_info[7] raises IndexError if the tuple has fewer than 8 elements.
+        if self.school_info and len(self.school_info) > 7:
             republic = self.sanitize(self.school_info[1])
             self.cell(80, 3, republic, 0, 1, 'L')
             ia_text = self.sanitize(self.school_info[2])
@@ -194,12 +130,18 @@ class StaffAttendanceWindow(QMainWindow):
         self.load_report_records()
         self._load_kpi_stats()
 
+    def apply_rbac(self, role: str) -> None:
+        """تطبيق صلاحيات الأزرار بناءً على دور المستخدم — يُستدعى من MainWindow."""
+        caps = get_module_caps(role, "staff_attendance")
+        self.btn_save.setEnabled(caps["can_write"])
+        self.btn_save.setVisible(caps["can_write"])
+
     def init_ui(self):
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
         self.main_layout = QVBoxLayout(self.central_widget)
-        self.main_layout.setContentsMargins(20, 20, 20, 20)
-        self.main_layout.setSpacing(15)
+        self.main_layout.setContentsMargins(24, 20, 24, 20)
+        self.main_layout.setSpacing(16)
 
         # 1. En-tête unifié
         header = ModuleHeaderWidget(
@@ -225,35 +167,16 @@ class StaffAttendanceWindow(QMainWindow):
         self.main_layout.addWidget(self.tabs)
 
     def create_card(self):
-        frame = QFrame()
-        frame.setStyleSheet(get_card_style())
-        return frame
+        return card_frame()
 
     def styled_date(self):
-        de = QDateEdit()
-        de.setCalendarPopup(True)
-        de.setMinimumHeight(38)
-        colors = ThemeManager.get_colors()
-        de.setStyleSheet(
-            f"QDateEdit {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }}"
-        )
-        return de
+        return styled_date_edit(min_height=32)
 
     def styled_combo(self):
-        combo = QComboBox()
-        combo.setMinimumHeight(38)
-        colors = ThemeManager.get_colors()
-        combo.setStyleSheet(
-            f"QComboBox {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }}"
-        )
-        return combo
+        return styled_combo(min_height=32)
 
     def style_table(self, table):
-        table.setShowGrid(False)
-        table.setAlternatingRowColors(True)
-        table.verticalHeader().setVisible(False)
-        table.verticalHeader().setDefaultSectionSize(40)
-        table.setStyleSheet(get_table_style())
+        style_table(table)
 
     def _load_kpi_stats(self):
         """Charge les KPI du pointage du jour."""
@@ -299,8 +222,8 @@ class StaffAttendanceWindow(QMainWindow):
 
         control_card = self.create_card()
         h_layout = QHBoxLayout(control_card)
-        h_layout.setContentsMargins(15, 15, 15, 15)
-        h_layout.setSpacing(15)
+        h_layout.setContentsMargins(10, 8, 10, 8)
+        h_layout.setSpacing(10)
 
         self.date_picker = self.styled_date()
         self.date_picker.setDate(QDate.currentDate())
@@ -314,12 +237,14 @@ class StaffAttendanceWindow(QMainWindow):
 
         btn_refresh = QPushButton("Actualiser / تحديث")
         btn_refresh.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_refresh.setFixedHeight(32)
         colors = ThemeManager.get_colors()
         btn_refresh.setStyleSheet(
-            f"""
-            QPushButton {{ background-color: {colors.PRIMARY}; color: white; font-weight: bold; padding: 8px 15px; border-radius: 6px; border: none; }}
-            QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}
-        """
+            f"QPushButton {{ background:qlineargradient(x1:0,y1:0,x2:1,y2:0,"
+            # FIX 2: Added missing comma between stop:0 and stop:1.
+            f" stop:0 {colors.PRIMARY}, stop:1 {colors.PRIMARY_HOVER}); color:white;"
+            f" font-weight:bold; font-size:11px; padding:4px 12px; border-radius:7px; border:none; }}"
+            f"QPushButton:hover {{ background:{colors.PRIMARY_DARK}; }}"
         )
         btn_refresh.clicked.connect(self.load_attendance_list)
 
@@ -327,8 +252,8 @@ class StaffAttendanceWindow(QMainWindow):
         h_layout.addWidget(self.date_picker)
         h_layout.addWidget(QLabel("Rôle:"))
         h_layout.addWidget(self.combo_role_filter)
-        h_layout.addWidget(btn_refresh)
         h_layout.addStretch()
+        h_layout.addWidget(btn_refresh)
 
         layout.addWidget(control_card)
 
@@ -346,16 +271,17 @@ class StaffAttendanceWindow(QMainWindow):
         layout.addWidget(self.table_attendance)
 
         # Save Button
-        btn_save = QPushButton("💾 ENREGISTRER LE POINTAGE / حفظ السجل")
-        btn_save.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_save.setStyleSheet(
+        self.btn_save = QPushButton("💾 ENREGISTRER LE POINTAGE / حفظ السجل")
+        self.btn_save.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_save.setMinimumHeight(46)
+        self.btn_save.setStyleSheet(
             f"""
-            QPushButton {{ background-color: {colors.SUCCESS}; color: white; padding: 12px; font-weight: bold; font-size: 14px; border-radius: 8px; border: none; }}
-            QPushButton:hover {{ background-color: {colors.SUCCESS_HOVER}; }}
+            QPushButton {{ background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 {colors.SUCCESS}, stop:1 #16A34A); color: white; padding: 12px; font-weight: bold; font-size: 14px; border-radius: 10px; border: none; }}
+            QPushButton:hover {{ background: {colors.SUCCESS_HOVER}; }}
         """
         )
-        btn_save.clicked.connect(self.save_all_attendance)
-        layout.addWidget(btn_save)
+        self.btn_save.clicked.connect(self.save_all_attendance)
+        layout.addWidget(self.btn_save)
 
         self.tabs.addTab(tab, "  📝 Pointage Journalier / تسجيل يومي  ")
 
@@ -369,38 +295,38 @@ class StaffAttendanceWindow(QMainWindow):
         layout.setSpacing(15)
 
         filter_card = self.create_card()
-        glay = QGridLayout(filter_card)
-        glay.setContentsMargins(15, 15, 15, 15)
-        glay.setSpacing(15)
-
-        card_title = QLabel("Rapport Mensuel / تقرير شهري")
+        h_fil = QHBoxLayout(filter_card)
+        h_fil.setContentsMargins(10, 8, 10, 8)
+        h_fil.setSpacing(10)
         colors = ThemeManager.get_colors()
-        card_title.setStyleSheet(f"font-weight: bold; color: {colors.TEXT_PRIMARY}; font-size: 14px;")
-        glay.addWidget(card_title, 0, 0, 1, 4)
 
         self.combo_staff_report = self.styled_combo()
+        self.combo_staff_report.setMinimumWidth(180)
         self.combo_staff_report.currentIndexChanged.connect(self.load_report_records)
 
         self.date_report_month = self.styled_date()
         self.date_report_month.setDisplayFormat("MM/yyyy")
         self.date_report_month.setDate(QDate.currentDate())
+        self.date_report_month.setMaximumWidth(130)
         self.date_report_month.dateChanged.connect(self.load_report_records)
 
         btn_gen_report = QPushButton("🖨️ Générer PDF")
         btn_gen_report.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_gen_report.setFixedHeight(32)
         btn_gen_report.setStyleSheet(
-            f"""
-            QPushButton {{ background-color: {colors.WARNING}; color: white; font-weight: bold; padding: 10px; border-radius: 6px; border: none; }}
-            QPushButton:hover {{ background-color: {colors.WARNING}; }}
-        """
+            f"QPushButton {{ background:qlineargradient(x1:0,y1:0,x2:1,y2:0,"
+            f" stop:0 {colors.WARNING} stop:1 #D97706); color:white; font-weight:bold;"
+            f" font-size:11px; padding:4px 12px; border-radius:7px; border:none; }}"
+            f"QPushButton:hover {{ background:#B45309; }}"
         )
         btn_gen_report.clicked.connect(self.generate_monthly_report)
 
-        glay.addWidget(QLabel("Employé:"), 1, 0)
-        glay.addWidget(self.combo_staff_report, 1, 1)
-        glay.addWidget(QLabel("Mois:"), 1, 2)
-        glay.addWidget(self.date_report_month, 1, 3)
-        glay.addWidget(btn_gen_report, 1, 4)
+        h_fil.addWidget(QLabel("Employé:"))
+        h_fil.addWidget(self.combo_staff_report)
+        h_fil.addWidget(QLabel("Mois:"))
+        h_fil.addWidget(self.date_report_month)
+        h_fil.addStretch()
+        h_fil.addWidget(btn_gen_report)
 
         layout.addWidget(filter_card)
 
@@ -483,10 +409,18 @@ class StaffAttendanceWindow(QMainWindow):
 
                     if existing:
                         status_combo.setCurrentText(existing[0])
+                        # FIX 3: psycopg2 returns TIME columns as datetime.time objects,
+                        # not strings — QTime.fromString() raises TypeError on them.
                         if existing[1]:
-                            time_in.setTime(QTime.fromString(existing[1], "HH:mm"))
+                            t = existing[1]
+                            time_in.setTime(
+                                QTime(t.hour, t.minute) if hasattr(t, 'hour') else QTime.fromString(str(t), "HH:mm")
+                            )
                         if existing[2]:
-                            time_out.setTime(QTime.fromString(existing[2], "HH:mm"))
+                            t = existing[2]
+                            time_out.setTime(
+                                QTime(t.hour, t.minute) if hasattr(t, 'hour') else QTime.fromString(str(t), "HH:mm")
+                            )
                         if existing[3]:
                             note_item.setText(existing[3])
 
@@ -627,7 +561,16 @@ class StaffAttendanceWindow(QMainWindow):
                     t_out = record[3]
                     note = record[4]
 
-                date_fmt = datetime.strptime(date_val, '%Y-%m-%d').strftime('%d/%m/%Y') if date_val else ""
+                # FIX 3: psycopg2 returns DATE columns as datetime.date objects —
+                # datetime.strptime() raises TypeError on non-string input.
+                if date_val:
+                    date_fmt = (
+                        date_val.strftime('%d/%m/%Y')
+                        if hasattr(date_val, 'strftime')
+                        else datetime.strptime(str(date_val), '%Y-%m-%d').strftime('%d/%m/%Y')
+                    )
+                else:
+                    date_fmt = ""
                 if status == "Présent":
                     present_cnt += 1
 

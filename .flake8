@@ -9,6 +9,9 @@ extend-ignore =
     E203,
     # F401: imported but unused (allow in __init__.py files)
     F401,
+    # E402: module-level import after code — UI modules import pdf_helpers after
+    # anchoring app paths; this pattern is used throughout the codebase.
+    E402,
 exclude =
     .venv,
     dist_release,
@@ -31,4 +34,6 @@ per-file-ignores =
     main_dashbord.py:E402,F841,
     # validators.py: re-import في __main__ block
     validators.py:F811,
+    # year_end_migration.py: MigrationCalculator.run aggregates promotion rules
+    year_end_migration.py:C901,
 max-complexity = 15

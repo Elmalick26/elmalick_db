@@ -1,4 +1,4 @@
-import os
+﻿import os
 import sys
 from datetime import datetime
 
@@ -10,6 +10,7 @@ from PyQt6.QtWidgets import (
     QApplication,
     QComboBox,
     QDateEdit,
+    QDialog,
     QDoubleSpinBox,
     QFrame,
     QGridLayout,
@@ -31,6 +32,7 @@ from PyQt6.QtWidgets import (
 )
 
 from app_logger import AppLogger
+from constants import PAGE_SIZE_DEFAULT, PASS_AVERAGE, STUDENT_CODE_PREFIX
 from database_setup import DatabaseManager
 from pdf_report_style import (
     apply_grades_sheet_header,
@@ -41,15 +43,196 @@ from pdf_report_style import (
 )
 from print_export_service import get_report_output_mode, output_pdf
 from repositories.inventory_repo import InventoryRepository
-from ui_styles import (
-    Colors,
-    ModuleHeaderWidget,
-    ThemeManager,
-    apply_shadow_to_widget,
-    get_card_style,
-    get_table_style,
-    get_tabs_style,
+from ui_components import (
+    BaseDialog,
+    card_frame,
+    dialog_button_row,
+    dialog_error_label,
+    style_table,
+    styled_combo,
+    styled_date_edit,
+    styled_input,
 )
+from ui_components import styled_spinbox as styled_double_spin_uc
+from ui_styles import Colors, ModuleHeaderWidget, ThemeManager, get_module_caps, get_table_style, get_tabs_style
+
+
+class InventoryItemDialog(BaseDialog):
+    """Popup for creating a new inventory item."""
+
+    CATEGORIES = [
+        "Fournitures (قرطاسية)",
+        "Mobilier (أثاث)",
+        "Électronique (إلكترونيات)",
+        "Hygiène (نظافة)",
+        "Autre",
+    ]
+
+    def __init__(self, parent=None):
+        super().__init__("➕ Nouvel Article / مادة جديدة", parent)
+        self.setModal(True)
+        self.setMinimumWidth(560)
+        self._build_ui()
+
+    def _build_ui(self):
+        colors = ThemeManager.get_colors()
+
+        title = QLabel("📦 Nouvel Article")
+        title.setStyleSheet(f"font-size:16px; font-weight:700; color:{colors.TEXT_PRIMARY};")
+        self.dialog_layout.addWidget(title)
+
+        self._err_lbl = dialog_error_label()
+        self.dialog_layout.addWidget(self._err_lbl)
+
+        form = QGridLayout()
+        form.setHorizontalSpacing(12)
+        form.setVerticalSpacing(10)
+
+        self.txt_name_fr = styled_input("Nom (FR)")
+        self.txt_name_ar = styled_input("الاسم (عربي)")
+        self.combo_cat = styled_combo()
+        self.combo_cat.addItems(self.CATEGORIES)
+        self.txt_loc = styled_input("Emplacement / المكان")
+
+        spinbox_style = (
+            f"padding: 9px 13px; border: 1.5px solid {colors.INPUT_BORDER}; border-radius: 8px;"
+            f" background-color: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY};"
+        )
+        focus_style = f"border: 2px solid {colors.BORDER_FOCUS}; background-color: {colors.INPUT_BG_FOCUS};"
+
+        self.spin_qty = QSpinBox()
+        self.spin_qty.setRange(0, 100000)
+        self.spin_qty.setMinimumHeight(42)
+        self.spin_qty.setStyleSheet(f"QSpinBox {{{spinbox_style}}} QSpinBox:focus {{{focus_style}}}")
+
+        self.spin_min = QSpinBox()
+        self.spin_min.setRange(0, 100000)
+        self.spin_min.setValue(5)
+        self.spin_min.setMinimumHeight(42)
+        self.spin_min.setStyleSheet(f"QSpinBox {{{spinbox_style}}} QSpinBox:focus {{{focus_style}}}")
+
+        self.spin_price = QDoubleSpinBox()
+        self.spin_price.setRange(0, 1000000)
+        self.spin_price.setPrefix("FCFA ")
+        self.spin_price.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)
+        self.spin_price.setMinimumHeight(42)
+        self.spin_price.setStyleSheet(f"QDoubleSpinBox {{{spinbox_style}}} QDoubleSpinBox:focus {{{focus_style}}}")
+
+        form.addWidget(QLabel("Nom FR:"), 0, 0)
+        form.addWidget(self.txt_name_fr, 0, 1)
+        form.addWidget(QLabel("Nom AR:"), 0, 2)
+        form.addWidget(self.txt_name_ar, 0, 3)
+
+        form.addWidget(QLabel("Catégorie:"), 1, 0)
+        form.addWidget(self.combo_cat, 1, 1)
+        form.addWidget(QLabel("Emplacement:"), 1, 2)
+        form.addWidget(self.txt_loc, 1, 3)
+
+        form.addWidget(QLabel("Qté initiale:"), 2, 0)
+        form.addWidget(self.spin_qty, 2, 1)
+        form.addWidget(QLabel("Seuil min:"), 2, 2)
+        form.addWidget(self.spin_min, 2, 3)
+
+        form.addWidget(QLabel("Prix unitaire:"), 3, 0)
+        form.addWidget(self.spin_price, 3, 1)
+
+        self.dialog_layout.addLayout(form)
+        self.dialog_layout.addLayout(dialog_button_row("✔ Enregistrer", self._validate, self.reject))
+
+    def get_values(self):
+        return {
+            "name_fr": self.txt_name_fr.text().strip(),
+            "name_ar": self.txt_name_ar.text().strip(),
+            "category": self.combo_cat.currentText(),
+            "quantity": self.spin_qty.value(),
+            "min_quantity": self.spin_min.value(),
+            "unit_price": self.spin_price.value(),
+            "location": self.txt_loc.text().strip(),
+        }
+
+    def _validate(self):
+        if not self.txt_name_fr.text().strip():
+            self._err_lbl.setText("Le nom de l'article (FR) est requis.")
+            self._err_lbl.setVisible(True)
+            return
+        self._err_lbl.setVisible(False)
+        self.accept()
+
+
+class MovementDialog(BaseDialog):
+    """Popup for recording a stock movement."""
+
+    def __init__(self, items, parent=None):
+        super().__init__("🔄 Nouveau Mouvement", parent)
+        self.setModal(True)
+        self.setMinimumWidth(560)
+        self._items = items
+        self._build_ui()
+
+    def _build_ui(self):
+        colors = ThemeManager.get_colors()
+
+        title = QLabel("🔄 Enregistrer un Mouvement")
+        title.setStyleSheet(f"font-size:15px; font-weight:700; color:{colors.TEXT_PRIMARY};")
+        self.dialog_layout.addWidget(title)
+
+        self._err_lbl = dialog_error_label()
+        self.dialog_layout.addWidget(self._err_lbl)
+
+        spinbox_style = (
+            f"padding: 9px 13px; border: 1.5px solid {colors.INPUT_BORDER};"
+            f" border-radius: 8px; background-color: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY};"
+        )
+        focus_style = f"border: 2px solid {colors.BORDER_FOCUS}; background-color: {colors.INPUT_BG_FOCUS};"
+
+        row1 = QHBoxLayout()
+        row1.setSpacing(10)
+        self.combo_items_dlg = styled_combo()
+        for name, item_id in self._items:
+            self.combo_items_dlg.addItem(name, item_id)
+        self.combo_type_dlg = styled_combo()
+        self.combo_type_dlg.addItems(["ENTRÉE (Achat/Retour)", "SORTIE (Consommation/Perte)"])
+        self.spin_qty = QSpinBox()
+        self.spin_qty.setRange(1, 100000)
+        self.spin_qty.setMinimumHeight(42)
+        self.spin_qty.setStyleSheet(f"QSpinBox {{{spinbox_style}}} QSpinBox:focus {{{focus_style}}}")
+        row1.addWidget(QLabel("Article:"))
+        row1.addWidget(self.combo_items_dlg, 3)
+        row1.addWidget(QLabel("Type:"))
+        row1.addWidget(self.combo_type_dlg, 2)
+        row1.addWidget(QLabel("Qté:"))
+        row1.addWidget(self.spin_qty, 1)
+        self.dialog_layout.addLayout(row1)
+
+        row2 = QHBoxLayout()
+        row2.setSpacing(10)
+        self.date_move_dlg = styled_date_edit()
+        self.date_move_dlg.setDate(QDate.currentDate())
+        self.txt_notes_dlg = styled_input("Motif / Bénéficiaire...")
+        row2.addWidget(QLabel("Date:"))
+        row2.addWidget(self.date_move_dlg)
+        row2.addWidget(QLabel("Notes:"))
+        row2.addWidget(self.txt_notes_dlg, 2)
+        self.dialog_layout.addLayout(row2)
+
+        self.dialog_layout.addLayout(dialog_button_row("✔ Valider Mouvement", self._validate, self.reject))
+
+    def _validate(self):
+        if not self.combo_items_dlg.currentData():
+            self._err_lbl.setText("Veuillez sélectionner un article.")
+            self._err_lbl.setVisible(True)
+            return
+        self._err_lbl.setVisible(False)
+        self.accept()
+
+    def get_values(self):
+        return {
+            "item_id": self.combo_items_dlg.currentData(),
+            "move_type": "IN" if "ENTRÉE" in self.combo_type_dlg.currentText() else "OUT",
+            "qty": self.spin_qty.value(),
+            "notes": self.txt_notes_dlg.text(),
+            "date_str": (self.date_move_dlg.date().toString("yyyy-MM-dd") + datetime.now().strftime(" %H:%M:%S")),
+        }
 
 
 class InventoryWindow(QMainWindow):
@@ -67,12 +250,22 @@ class InventoryWindow(QMainWindow):
         self.load_inventory()
         self.load_history()
 
+    def apply_rbac(self, role: str) -> None:
+        """تطبيق صلاحيات الأزرار بناءً على دور المستخدم — يُستدعى من MainWindow."""
+        caps = get_module_caps(role, "inventory")
+        if hasattr(self, "btn_add"):
+            self.btn_add.setEnabled(caps["can_write"])
+            self.btn_add.setVisible(caps["can_write"])
+        if hasattr(self, "btn_exec"):
+            self.btn_exec.setEnabled(caps["can_write"])
+            self.btn_exec.setVisible(caps["can_write"])
+
     def init_ui(self):
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
         self.main_layout = QVBoxLayout(self.central_widget)
-        self.main_layout.setContentsMargins(20, 20, 20, 20)
-        self.main_layout.setSpacing(15)
+        self.main_layout.setContentsMargins(24, 20, 24, 20)
+        self.main_layout.setSpacing(16)
 
         # 1. Header
         header = ModuleHeaderWidget("📦", "GESTION DE STOCK", "متابعة المخزون، المشتريات، والاستهلاك")
@@ -86,172 +279,81 @@ class InventoryWindow(QMainWindow):
         self.tabs.setStyleSheet(get_tabs_style())
 
         self.setup_stock_tab()
-        self.setup_movement_tab()
-        self.setup_history_tab()
+        self.setup_movement_history_tab()
         self.setup_reports_tab()
 
         self.main_layout.addWidget(self.tabs)
 
     # --- Helper Methods ---
     def create_card(self):
-        frame = QFrame()
-        frame.setStyleSheet(get_card_style())
-        apply_shadow_to_widget(frame)
-        return frame
+        return card_frame()
 
     def styled_input(self, placeholder):
-        le = QLineEdit()
-        le.setPlaceholderText(placeholder)
-        colors = ThemeManager.get_colors()
-        le.setStyleSheet(
-            f"""
-            QLineEdit {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }}
-            QLineEdit:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}
-        """
-        )
-        le.setMinimumHeight(38)
-        return le
+        return styled_input(placeholder)
 
     def styled_combo(self):
-        combo = QComboBox()
-        colors = ThemeManager.get_colors()
-        combo.setStyleSheet(
-            f"""
-            QComboBox {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }}
-            QComboBox:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}
-        """
-        )
-        combo.setMinimumHeight(38)
-        return combo
+        return styled_combo()
 
     def styled_spinbox(self, suffix=""):
+        colors = ThemeManager.get_colors()
         sb = QSpinBox()
         sb.setRange(0, 100000)
         sb.setSuffix(suffix)
-        colors = ThemeManager.get_colors()
+        sb.setMinimumHeight(42)
         sb.setStyleSheet(
-            f"""
-            QSpinBox {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }}
-            QSpinBox:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}
-        """
+            f"QSpinBox {{ padding: 9px 13px; border: 1.5px solid {colors.INPUT_BORDER}; border-radius: 8px;"
+            f" background-color: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }}"
+            f" QSpinBox:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background-color: {colors.INPUT_BG_FOCUS}; }}"
         )
-        sb.setMinimumHeight(38)
         return sb
 
     def styled_double_spin(self, prefix=""):
-        spin = QDoubleSpinBox()
-        spin.setRange(0, 1000000)
-        spin.setPrefix(prefix)
-        spin.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)
-        colors = ThemeManager.get_colors()
-        spin.setStyleSheet(
-            f"QDoubleSpinBox {{ padding: 8px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }}"
-        )
-        spin.setMinimumHeight(38)
-        return spin
+        return styled_double_spin_uc(prefix=prefix)
 
     def styled_date(self):
-        date_edit = QDateEdit()
-        date_edit.setCalendarPopup(True)
-        colors = ThemeManager.get_colors()
-        date_edit.setStyleSheet(
-            f"QDateEdit {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }}"
-        )
-        date_edit.setMinimumHeight(38)
-        return date_edit
+        return styled_date_edit()
 
     def style_table(self, table):
-        table.setShowGrid(False)
-        table.setAlternatingRowColors(True)
-        table.verticalHeader().setVisible(False)
-        table.setStyleSheet(get_table_style())
+        style_table(table)
 
     # ---------------------------------------------------------
     # TAB 1: Stock Overview
     # ---------------------------------------------------------
     def setup_stock_tab(self):
         tab = QWidget()
-        layout = QHBoxLayout(tab)
+        layout = QVBoxLayout(tab)
         layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(20)
+        layout.setSpacing(16)
         colors = ThemeManager.get_colors()
 
-        # --- Form Card (Left) ---
-        form_card = self.create_card()
-        form_card.setMinimumWidth(360)
-        flay = QVBoxLayout(form_card)
-        flay.setContentsMargins(20, 20, 20, 20)
-        flay.setSpacing(15)
+        # Toolbar
+        toolbar_card = self.create_card()
+        tl = QHBoxLayout(toolbar_card)
+        tl.setContentsMargins(12, 10, 12, 10)
+        tl.setSpacing(10)
 
-        lbl_title = QLabel("Nouveau Article / مادة جديدة")
-        lbl_title.setStyleSheet(f"font-weight: bold; color: {colors.TEXT_PRIMARY}; font-size: 14px;")
-        flay.addWidget(lbl_title)
-
-        self.txt_name_fr = self.styled_input("Nom (FR)")
-        self.txt_name_ar = self.styled_input("الاسم (عربي)")
-
-        self.combo_cat = self.styled_combo()
-        self.combo_cat.addItems(
-            ["Fournitures (قرطاسية)", "Mobilier (أثاث)", "Électronique (إلكترونيات)", "Hygiène (نظافة)", "Autre"]
-        )
-
-        self.spin_qty = self.styled_spinbox()
-        self.spin_min = self.styled_spinbox()
-        self.spin_min.setValue(5)
-
-        self.spin_price = self.styled_double_spin("FCFA ")
-        self.txt_loc = self.styled_input("Emplacement / المكان")
-
-        btn_add = QPushButton("Ajouter Article")
-        btn_add.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_add.setMinimumHeight(45)
-        btn_add.setStyleSheet(
+        self.btn_add = QPushButton("➕  Nouvel Article")
+        self.btn_add.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_add.setMinimumHeight(38)
+        self.btn_add.setStyleSheet(
             f"""
-            QPushButton {{ background-color: {colors.SUCCESS}; color: white; font-weight: bold; border-radius: 8px; border: none; }}
-            QPushButton:hover {{ background-color: {colors.SUCCESS_HOVER}; }}
+            QPushButton {{ background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 {colors.SUCCESS} stop:1 #16A34A); color: white; font-weight: 700; border-radius: 8px; border: none; padding: 8px 18px; font-size: 13px; }}
+            QPushButton:hover {{ background: {colors.SUCCESS_HOVER}; }}
+            QPushButton:disabled {{ background:{colors.BORDER}; color:{colors.TEXT_SECONDARY}; }}
         """
         )
-        btn_add.clicked.connect(self.add_item)
+        self.btn_add.clicked.connect(self.open_item_dialog)
 
-        flay.addWidget(QLabel("Nom FR:"))
-        flay.addWidget(self.txt_name_fr)
-        flay.addWidget(QLabel("Nom AR:"))
-        flay.addWidget(self.txt_name_ar)
-        flay.addWidget(QLabel("Catégorie:"))
-        flay.addWidget(self.combo_cat)
-
-        row_qty = QHBoxLayout()
-        row_qty.addWidget(QLabel("Qté Init:"))
-        row_qty.addWidget(self.spin_qty)
-        row_qty.addWidget(QLabel("Min:"))
-        row_qty.addWidget(self.spin_min)
-        flay.addLayout(row_qty)
-
-        flay.addWidget(QLabel("Prix Unitaire:"))
-        flay.addWidget(self.spin_price)
-        flay.addWidget(QLabel("Emplacement:"))
-        flay.addWidget(self.txt_loc)
-        flay.addSpacing(10)
-        flay.addWidget(btn_add)
-        flay.addStretch()
-
-        scroll_form = QScrollArea()
-        scroll_form.setWidgetResizable(True)
-        scroll_form.setFrameShape(QFrame.Shape.NoFrame)
-        scroll_form.setFixedWidth(380)
-        scroll_form.setWidget(form_card)
-        scroll_form.setStyleSheet("QScrollArea { background: transparent; border: none; }")
-        layout.addWidget(scroll_form)
-
-        # --- Table (Right) ---
-        table_layout = QVBoxLayout()
-
-        self.lbl_stats = QLabel("Valeur: 0.00 FCFA | Rupture: 0")
+        self.lbl_stats = QLabel("💰 Valeur Totale: 0.00 FCFA   |   ⚠️ Alertes Rupture: 0")
         self.lbl_stats.setStyleSheet(
             f"background-color: {colors.BG_MAIN}; padding: 12px; border-radius: 8px; color: {colors.TEXT_PRIMARY}; font-weight: bold; border: 1px solid {colors.BORDER};"
         )
         self.lbl_stats.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        table_layout.addWidget(self.lbl_stats)
+
+        tl.addWidget(self.btn_add)
+        tl.addStretch()
+        tl.addWidget(self.lbl_stats)
+        layout.addWidget(toolbar_card)
 
         self.table_stock = QTableWidget(0, 8)
         self.style_table(self.table_stock)
@@ -260,117 +362,64 @@ class InventoryWindow(QMainWindow):
         )
         self.table_stock.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.table_stock.setColumnWidth(0, 50)
-        table_layout.addWidget(self.table_stock)
-
-        layout.addLayout(table_layout)
+        layout.addWidget(self.table_stock)
         self.tabs.addTab(tab, "  📦 État du Stock / المخزون  ")
 
     # ---------------------------------------------------------
-    # TAB 2: Movements
+    # TAB 2: Movements & History (combined)
     # ---------------------------------------------------------
-    def setup_movement_tab(self):
+    def setup_movement_history_tab(self):
         tab = QWidget()
         layout = QVBoxLayout(tab)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(15)
+        layout.setContentsMargins(14, 14, 14, 14)
+        layout.setSpacing(10)
         colors = ThemeManager.get_colors()
 
-        move_card = self.create_card()
-        vlay = QVBoxLayout(move_card)
-        vlay.setContentsMargins(20, 20, 20, 20)
-        vlay.setSpacing(15)
-
-        lbl_title = QLabel("Enregistrer un Mouvement / تسجيل حركة")
-        lbl_title.setStyleSheet(f"font-weight: bold; color: {colors.TEXT_PRIMARY}; font-size: 14px;")
-        vlay.addWidget(lbl_title)
-
-        row1 = QHBoxLayout()
+        # Hidden combo — populated by load_inventory(), passed to MovementDialog
         self.combo_items = self.styled_combo()
-        self.combo_type = self.styled_combo()
-        self.combo_type.addItems(["ENTRÉE (Achat/Retour)", "SORTIE (Consommation/Perte)"])
 
-        self.spin_move_qty = self.styled_spinbox()
-        self.spin_move_qty.setRange(1, 1000)
+        toolbar_card = self.create_card()
+        tl = QHBoxLayout(toolbar_card)
+        tl.setContentsMargins(12, 8, 12, 8)
+        tl.setSpacing(8)
 
-        row1.addWidget(QLabel("Article:"))
-        row1.addWidget(self.combo_items, 2)
-        row1.addWidget(QLabel("Type:"))
-        row1.addWidget(self.combo_type, 1)
-        row1.addWidget(QLabel("Quantité:"))
-        row1.addWidget(self.spin_move_qty, 1)
-
-        row2 = QHBoxLayout()
-        self.date_move = self.styled_date()
-        self.date_move.setDate(QDate.currentDate())
-
-        self.txt_notes = self.styled_input("Motif / Bénéficiaire...")
-
-        btn_exec = QPushButton("Valider Mouvement")
-        btn_exec.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_exec.setMinimumHeight(40)
-        btn_exec.setStyleSheet(
-            f"""
-            QPushButton {{ background-color: {colors.WARNING}; color: white; font-weight: bold; border-radius: 6px; border: none; }}
-            QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}
-        """
+        self.btn_exec = QPushButton("🔄 Nouveau Mouvement")
+        self.btn_exec.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_exec.setFixedHeight(32)
+        self.btn_exec.setStyleSheet(
+            f"QPushButton {{ background: qlineargradient(x1:0,y1:0,x2:1,y2:0,"
+            f" stop:0 {colors.WARNING} stop:1 #D97706);"
+            f" color: white; font-weight: 700; font-size:11px;"
+            f" border-radius: 7px; border: none; padding: 4px 14px; }}"
+            f"QPushButton:hover {{ background: #B45309; }}"
+            f"QPushButton:disabled {{ background:{colors.BORDER}; color:{colors.TEXT_SECONDARY}; }}"
         )
-        btn_exec.clicked.connect(self.execute_movement)
+        self.btn_exec.clicked.connect(self.open_movement_dialog)
 
-        row2.addWidget(QLabel("Date:"))
-        row2.addWidget(self.date_move)
-        row2.addWidget(QLabel("Notes:"))
-        row2.addWidget(self.txt_notes, 2)
-        row2.addWidget(btn_exec)
-
-        vlay.addLayout(row1)
-        vlay.addLayout(row2)
-        layout.addWidget(move_card)
-        layout.addStretch()
-
-        info_frame = QFrame()
-        info_frame.setStyleSheet(
-            f"background-color: {colors.BG_MAIN}; border-radius: 8px; border: 1px dashed {colors.WARNING}; padding: 10px;"
-        )
-        ilay = QHBoxLayout(info_frame)
-        ilay.addWidget(QLabel("💡 Astuce: Les 'Sorties' diminuent le stock, les 'Entrées' l'augmentent."))
-        layout.addWidget(info_frame)
-
-        self.tabs.addTab(tab, "  🔄 Mouvements / الحركات  ")
-
-    # ---------------------------------------------------------
-    # TAB 3: History
-    # ---------------------------------------------------------
-    def setup_history_tab(self):
-        tab = QWidget()
-        layout = QVBoxLayout(tab)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(15)
-
-        toolbar = QHBoxLayout()
-        btn_refresh = QPushButton("Actualiser")
+        btn_refresh = QPushButton("🔃 Actualiser")
         btn_refresh.setCursor(Qt.CursorShape.PointingHandCursor)
-        colors = ThemeManager.get_colors()
+        btn_refresh.setFixedHeight(32)
         btn_refresh.setStyleSheet(
-            f"""
-            QPushButton {{ background-color: {colors.PRIMARY}; color: white; font-weight: bold; border-radius: 6px; padding: 8px 15px; border: none; }}
-            QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}
-        """
+            f"QPushButton {{ background: qlineargradient(x1:0,y1:0,x2:1,y2:0,"
+            f" stop:0 {colors.PRIMARY} stop:1 {colors.PRIMARY_HOVER});"
+            f" color: white; font-weight: bold; font-size:11px;"
+            f" border-radius: 7px; border: none; padding: 4px 14px; }}"
+            f"QPushButton:hover {{ background: {colors.PRIMARY_DARK}; }}"
         )
         btn_refresh.clicked.connect(self.load_history)
 
-        toolbar.addWidget(QLabel("Historique des Demandes / سجل الطلبات"))
-        toolbar.addStretch()
-        toolbar.addWidget(btn_refresh)
-        layout.addLayout(toolbar)
+        tl.addWidget(self.btn_exec)
+        tl.addStretch()
+        tl.addWidget(btn_refresh)
+        layout.addWidget(toolbar_card)
 
         self.table_log = QTableWidget(0, 5)
         self.style_table(self.table_log)
         self.table_log.setHorizontalHeaderLabels(["Date", "Type", "Article", "Qté", "Notes / Motif"])
         self.table_log.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-
         layout.addWidget(self.table_log)
 
-        self.tabs.addTab(tab, "  📜 Historique / السجل  ")
+        self.tabs.addTab(tab, "  🔄 Mouvements & Historique / الحركات والسجل  ")
 
     # ---------------------------------------------------------
     # TAB 4: Reports
@@ -402,8 +451,8 @@ class InventoryWindow(QMainWindow):
         btn_run.setMinimumHeight(40)
         btn_run.setStyleSheet(
             f"""
-            QPushButton {{ background-color: {colors.PRIMARY}; color: white; font-weight: bold; border-radius: 6px; border: none; padding: 8px 16px; }}
-            QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}
+            QPushButton {{ background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 {colors.PRIMARY} stop:1 {colors.PRIMARY_HOVER}); color: white; font-weight: 700; border-radius: 8px; border: none; padding: 8px 16px; }}
+            QPushButton:hover {{ background: {colors.PRIMARY_DARK}; }}
         """
         )
         btn_run.clicked.connect(self.run_inventory_report)
@@ -413,7 +462,7 @@ class InventoryWindow(QMainWindow):
         btn_export.setMinimumHeight(40)
         btn_export.setStyleSheet(
             f"""
-            QPushButton {{ background-color: {colors.SUCCESS}; color: white; font-weight: bold; border-radius: 6px; border: none; padding: 8px 16px; }}
+            QPushButton {{ background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 {colors.SUCCESS} stop:1 #16A34A); color: white; font-weight: 700; border-radius: 8px; border: none; padding: 8px 16px; }}
             QPushButton:hover {{ background-color: {colors.SUCCESS_HOVER}; }}
         """
         )
@@ -555,16 +604,22 @@ class InventoryWindow(QMainWindow):
         )
 
     # --- Logic ---
-    def add_item(self):
-        fr = self.txt_name_fr.text()
-        ar = self.txt_name_ar.text()
-        cat = self.combo_cat.currentText()
-        qty = self.spin_qty.value()
-        min_q = self.spin_min.value()
-        price = self.spin_price.value()
-        loc = self.txt_loc.text()
+    def open_item_dialog(self):
+        dialog = InventoryItemDialog(self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            self._save_item_from_dialog(dialog.get_values())
+
+    def _save_item_from_dialog(self, values: dict):
+        fr = values.get("name_fr", "")
+        ar = values.get("name_ar", "")
+        cat = values.get("category", "")
+        qty = int(values.get("quantity", 0))
+        min_q = int(values.get("min_quantity", 0))
+        price = float(values.get("unit_price", 0.0))
+        loc = values.get("location", "")
 
         if not fr:
+            QMessageBox.warning(self, "Erreur", "Le nom FR est obligatoire.")
             return
 
         try:
@@ -574,16 +629,17 @@ class InventoryWindow(QMainWindow):
                 item_id = repo.insert_item(fr, ar, cat, qty, min_q, price, loc)
                 conn.commit()
 
-            # ===== استخدام IN بدلاً من ENTRÉE =====
             if qty > 0:
                 self.log_movement_db(item_id, "IN", qty, "Stock Initial")
 
-            self.txt_name_fr.clear()
-            self.txt_name_ar.clear()
             self.load_inventory()
             QMessageBox.information(self, "Succès", "Article ajouté.")
         except Exception as e:
             QMessageBox.critical(self, "Erreur", f"Erreur lors de l'ajout: {e}")
+
+    def add_item(self):
+        # Backward-compatible entry point.
+        self.open_item_dialog()
 
     def log_movement_db(self, item_id, m_type, qty, notes):
         date_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -655,12 +711,18 @@ class InventoryWindow(QMainWindow):
         except Exception as e:
             AppLogger.error("InventoryManagement", f"Error loading inventory: {e}")
 
-    def execute_movement(self):
-        item_id = self.combo_items.currentData()
-        move_type = "IN" if "ENTRÉE" in self.combo_type.currentText() else "OUT"
-        qty = self.spin_move_qty.value()
-        notes = self.txt_notes.text()
-        date_str = self.date_move.date().toString("yyyy-MM-dd") + datetime.now().strftime(" %H:%M:%S")
+    def open_movement_dialog(self):
+        items = [(self.combo_items.itemText(i), self.combo_items.itemData(i)) for i in range(self.combo_items.count())]
+        dlg = MovementDialog(items, self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            self.execute_movement(dlg.get_values())
+
+    def execute_movement(self, vals: dict):
+        item_id = vals["item_id"]
+        move_type = vals["move_type"]
+        qty = vals["qty"]
+        notes = vals["notes"]
+        date_str = vals["date_str"]
 
         if not item_id:
             return
@@ -690,8 +752,6 @@ class InventoryWindow(QMainWindow):
 
             self.load_inventory()
             self.load_history()
-            self.txt_notes.clear()
-            self.spin_move_qty.setValue(1)
             QMessageBox.information(self, "Succès", "Mouvement enregistré.")
         except Exception as e:
             QMessageBox.critical(self, "Erreur", f"Erreur de mouvement: {e}")
@@ -701,7 +761,7 @@ class InventoryWindow(QMainWindow):
         try:
             with DatabaseManager() as db:
                 conn = db.get_connection()
-                rows = InventoryRepository(conn).list_movement_history(limit=50)
+                rows = InventoryRepository(conn).list_movement_history(limit=PAGE_SIZE_DEFAULT)
             for r in rows:
                 idx = self.table_log.rowCount()
                 self.table_log.insertRow(idx)

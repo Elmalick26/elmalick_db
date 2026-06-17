@@ -6,8 +6,8 @@ from datetime import datetime
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
-from PyQt6.QtCore import QSize, Qt, QTimer
-from PyQt6.QtGui import QColor, QFont, QIcon, QKeySequence, QShortcut
+from PyQt6.QtCore import QDateTime, QSize, Qt, QTimer
+from PyQt6.QtGui import QFont, QIcon, QKeySequence, QShortcut
 from PyQt6.QtWidgets import (
     QApplication,
     QFrame,
@@ -18,8 +18,6 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QPushButton,
     QScrollArea,
-    QSizePolicy,
-    QSpacerItem,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -37,6 +35,7 @@ from repositories.finance_repo import FinanceRepository
 from repositories.grades_repo import GradesRepository
 from repositories.staff_repo import StaffRepository
 from repositories.student_repo import StudentRepository
+from ui_components import create_card
 from ui_styles import Colors, DarkColors, KpiCard, ThemeManager, ToastNotification
 
 
@@ -116,6 +115,7 @@ class MainWindow(QMainWindow):
         # حاويات النوافذ الفرعية والأزرار (الصلاحيات تُحسب في setup_modules_and_permissions)
         self.module_widgets = {}
         self.module_factories = {}
+        self.module_windows = {}
         self.nav_buttons = {}
         self.allowed_modules = []  # يُملأ في setup_modules_and_permissions
 
@@ -141,6 +141,79 @@ class MainWindow(QMainWindow):
         # Escape — العودة إلى لوحة التحكم الرئيسية
         sc_esc = QShortcut(QKeySequence("Escape"), self)
         sc_esc.activated.connect(self._go_to_dashboard)
+
+        # ── Session Timeout ─────────────────────────────────────────────
+        self._setup_session_timeout()
+
+    def _setup_session_timeout(self) -> None:
+        """راقب عدم النشاط وأنهِ الجلسة بعد المهلة المحددة في config.ini."""
+        timeout_min = self.config.session_timeout
+        if timeout_min <= 0:
+            return  # ميزة معطّلة
+        self._session_timeout_ms = timeout_min * 60 * 1000
+        self._warn_before_ms = 2 * 60 * 1000  # تحذير قبل دقيقتين
+        self._last_activity_ms = QDateTime.currentMSecsSinceEpoch()
+        self._session_warning_shown = False
+
+        # مرشّح الأحداث على QApplication لتتبع أي تفاعل
+        QApplication.instance().installEventFilter(self)
+
+        # فحص كل 30 ثانية
+        self._idle_timer = QTimer(self)
+        self._idle_timer.timeout.connect(self._check_idle)
+        self._idle_timer.start(30_000)
+
+    def eventFilter(self, obj, event) -> bool:  # type: ignore[override]
+        """إعادة ضبط مؤقت الخمول عند أي حدث لوحة مفاتيح أو ماوس."""
+        if event.type() in (
+            event.Type.MouseButtonPress,
+            event.Type.MouseMove,
+            event.Type.KeyPress,
+            event.Type.Wheel,
+        ):
+            self._last_activity_ms = QDateTime.currentMSecsSinceEpoch()
+            self._session_warning_shown = False
+        return super().eventFilter(obj, event)
+
+    def _check_idle(self) -> None:
+        """تحقق من مدة الخمول وأصدر تحذيرًا أو أنهِ الجلسة."""
+        if not hasattr(self, '_session_timeout_ms'):
+            return
+        idle_ms = QDateTime.currentMSecsSinceEpoch() - self._last_activity_ms
+        remaining_ms = self._session_timeout_ms - idle_ms
+
+        if remaining_ms <= 0:
+            # انتهت المهلة — إغلاق تلقائي
+            AppLogger.info("Main", f"Session expirée par inactivité: {self.username}")
+            self._idle_timer.stop()
+            QMessageBox.information(
+                self,
+                "Session expirée / انتهت الجلسة",
+                "Votre session a expiré après une longue inactivité.\nVeuillez vous reconnecter.\n\nانتهت جلستك بسبب عدم النشاط. يرجى تسجيل الدخول مجدداً.",
+            )
+            self._force_logout()
+        elif remaining_ms <= self._warn_before_ms and not self._session_warning_shown:
+            # تحذير قبل الانتهاء
+            self._session_warning_shown = True
+            mins = max(1, remaining_ms // 60_000)
+            QMessageBox.warning(
+                self,
+                "Avertissement d'inactivité / تحذير الخمول",
+                f"Votre session expirera dans {mins} minute(s) en raison d'inactivité.\nBougez la souris ou appuyez sur une touche pour rester connecté.\n\nستنتهي جلستك خلال {mins} دقيقة بسبب عدم النشاط.",
+            )
+
+    def _force_logout(self) -> None:
+        """تسجيل خروج تلقائي بدون حوار تأكيد."""
+        self.close()
+        login = LoginWindow()
+        if login.exec():
+            self.new_main = MainWindow(login.txt_user.text(), login.user_role)
+            self.new_main.show()
+        else:
+            # FIX 3: If the re-login dialog is dismissed, quit cleanly.
+            # Without this, the QApplication event loop continues with no visible
+            # window — the process stays alive but unreachable by the user.
+            QApplication.quit()
 
     def init_ui(self):
         self.central_widget = QWidget()
@@ -189,53 +262,53 @@ class MainWindow(QMainWindow):
         self._btn_icon_map = {}  # mod_id → icon str
 
         self.sidebar = QFrame()
-        self.sidebar.setFixedWidth(260)
+        self.sidebar.setFixedWidth(268)
         self.sidebar.setStyleSheet(
-            f"""
-            QFrame {{ background-color: {colors.BG_HEADER}; border-right: 2px solid {colors.BORDER}; }}
-        """
+            f"QFrame {{ background-color: {colors.SIDEBAR_BG}; border-right: 1px solid {colors.BORDER}; }}"
         )
 
         self.sidebar_layout = QVBoxLayout(self.sidebar)
-        self.sidebar_layout.setContentsMargins(10, 20, 10, 20)
-        self.sidebar_layout.setSpacing(5)
+        self.sidebar_layout.setContentsMargins(12, 0, 12, 16)
+        self.sidebar_layout.setSpacing(4)
 
-        # شعار البرنامج + زر طي الشريط الجانبي
-        title_row = QHBoxLayout()
-        title_row.setContentsMargins(0, 0, 0, 0)
-        title_row.setSpacing(4)
+        # ── Logo zone ──────────────────────────────────────────
+        logo_container = QFrame()
+        logo_container.setStyleSheet(
+            f"QFrame {{ background: transparent; border-bottom: 1px solid {colors.SIDEBAR_TEXT_MUTED}33; "
+            f"padding-bottom: 2px; margin-bottom: 4px; }}"
+        )
+        logo_row = QHBoxLayout(logo_container)
+        logo_row.setContentsMargins(4, 16, 4, 14)
+        logo_row.setSpacing(8)
+
         self.app_title = QLabel("🏫 El Malick Gest")
-        self.app_title.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
-        self.app_title.setStyleSheet(f"color: {colors.HEADER_TEXT}; padding: 6px 4px;")
-        self.app_title.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.app_title.setFont(QFont("Segoe UI", 13, QFont.Weight.Bold))
+        self.app_title.setStyleSheet("color: #ffffff; background: transparent; letter-spacing: 0.3px; border: none;")
+        self.app_title.setAlignment(Qt.AlignmentFlag.AlignVCenter | Qt.AlignmentFlag.AlignLeft)
+
         self.btn_toggle_sidebar = QPushButton("❮")
-        self.btn_toggle_sidebar.setFixedSize(28, 28)
+        self.btn_toggle_sidebar.setFixedSize(30, 30)
         self.btn_toggle_sidebar.setToolTip("Réduire la barre latérale")
         self.btn_toggle_sidebar.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_toggle_sidebar.setStyleSheet(
-            f"QPushButton {{ background:transparent; color:{colors.HEADER_TEXT}; border:1px solid {colors.BORDER}; "
-            "border-radius:4px; font-size:14px; font-weight:bold; }} "
-            f"QPushButton:hover {{ background:{colors.PRIMARY}; border-color:{colors.PRIMARY}; }}"
+            f"QPushButton {{ background: transparent; color: {colors.SIDEBAR_ICON}; border: 1px solid "
+            f"{colors.SIDEBAR_TEXT_MUTED}55; border-radius: 6px; font-size: 13px; }}"
+            f"QPushButton:hover {{ background: {colors.SIDEBAR_ITEM_HOVER}; color: #ffffff; border-color: transparent; }}"
         )
         self.btn_toggle_sidebar.clicked.connect(self._toggle_sidebar)
-        title_row.addWidget(self.app_title, 1)
-        title_row.addWidget(self.btn_toggle_sidebar)
-        self.sidebar_layout.addLayout(title_row)
+        logo_row.addWidget(self.app_title, 1)
+        logo_row.addWidget(self.btn_toggle_sidebar)
+        self.sidebar_layout.addWidget(logo_container)
 
-        # زر الرئيسية (Dashboard)
-        self.btn_dashboard = QPushButton("🏠 Tableau de Bord / الرئيسية")
+        # ── Dashboard button ───────────────────────────────────
+        self.btn_dashboard = QPushButton("🏠  Tableau de Bord / الرئيسية")
         self.btn_dashboard.setToolTip("Tableau de Bord / الرئيسية")
         self.style_nav_button(self.btn_dashboard)
         self.btn_dashboard.setChecked(True)
         self.btn_dashboard.clicked.connect(lambda: self.switch_module(self.dashboard_idx, self.btn_dashboard))
         self.sidebar_layout.addWidget(self.btn_dashboard)
 
-        line = QFrame()
-        line.setFrameShape(QFrame.Shape.HLine)
-        line.setStyleSheet(f"background-color: {colors.BORDER}; opacity: 0.2; margin: 10px 0;")
-        self.sidebar_layout.addWidget(line)
-
-        # Scroll Area للأزرار
+        # ── Nav scroll area ────────────────────────────────────
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setStyleSheet("background: transparent; border: none;")
@@ -243,21 +316,25 @@ class MainWindow(QMainWindow):
         self.nav_container.setStyleSheet("background: transparent;")
         self.nav_layout = QVBoxLayout(self.nav_container)
         self.nav_layout.setContentsMargins(0, 0, 0, 0)
-        self.nav_layout.setSpacing(2)
+        self.nav_layout.setSpacing(1)
         scroll.setWidget(self.nav_container)
         self.sidebar_layout.addWidget(scroll, 1)
 
-        self.sidebar_layout.addStretch()
-
-        # زر الخروج
-        self.btn_logout = QPushButton("🚪 Déconnexion / خروج")
+        # ── Logout button ──────────────────────────────────────
+        self.btn_logout = QPushButton("🚪  Déconnexion / خروج")
         self.btn_logout.setStyleSheet(
             f"""
             QPushButton {{
-                text-align: left; padding: 12px 15px; border: none; border-radius: 6px;
-                color: {colors.DANGER}; font-size: 14px; font-weight: bold; background-color: transparent;
+                text-align: left; padding: 10px 14px 10px 16px;
+                border: none; border-radius: 8px; border-left: 3px solid transparent;
+                color: {colors.DANGER}; font-size: 13px; font-weight: 600;
+                background-color: transparent;
             }}
-            QPushButton:hover {{ background-color: {colors.DANGER_HOVER}; color: white; }}
+            QPushButton:hover {{
+                background-color: {colors.DANGER}18;
+                color: {colors.DANGER};
+                border-left: 3px solid {colors.DANGER};
+            }}
         """
         )
         self.btn_logout.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -269,16 +346,16 @@ class MainWindow(QMainWindow):
     def setup_topbar(self):
         colors = ThemeManager.get_colors()
         self.topbar = QFrame()
-        self.topbar.setFixedHeight(60)
+        self.topbar.setFixedHeight(64)
         self.topbar.setStyleSheet(
-            f"""
-            QFrame {{ background-color: {colors.BG_CARD}; border-bottom: 2px solid {colors.BORDER}; }}
-        """
+            f"QFrame {{ background-color: {colors.BG_CARD}; border-bottom: 1px solid {colors.BORDER}; }}"
         )
 
         tlay = QHBoxLayout(self.topbar)
-        tlay.setContentsMargins(20, 0, 20, 0)
+        tlay.setContentsMargins(20, 0, 16, 0)
+        tlay.setSpacing(8)
 
+        # ── Module title (breadcrumb style) ───────────────────
         self.lbl_module_title = QLabel("Tableau de Bord / اللوحة الرئيسية")
         self.lbl_module_title.setFont(QFont("Segoe UI", 14, QFont.Weight.Bold))
         self.lbl_module_title.setStyleSheet(f"color: {colors.TEXT_PRIMARY}; border: none;")
@@ -286,10 +363,10 @@ class MainWindow(QMainWindow):
 
         tlay.addStretch()
 
-        # الوقت والتاريخ
+        # ── Date/time ─────────────────────────────────────────
         self.lbl_datetime = QLabel()
         self.lbl_datetime.setStyleSheet(
-            f"color: {colors.TEXT_SECONDARY}; font-weight: bold; margin-right: 20px; border: none;"
+            f"color: {colors.TEXT_SECONDARY}; font-size: 12px; margin-right: 8px; border: none;"
         )
         self.update_time()
         self.timer = QTimer(self)
@@ -297,34 +374,66 @@ class MainWindow(QMainWindow):
         self.timer.start(1000)
         tlay.addWidget(self.lbl_datetime)
 
-        # زر الثيم ☀️/🌙
+        # ── Notification bell ─────────────────────────────────
+        self.btn_notif = QPushButton("🔔")
+        self.btn_notif.setFixedSize(40, 40)
+        self.btn_notif.setToolTip("Notifications")
+        self.btn_notif.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_notif.setProperty("class", "icon")
+        self.btn_notif.setStyleSheet(
+            f"""
+            QPushButton {{
+                background-color: {colors.INPUT_BG};
+                border-radius: 20px;
+                font-size: 17px;
+                border: 1px solid {colors.BORDER};
+                font-family: "Segoe UI Emoji";
+                padding-bottom: 2px;
+            }}
+            QPushButton:hover {{ background-color: {colors.BORDER}; }}
+        """
+        )
+        tlay.addWidget(self.btn_notif)
+
+        # ── Theme toggle ☀️/🌙 ─────────────────────────────────
         self.btn_theme = QPushButton()
         self.btn_theme.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn_theme.setFixedSize(40, 40)
-
-        # التعديل هنا: إجبار استخدام خط الإيموجي وضبط الـ padding ليظهر الرمز
         self.btn_theme.setStyleSheet(
             f"""
             QPushButton {{
                 background-color: {colors.INPUT_BG};
                 border-radius: 20px;
-                font-size: 20px;
+                font-size: 18px;
                 border: 1px solid {colors.BORDER};
                 font-family: "Segoe UI Emoji";
                 padding: 0px;
-                padding-bottom: 4px;
+                padding-bottom: 3px;
             }}
             QPushButton:hover {{ background-color: {colors.BORDER}; }}
         """
         )
-        self.update_theme_icon()  # استدعاء التحديث بعد ضبط الستايل
+        self.update_theme_icon()
         self.btn_theme.clicked.connect(self.toggle_theme)
         tlay.addWidget(self.btn_theme)
 
-        # المستخدم
-        lbl_user = QLabel(f"👤 {self.username} ({self.user_role})")
-        lbl_user.setStyleSheet(f"color: {colors.PRIMARY}; font-weight: bold; margin-left: 15px; border: none;")
-        tlay.addWidget(lbl_user)
+        # ── User chip ──────────────────────────────────────────
+        initials = (self.username[:2].upper()) if self.username else "??"
+        self.lbl_user_chip = QLabel(f"  {initials}  {self.username}  ({self.user_role})")
+        self.lbl_user_chip.setStyleSheet(
+            f"""
+            QLabel {{
+                background-color: {colors.PRIMARY_LIGHT};
+                color: {colors.PRIMARY};
+                font-weight: 700;
+                font-size: 12px;
+                border-radius: 16px;
+                padding: 6px 14px;
+                border: 1px solid {colors.PRIMARY}33;
+            }}
+        """
+        )
+        tlay.addWidget(self.lbl_user_chip)
 
         self.right_layout.addWidget(self.topbar)
 
@@ -339,20 +448,42 @@ class MainWindow(QMainWindow):
         self.config.set('UI', 'enable_dark_mode', str(not is_dark))
         self.config.set('APPLICATION', 'theme', new_theme)
 
-        # إعادة تطبيق الاستايلات على النوافذ المفتوحة
         ThemeManager.apply_theme(QApplication.instance())
         self.update_theme_icon()
         self.apply_runtime_theme_updates()
 
-        # إعادة رسم الرسم البياني في لوحة التحكم إذا كان موجوداً
-        if hasattr(self, 'ax'):
-            colors = ThemeManager.get_colors()
-            self.figure.patch.set_facecolor(colors.BG_CARD)
-            self.ax.set_facecolor(colors.BG_CARD)
-            self.ax.tick_params(colors=colors.TEXT_SECONDARY)
-            for spine in self.ax.spines.values():
-                spine.set_color(colors.BORDER)
-            self.canvas.draw()
+        # Purge all open module widgets — they carry static theme-colored stylesheets.
+        # They'll be recreated with the new theme the next time the user opens them.
+        self._purge_loaded_modules()
+
+        # Recreate the dashboard screen so KPI cards, chart card, and quick-action
+        # card all pick up the new theme colors.
+        self._recreate_dashboard()
+        self.load_dashboard_data()
+
+    def _purge_loaded_modules(self):
+        """Remove all cached module widgets from the stacked widget."""
+        # Collect widget references before any removal — removing shifts subsequent indices.
+        to_remove = [self.content_area.widget(idx) for idx in self.module_widgets.values() if idx is not None]
+        for widget in filter(None, to_remove):
+            self.content_area.removeWidget(widget)
+            widget.deleteLater()
+        self.module_widgets = {k: None for k in self.module_widgets}
+        self.module_windows.clear()
+
+    def _recreate_dashboard(self):
+        """Replace the dashboard screen widget to apply the current theme palette."""
+        old = self.content_area.widget(self.dashboard_idx)
+        if old is not None:
+            self.content_area.removeWidget(old)
+            old.deleteLater()
+        self.dashboard_screen = self.create_dashboard_screen()
+        self.content_area.insertWidget(self.dashboard_idx, self.dashboard_screen)
+        self.content_area.setCurrentIndex(self.dashboard_idx)
+        self.btn_dashboard.setChecked(True)
+        for btn in self.nav_buttons.values():
+            btn.setChecked(False)
+        self.lbl_module_title.setText("Tableau de Bord / اللوحة الرئيسية")
 
     def update_theme_icon(self):
         if ThemeManager.is_dark_mode():
@@ -366,7 +497,7 @@ class MainWindow(QMainWindow):
         colors = ThemeManager.get_colors()
 
         self.sidebar.setStyleSheet(
-            f"QFrame {{ background-color: {colors.BG_HEADER}; border-right: 1px solid {colors.BORDER}; }}"
+            f"QFrame {{ background-color: {colors.SIDEBAR_BG}; border-right: 1px solid {colors.BORDER}; }}"
         )
         self.topbar.setStyleSheet(
             f"QFrame {{ background-color: {colors.BG_CARD}; border-bottom: 1px solid {colors.BORDER}; }}"
@@ -374,21 +505,44 @@ class MainWindow(QMainWindow):
         self.content_area.setStyleSheet(f"background-color: {colors.BG_MAIN};")
 
         if hasattr(self, 'app_title'):
-            self.app_title.setStyleSheet(f"color: {colors.HEADER_TEXT}; padding: 10px; margin-bottom: 10px;")
+            self.app_title.setStyleSheet(
+                "color: #ffffff; background: transparent; letter-spacing: 0.3px; border: none;"
+            )
 
         self.lbl_module_title.setStyleSheet(f"color: {colors.TEXT_PRIMARY}; border: none;")
         self.lbl_datetime.setStyleSheet(
-            f"color: {colors.TEXT_SECONDARY}; font-weight: bold; margin-right: 20px; border: none;"
+            f"color: {colors.TEXT_SECONDARY}; font-size: 12px; margin-right: 8px; border: none;"
         )
-        if hasattr(self, 'lbl_user'):
-            self.lbl_user.setStyleSheet(f"color: {colors.PRIMARY}; font-weight: bold; margin-left: 15px; border: none;")
 
         self.btn_theme.setStyleSheet(
             f"""
-            QPushButton {{ background-color: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; border-radius: 20px; font-size: 16px; border: 1px solid {colors.BORDER}; font-weight: 800; }}
+            QPushButton {{ background-color: {colors.INPUT_BG}; border-radius: 20px; font-size: 18px;
+                           border: 1px solid {colors.BORDER}; font-family: "Segoe UI Emoji";
+                           padding: 0px; padding-bottom: 3px; }}
             QPushButton:hover {{ background-color: {colors.BORDER}; }}
             """
         )
+
+        if hasattr(self, 'btn_notif'):
+            self.btn_notif.setStyleSheet(
+                f"""
+                QPushButton {{ background-color: {colors.INPUT_BG}; border-radius: 20px; font-size: 17px;
+                               border: 1px solid {colors.BORDER}; font-family: "Segoe UI Emoji";
+                               padding-bottom: 2px; }}
+                QPushButton:hover {{ background-color: {colors.BORDER}; }}
+                """
+            )
+
+        if hasattr(self, 'lbl_user_chip'):
+            initials = (self.username[:2].upper()) if self.username else "??"
+            self.lbl_user_chip.setText(f"  {initials}  {self.username}  ({self.user_role})")
+            self.lbl_user_chip.setStyleSheet(
+                f"""
+                QLabel {{ background-color: {colors.PRIMARY_LIGHT}; color: {colors.PRIMARY};
+                          font-weight: 700; font-size: 12px; border-radius: 16px;
+                          padding: 6px 14px; border: 1px solid {colors.PRIMARY}33; }}
+                """
+            )
 
         self.style_nav_button(self.btn_dashboard)
         for btn in self.nav_buttons.values():
@@ -398,10 +552,16 @@ class MainWindow(QMainWindow):
             self.btn_logout.setStyleSheet(
                 f"""
                 QPushButton {{
-                    text-align: left; padding: 12px 15px; border: none; border-radius: 6px;
-                    color: {colors.DANGER}; font-size: 14px; font-weight: bold; background-color: transparent;
+                    text-align: left; padding: 10px 14px 10px 16px;
+                    border: none; border-radius: 8px; border-left: 3px solid transparent;
+                    color: {colors.DANGER}; font-size: 13px; font-weight: 600;
+                    background-color: transparent;
                 }}
-                QPushButton:hover {{ background-color: {colors.DANGER_HOVER}; color: white; }}
+                QPushButton:hover {{
+                    background-color: {colors.DANGER}18;
+                    color: {colors.DANGER};
+                    border-left: 3px solid {colors.DANGER};
+                }}
                 """
             )
 
@@ -436,15 +596,7 @@ class MainWindow(QMainWindow):
         mid_layout.setSpacing(20)
 
         # Chart
-        chart_card = QFrame()
-        chart_card.setStyleSheet(
-            f"background-color: {colors.BG_CARD}; border-radius: 12px; border: 1px solid {colors.BORDER};"
-        )
-        chart_layout = QVBoxLayout(chart_card)
-        lbl_chart = QLabel("Répartition des Élèves par Cycle / توزيع الطلاب")
-        lbl_chart.setStyleSheet(f"font-weight: bold; font-size: 14px; color: {colors.TEXT_PRIMARY}; border: none;")
-        chart_layout.addWidget(lbl_chart)
-
+        chart_card, chart_layout = create_card("Répartition des Élèves par Cycle / توزيع الطلاب")
         self.figure = Figure(figsize=(5, 3))
         self.figure.patch.set_facecolor(colors.BG_CARD)
         self.canvas = FigureCanvas(self.figure)
@@ -452,14 +604,7 @@ class MainWindow(QMainWindow):
         mid_layout.addWidget(chart_card, 2)
 
         # Quick Actions
-        qa_card = QFrame()
-        qa_card.setStyleSheet(
-            f"background-color: {colors.BG_CARD}; border-radius: 12px; border: 1px solid {colors.BORDER};"
-        )
-        qa_layout = QVBoxLayout(qa_card)
-        lbl_qa = QLabel("⚡ Actions Rapides / إجراءات سريعة")
-        lbl_qa.setStyleSheet(f"font-weight: bold; font-size: 14px; color: {colors.TEXT_PRIMARY}; border: none;")
-        qa_layout.addWidget(lbl_qa)
+        qa_card, qa_layout = create_card("⚡ Actions Rapides / إجراءات سريعة")
 
         qa_grid = QGridLayout()
         qa_grid.setSpacing(10)
@@ -488,19 +633,9 @@ class MainWindow(QMainWindow):
         layout.addLayout(mid_layout)
 
         # --- 3. مركز التنبيهات الذكي ---
-        alerts_frame = QFrame()
-        alerts_frame.setStyleSheet(
-            f"""
-            QFrame {{ background-color: {colors.BG_CARD}; border-radius: 12px; border: 1px solid {colors.BORDER}; }}
-        """
-        )
-        alerts_vlay = QVBoxLayout(alerts_frame)
+        alerts_frame, alerts_vlay = create_card("🔔  Centre d'Alertes / مركز التنبيهات")
         alerts_vlay.setContentsMargins(15, 12, 15, 15)
         alerts_vlay.setSpacing(10)
-
-        lbl_alerts_hdr = QLabel("🔔  Centre d'Alertes / مركز التنبيهات")
-        lbl_alerts_hdr.setStyleSheet(f"font-weight: bold; font-size: 14px; color: {colors.TEXT_PRIMARY}; border: none;")
-        alerts_vlay.addWidget(lbl_alerts_hdr)
 
         alerts_cards_row = QHBoxLayout()
         alerts_cards_row.setSpacing(15)
@@ -708,11 +843,26 @@ class MainWindow(QMainWindow):
         btn.setStyleSheet(
             f"""
             QPushButton {{
-                text-align: left; padding: 12px 15px; border: none; border-radius: 6px;
-                color: {colors.HEADER_TEXT}; font-size: 14px; font-weight: bold; background-color: transparent;
+                text-align: left;
+                padding: 10px 14px 10px 16px;
+                border: none;
+                border-radius: 8px;
+                border-left: 3px solid transparent;
+                color: {colors.SIDEBAR_TEXT};
+                font-size: 13px;
+                font-weight: 500;
+                background-color: transparent;
             }}
-            QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}
-            QPushButton:checked {{ background-color: {colors.PRIMARY}; border-left: 4px solid white; }}
+            QPushButton:hover {{
+                background-color: {colors.SIDEBAR_ITEM_HOVER};
+                color: #ffffff;
+            }}
+            QPushButton:checked {{
+                background-color: {colors.SIDEBAR_ITEM_ACTIVE};
+                color: #ffffff;
+                border-left: 3px solid {colors.SIDEBAR_ACCENT};
+                font-weight: 700;
+            }}
         """
         )
         btn.setCheckable(True)
@@ -788,7 +938,8 @@ class MainWindow(QMainWindow):
                 if category != current_category:
                     lbl_cat = QLabel(category.upper())
                     lbl_cat.setStyleSheet(
-                        f"color: {colors.TEXT_SECONDARY}; font-size: 11px; font-weight: bold; margin-top: 10px; margin-left: 5px;"
+                        f"color: {colors.SIDEBAR_TEXT_MUTED}; font-size: 10px; font-weight: 700; "
+                        f"letter-spacing: 1.2px; margin: 14px 0 4px 6px;"
                     )
                     self.nav_layout.addWidget(lbl_cat)
                     self._cat_labels.append(lbl_cat)
@@ -889,26 +1040,26 @@ class MainWindow(QMainWindow):
             self.nav_buttons[mod_id].click()
 
     def _toggle_sidebar(self):
-        """Toggle sidebar between expanded (260px) and compact icon-only (64px) modes."""
+        """Toggle sidebar between expanded (268px) and compact icon-only (68px) modes."""
+        colors = ThemeManager.get_colors()
         self._sidebar_expanded = not self._sidebar_expanded
         if self._sidebar_expanded:
-            self.sidebar.setFixedWidth(260)
+            self.sidebar.setFixedWidth(268)
             self.btn_toggle_sidebar.setText("❮")
             self.btn_toggle_sidebar.setToolTip("Réduire la barre latérale")
             self.app_title.setText("🏫 El Malick Gest")
-            self.btn_dashboard.setText("🏠 Tableau de Bord / الرئيسية")
+            self.btn_dashboard.setText("🏠  Tableau de Bord / الرئيسية")
             for mod_id, btn in self.nav_buttons.items():
                 icon = self._btn_icon_map.get(mod_id, "")
-                # Restore full label from button's tooltip
                 btn.setText(f" {icon}   {btn.toolTip()}")
                 btn.setStyleSheet("")
                 self.style_nav_button(btn)
             for lbl in self._cat_labels:
                 lbl.setVisible(True)
             if hasattr(self, 'btn_logout'):
-                self.btn_logout.setText("🚪 Déconnexion / خروج")
+                self.btn_logout.setText("🚪  Déconnexion / خروج")
         else:
-            self.sidebar.setFixedWidth(64)
+            self.sidebar.setFixedWidth(68)
             self.btn_toggle_sidebar.setText("❯")
             self.btn_toggle_sidebar.setToolTip("Agrandir la barre latérale")
             self.app_title.setText("🏫")
@@ -917,10 +1068,10 @@ class MainWindow(QMainWindow):
                 icon = self._btn_icon_map.get(mod_id, "•")
                 btn.setText(icon)
                 btn.setStyleSheet(
-                    "QPushButton { text-align:center; padding:10px 0; font-size:20px; "
-                    "border:none; border-radius:6px; background:transparent; color:#94A3B8; } "
-                    "QPushButton:hover { background:#334155; color:white; } "
-                    "QPushButton:checked { background:#3B82F6; color:white; }"
+                    f"QPushButton {{ text-align:center; padding:10px 0; font-size:20px; "
+                    f"border:none; border-radius:8px; background:transparent; color:{colors.SIDEBAR_ICON}; }} "
+                    f"QPushButton:hover {{ background:{colors.SIDEBAR_ITEM_HOVER}; color:white; }} "
+                    f"QPushButton:checked {{ background:{colors.SIDEBAR_ITEM_ACTIVE}; color:white; }}"
                 )
             for lbl in self._cat_labels:
                 lbl.setVisible(False)
@@ -999,11 +1150,25 @@ class MainWindow(QMainWindow):
             if self.login_window.exec():
                 self.new_main = MainWindow(self.login_window.txt_user.text(), self.login_window.user_role)
                 self.new_main.show()
+            else:
+                # FIX 3: User dismissed the re-login dialog — quit cleanly rather
+                # than leaving the process running with no visible window.
+                QApplication.quit()
 
     def closeEvent(self, event):
         """تنظيف الموارد عند إغلاق البرنامج نهائياً"""
         if hasattr(self, 'backup_system'):
             self.backup_system.stop_auto_backup()
+        # Stop any module's background QThread workers BEFORE closing the pool.
+        # Modules are embedded (their central widget is reparented here), so their
+        # own closeEvent never fires; closing the pool while a worker still holds a
+        # connection would crash with "QThread: Destroyed while thread is running".
+        for module_instance in getattr(self, "module_windows", {}).values():
+            if hasattr(module_instance, "stop_background_workers"):
+                try:
+                    module_instance.stop_background_workers()
+                except Exception as e:
+                    AppLogger.error("Main", f"Erreur arrêt worker module: {e}")
         DatabaseManager.close_pool()
         AppLogger.info("Main", "Fermeture de l'application.")
         event.accept()

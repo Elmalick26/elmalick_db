@@ -112,13 +112,26 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
 
 # ──────────────────────────────────────────── CORS
-# En production: remplacer ["*"] par les domaines autorisés
+# En production: définir ALLOWED_ORIGINS=https://mondomaine.com,https://autre.com
+_allowed_origins = [
+    o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "http://localhost:8000").split(",") if o.strip()
+]
+_wildcard_cors = "*" in _allowed_origins
+
+if _wildcard_cors:
+    # RFC interdit credentials + wildcard — désactivation automatique + avertissement
+    logging.getLogger(__name__).warning(
+        "[SECURITY] CORS: ALLOWED_ORIGINS='*' détecté — "
+        "allow_credentials forcé à False. "
+        "Définissez ALLOWED_ORIGINS avec des origines explicites en production."
+    )
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.environ.get("ALLOWED_ORIGINS", "*").split(","),
-    allow_credentials=True,
+    allow_origins=_allowed_origins,
+    allow_credentials=not _wildcard_cors,  # credentials incompatible avec wildcard
     allow_methods=["GET", "POST", "PUT", "DELETE"],
-    allow_headers=["*"],
+    allow_headers=["Authorization", "Content-Type", "Accept"],
 )
 
 # ──────────────────────────────────────────── Routers
@@ -227,6 +240,17 @@ async def health():
             db_size: str = size_row[0] if size_row else "unknown"
         db_latency_ms = round((time.perf_counter() - t0) * 1000, 1)
 
+        # Pool utilization — active connections from pg_stat_activity
+        from db_manager import _POOL_MAX_CONN, _POOL_MIN_CONN
+
+        with db.get_connection() as conn2:
+            cur2 = conn2.cursor()
+            cur2.execute(
+                "SELECT COUNT(*) FROM pg_stat_activity " "WHERE datname = current_database() AND state = 'active'"
+            )
+            pool_active_row = cur2.fetchone()
+            pool_active: int = pool_active_row[0] if pool_active_row else 0
+
         # آخر backup: أحدث ملف في مجلد backups/
         from config_manager import ConfigManager
 
@@ -241,6 +265,12 @@ async def health():
             "table_count": table_count,
             "db_size": db_size,
             "last_backup": last_backup,
+            "pool": {
+                "min": _POOL_MIN_CONN,
+                "max": _POOL_MAX_CONN,
+                "active_connections": pool_active,
+                "utilization_pct": round(pool_active / _POOL_MAX_CONN * 100, 1),
+            },
         }
     except Exception as e:
         return JSONResponse(status_code=503, content={"status": "error", "database": str(e)})

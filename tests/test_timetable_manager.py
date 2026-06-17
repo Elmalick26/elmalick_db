@@ -100,6 +100,11 @@ def _make_qt_stubs():
     # QFrame.Shape used in timetable_manager.py
     widgets.QFrame.Shape = MagicMock()
     widgets.QFrame.Shape.StyledPanel = 1
+    # QMessageBox static methods used in error handlers
+    widgets.QMessageBox.warning = staticmethod(lambda *a, **kw: None)
+    widgets.QMessageBox.critical = staticmethod(lambda *a, **kw: None)
+    widgets.QMessageBox.information = staticmethod(lambda *a, **kw: None)
+    widgets.QMessageBox.question = staticmethod(lambda *a, **kw: 0)
 
     core = sys.modules["PyQt6.QtCore"]
     core.Qt = MagicMock()
@@ -140,7 +145,15 @@ _saved_internal = {mod: sys.modules[mod] for mod in ("database_setup", "app_logg
 for mod_name, attrs in [
     ("database_setup", {"DatabaseManager": MagicMock()}),
     ("app_logger", {"AppLogger": MagicMock()}),
-    ("ui_styles", {"ThemeManager": MagicMock(), "Colors": MagicMock()}),
+    (
+        "ui_styles",
+        {
+            "ThemeManager": MagicMock(),
+            "Colors": MagicMock(),
+            "ModuleHeaderWidget": MagicMock(),
+            "get_module_caps": MagicMock(return_value={"can_write": True, "can_delete": True}),
+        },
+    ),
 ]:
     m = types.ModuleType(mod_name)
     for k, v in attrs.items():
@@ -148,7 +161,7 @@ for mod_name, attrs in [
     sys.modules[mod_name] = m
 
 # ── Import module ────────────────────────────────────────────
-from timetable_manager import DAYS_FR, SLOT_PALETTE, SlotDialog, TimetableGrid, TimetableWindow
+from timetable_manager import DAYS_FR, SLOT_PALETTE_DARK, SLOT_PALETTE_LIGHT, SlotDialog, TimetableGrid, TimetableWindow
 
 # Restore original modules (or remove stubs if nothing was saved).
 for _stub_mod in ("database_setup", "app_logger", "ui_styles"):
@@ -192,6 +205,7 @@ class TestTimetableGrid:
         g.on_delete = MagicMock()
         g._subject_color_map = {}
         g._color_idx = 0
+        g._can_write = False  # RBAC default-deny attribute set in __init__ (bypassed by __new__)
         # Layout stub
         layout = MagicMock()
         layout.count.return_value = 0
@@ -213,8 +227,9 @@ class TestTimetableGrid:
 
     def test_colors_cycle_through_palette(self):
         g = self._grid()
-        colors = [g._get_subject_color(i) for i in range(len(SLOT_PALETTE))]
-        assert set(colors) == set(SLOT_PALETTE)
+        # ThemeManager.is_dark_mode() returns a truthy MagicMock → SLOT_PALETTE_DARK is used
+        colors = [g._get_subject_color(i) for i in range(len(SLOT_PALETTE_DARK))]
+        assert set(colors) == set(SLOT_PALETTE_DARK)
 
     def test_render_empty_slots(self):
         """render([]) ne doit pas lever d'exception."""
@@ -351,6 +366,9 @@ class TestTimetableWindowCrud:
         w.cmb_teacher = MagicMock()
         w.cmb_teacher.currentData.return_value = None
         w.grid = MagicMock()
+        w._stat_slots = MagicMock()  # créé par ModuleHeaderWidget.add_stat() dans __init__
+        w._rbac_can_write = True  # RBAC write-gate attribute set in __init__ (bypassed by __new__)
+        w._teacher_id_view = None  # teacher-filter view state used by _refresh_current_view
         return w
 
     def _patch_db(self, w, rows=None):
@@ -450,7 +468,7 @@ class TestTimetableWindowCrud:
             "room": "S03",
         }
         with p, patch.object(w, "_check_conflict", return_value=(False, "")):
-            w._update_slot(42, values)
+            w._update_slot(42, None, values)
         # First call is UPDATE, second is SELECT (from _load_grid)
         sql = cur.execute.call_args_list[0][0][0]
         assert "UPDATE Timetable" in sql
@@ -464,6 +482,7 @@ class TestTimetableWindowCrud:
         with p:
             w._update_slot(
                 1,
+                None,
                 {
                     "day_of_week": "Jeudi",
                     "start_time": "09:00",
@@ -555,7 +574,8 @@ class TestTimetableWindowCrud:
             MockDlg.return_value = dlg_inst
             with patch.object(w, "_update_slot") as mock_update:
                 w._edit_slot(slot)
-                mock_update.assert_called_once_with(10, new_vals)
+                # _edit_slot now passes the slot's own class_id (None here) before values.
+                mock_update.assert_called_once_with(10, None, new_vals)
 
     # ── _confirm_delete_slot ─────────────────────────────────
     def test_confirm_delete_accepted_deletes(self):
@@ -611,6 +631,9 @@ class TestTimetableWindowFilters:
         w.cmb_teacher.currentData.return_value = None
         w.cmb_teacher.currentText.return_value = "— Tous les profs —"
         w.grid = MagicMock()
+        w._stat_slots = MagicMock()  # créé par ModuleHeaderWidget.add_stat() dans __init__
+        w._rbac_can_write = True  # RBAC write-gate attribute set in __init__ (bypassed by __new__)
+        w._teacher_id_view = None  # teacher-filter view state used by _refresh_current_view
         return w
 
     def _mock_db(self, *fetchall_returns):
@@ -701,6 +724,7 @@ class TestTimetableWindowFilters:
             MockMsg.critical = MagicMock()
             w._update_slot(
                 42,
+                None,
                 {
                     "day_of_week": "Lundi",
                     "start_time": "08:00",

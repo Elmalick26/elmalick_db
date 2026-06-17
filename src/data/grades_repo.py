@@ -144,26 +144,24 @@ class GradesRepository:
         observation: str,
         date_recorded: str,
     ) -> None:
-        """Insert or update a single grade row."""
+        """Insert or update a single grade row atomically.
+
+        Uses ON CONFLICT on the (student, subject, assessment, year) unique key
+        (migration 009) so concurrent saves cannot create duplicate grades — the
+        previous SELECT-then-INSERT/UPDATE had a race window with no constraint.
+        """
         cursor = self.conn.cursor()
         cursor.execute(
-            "SELECT id FROM Grades WHERE student_id = %s AND subject_id = %s AND assessment_id = %s AND year_id = %s",
-            (student_id, subject_id, assess_id, year_id),
+            """
+            INSERT INTO Grades (student_id, subject_id, assessment_id, score, observation, date_recorded, year_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (student_id, subject_id, assessment_id, year_id)
+            DO UPDATE SET score = EXCLUDED.score,
+                          observation = EXCLUDED.observation,
+                          date_recorded = EXCLUDED.date_recorded
+            """,
+            (student_id, subject_id, assess_id, score, observation, date_recorded, year_id),
         )
-        existing = cursor.fetchone()
-        if existing:
-            cursor.execute(
-                "UPDATE Grades SET score = %s, observation = %s, date_recorded = %s WHERE id = %s",
-                (score, observation, date_recorded, existing[0]),
-            )
-        else:
-            cursor.execute(
-                """
-                INSERT INTO Grades (student_id, subject_id, assessment_id, score, observation, date_recorded, year_id)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
-                """,
-                (student_id, subject_id, assess_id, score, observation, date_recorded, year_id),
-            )
 
     # ─────────────────────────────────────────────────────────────
     # Search / report view

@@ -8,6 +8,7 @@ from __future__ import annotations
 import configparser
 import os
 import sys
+import threading
 from pathlib import Path
 
 import db_path
@@ -31,14 +32,24 @@ class ConfigManager:
 
     _instance = None
     _config = None
+    # FIX 1: Class-level lock for thread-safe singleton instantiation.
+    # Without this, two threads starting simultaneously (e.g. AutoBackupSystem +
+    # DatabaseManager both calling ConfigManager()) can both pass the
+    # _instance is None check and call _load_config() twice — potentially
+    # writing config.ini concurrently and corrupting it.
+    _lock: threading.Lock = threading.Lock()
 
     def __new__(cls):
         if cls._instance is None:
-            cls._instance = super(ConfigManager, cls).__new__(cls)
-            # تحديد مسار ملف الإعدادات ليكون بجانب سكربت البرنامج الرئيسي دائماً
-            base_dir = os.path.dirname(os.path.abspath(__file__))
-            cls._instance.CONFIG_FILE = os.path.join(base_dir, 'config.ini')
-            cls._instance._load_config()
+            with cls._lock:
+                # Double-checked locking: re-verify inside lock in case another
+                # thread completed initialization while we were waiting.
+                if cls._instance is None:
+                    cls._instance = super(ConfigManager, cls).__new__(cls)
+                    # تحديد مسار ملف الإعدادات ليكون بجانب سكربت البرنامج الرئيسي دائماً
+                    base_dir = os.path.dirname(os.path.abspath(__file__))
+                    cls._instance.CONFIG_FILE = os.path.join(base_dir, 'config.ini')
+                    cls._instance._load_config()
         return cls._instance
 
     def _load_config(self):
@@ -57,8 +68,11 @@ class ConfigManager:
         # محاولة الترحيل التلقائي من config.ini إلى keyring (بدون إزعاج المستخدم)
         try:
             self.migrate_password_to_keyring()
-        except Exception:
-            pass  # صامت — الترحيل اختياري ولا يعيق التطبيق
+        except Exception as e:
+            # FIX 2: Log instead of silently discarding — if migration fails,
+            # the plaintext password stays in config.ini indefinitely with no
+            # audit trail. A warning lets the administrator diagnose the cause.
+            AppLogger.warning("ConfigManager", f"ترحيل كلمة المرور إلى Keyring فشل (تبقى في config.ini): {e}")
 
     def _create_default_config(self):
         """إنشاء ملف إعدادات افتراضي"""
@@ -182,8 +196,11 @@ class ConfigManager:
                 stored = _keyring_lib.get_password(_KEYRING_SERVICE, self.db_user)
                 if stored:
                     return stored
-            except Exception:
-                pass  # keyring غير متاح في بعض البيئات — نتجاهل الخطأ
+            except Exception as e:
+                # FIX 3: Log the fallback so administrators can diagnose why
+                # the system is not reading from keyring (corrupt credential
+                # store, permission denied, unsupported backend, etc.).
+                AppLogger.warning("ConfigManager", f"تعذّر قراءة كلمة المرور من Keyring، سيتم استخدام البديل: {e}")
 
         # متغير البيئة (مفيد في بيئات CI/Docker)
         env_pass = os.environ.get("ELMALICK_DB_PASSWORD", "")
@@ -232,7 +249,9 @@ class ConfigManager:
 
         # اقرأ من config.ini
         plain_pass = self.get('DATABASE', 'password', '')
-        placeholder = ('your_password_here', '', 'None', 'null')
+        # FIX 4: Removed '' from placeholder — the `if plain_pass` truthiness
+        # check already excludes empty strings before `not in` is evaluated.
+        placeholder = ('your_password_here', 'None', 'null')
         if plain_pass and plain_pass not in placeholder:
             return self.set_db_password(plain_pass)
         return False

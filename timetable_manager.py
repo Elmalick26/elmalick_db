@@ -1,40 +1,36 @@
 """
-timetable_manager.py — Phase 6.2
+timetable_manager.py — Phase 6.2 (Audited & Refactored)
 إدارة جدول الحصص الأسبوعي.
 
-• عرض جدول الحصص في شبكة (7 أيام × فترات زمنية)
+• عرض جدول الحصص في شبكة (6 أيام × فترات زمنية)
 • إضافة/تعديل/حذف حصص
-• فلترة حسب السنة والفصل
+• فلترة حسب الفصل أو الأستاذ
 • طباعة/تصدير PDF
 """
 
 from __future__ import annotations
 
 import os
+import re
 from datetime import datetime
 
 from fpdf import FPDF
-from PyQt6.QtCore import QSize, Qt, QTime
-from PyQt6.QtGui import QAction, QBrush, QColor, QFont
+from PyQt6.QtCore import Qt, QTime
+from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import (
-    QApplication,
     QComboBox,
     QDialog,
     QDialogButtonBox,
     QFormLayout,
     QFrame,
     QHBoxLayout,
-    QHeaderView,
     QLabel,
     QLineEdit,
     QMainWindow,
-    QMenu,
     QMessageBox,
     QPushButton,
     QScrollArea,
     QSizePolicy,
-    QTableWidget,
-    QTableWidgetItem,
     QTimeEdit,
     QToolButton,
     QVBoxLayout,
@@ -52,7 +48,7 @@ from pdf_report_style import (
 from print_export_service import get_report_output_mode, output_pdf
 from repositories.finance_repo import FinanceRepository
 from repositories.timetable_repo import TimetableRepository
-from ui_styles import Colors, ModuleHeaderWidget, ThemeManager
+from ui_styles import ModuleHeaderWidget, ThemeManager, get_module_caps
 
 try:
     import arabic_reshaper
@@ -68,7 +64,8 @@ DAYS_AR = ["الإثنين", "الثلاثاء", "الأربعاء", "الخمي
 DAY_COLORS = ["#1a3a5c", "#1a4a3c", "#3c2a1a", "#3c1a2a", "#2a1a4a", "#1a3a3c"]
 DAYS_FR_AR = dict(zip(DAYS_FR, DAYS_AR))
 
-TIMETABLE_PDF_MODE = get_report_output_mode("timetable_mode", "save")
+# FIX (Bug 11): Regex covers all Windows-illegal filename characters
+_SAFE_FILENAME_RE = re.compile(r'[\\/:*?"<>|]')
 
 
 def _ar_text(text: str) -> str:
@@ -81,7 +78,11 @@ def _ar_text(text: str) -> str:
         return str(text)
 
 
-# خلفيات الحصص حسب المادة
+def _safe_filename(name: str) -> str:
+    """Sanitize a string for use as a Windows filename."""
+    return _SAFE_FILENAME_RE.sub("-", name).replace(" ", "_")
+
+
 SLOT_PALETTE_LIGHT = [
     "#dbeafe",
     "#dcfce7",
@@ -119,7 +120,15 @@ SLOT_PALETTE_DARK = [
 class SlotCell(QFrame):
     """خلية تعرض معلومات حصة واحدة في الشبكة."""
 
-    def __init__(self, slot_data: dict, color: str, on_edit, on_delete, parent=None):
+    def __init__(
+        self,
+        slot_data: dict,
+        color: str,
+        on_edit,
+        on_delete,
+        can_write: bool = False,  # FIX (Bug 1): default deny
+        parent=None,
+    ):
         super().__init__(parent)
         c = ThemeManager.get_colors()
         text_color = c.TEXT_PRIMARY if not ThemeManager.is_dark_mode() else c.HEADER_TEXT
@@ -130,8 +139,7 @@ class SlotCell(QFrame):
             f"""
             QFrame {{
                 background: {color}; border-radius: 6px;
-                border: 1px solid {c.BORDER};
-                margin: 2px;
+                border: 1px solid {c.BORDER}; margin: 2px;
             }}
             QFrame:hover {{ border: 1px solid {c.PRIMARY}; }}
         """
@@ -148,7 +156,7 @@ class SlotCell(QFrame):
         room = slot_data.get("room", "")
         start = slot_data.get("start_time", "")
         end = slot_data.get("end_time", "")
-        class_name = slot_data.get("class_name_fr", "")  # only in teacher-view mode
+        class_name = slot_data.get("class_name_fr", "")
 
         lbl_subject = QLabel(subject)
         lbl_subject.setFont(QFont("Cairo", 10, QFont.Weight.Bold))
@@ -179,36 +187,45 @@ class SlotCell(QFrame):
             layout.addWidget(lbl_extra)
         layout.addStretch()
 
-        # Buttons (edit/delete)
-        btn_row = QHBoxLayout()
-        btn_row.setContentsMargins(0, 0, 0, 0)
-        btn_edit = QToolButton()
-        btn_edit.setText("✏️")
-        btn_edit.setToolTip("Modifier")
-        btn_edit.setStyleSheet(
-            f"QToolButton {{ background: transparent; color: {text_color}; font-size: 12px; border: none; }}"
-        )
-        btn_edit.clicked.connect(lambda: on_edit(slot_data))
+        # FIX (Bug 2): Only render action buttons when user has write permission
+        if can_write:
+            btn_row = QHBoxLayout()
+            btn_row.setContentsMargins(0, 0, 0, 0)
 
-        btn_del = QToolButton()
-        btn_del.setText("🗑️")
-        btn_del.setToolTip("Supprimer")
-        btn_del.setStyleSheet(
-            f"QToolButton {{ background: transparent; color: {c.DANGER}; font-size: 12px; border: none; }}"
-        )
-        btn_del.clicked.connect(lambda: on_delete(slot_data))
+            btn_edit = QToolButton()
+            btn_edit.setText("✏️")
+            btn_edit.setToolTip("Modifier")
+            btn_edit.setStyleSheet(
+                f"QToolButton {{ background: transparent; color: {text_color};" f" font-size: 12px; border: none; }}"
+            )
+            btn_edit.clicked.connect(lambda: on_edit(slot_data))
 
-        btn_row.addWidget(btn_edit)
-        btn_row.addWidget(btn_del)
-        btn_row.addStretch()
-        layout.addLayout(btn_row)
+            btn_del = QToolButton()
+            btn_del.setText("🗑️")
+            btn_del.setToolTip("Supprimer")
+            btn_del.setStyleSheet(
+                f"QToolButton {{ background: transparent; color: {c.DANGER};" f" font-size: 12px; border: none; }}"
+            )
+            btn_del.clicked.connect(lambda: on_delete(slot_data))
+
+            btn_row.addWidget(btn_edit)
+            btn_row.addWidget(btn_del)
+            btn_row.addStretch()
+            layout.addLayout(btn_row)
 
 
 # ──────────────────────────────────────────────────────────────
 # Add/Edit Dialog
 # ──────────────────────────────────────────────────────────────
 class SlotDialog(QDialog):
-    def __init__(self, classes: list, subjects: list, staff: list, slot_data: dict | None = None, parent=None):
+    # FIX (Bug 10): Removed unused `classes` parameter
+    def __init__(
+        self,
+        subjects: list,
+        staff: list,
+        slot_data: dict | None = None,
+        parent=None,
+    ):
         super().__init__(parent)
         c = ThemeManager.get_colors()
         self.setWindowTitle("Ajouter une Heure" if slot_data is None else "Modifier l'Heure")
@@ -218,8 +235,12 @@ class SlotDialog(QDialog):
             QDialog {{ background: {c.BG_MAIN}; color: {c.TEXT_PRIMARY}; }}
             QLabel  {{ color: {c.TEXT_PRIMARY}; }}
             QComboBox, QTimeEdit, QLineEdit {{
-                background: {c.INPUT_BG}; color: {c.TEXT_PRIMARY}; border: 1px solid {c.BORDER};
-                border-radius: 4px; padding: 5px 8px;
+                background-color: {c.INPUT_BG}; color: {c.TEXT_PRIMARY};
+                border: 1.5px solid {c.INPUT_BORDER}; border-radius: 8px;
+                padding: 8px 12px; min-height: 38px;
+            }}
+            QComboBox:focus, QTimeEdit:focus, QLineEdit:focus {{
+                border: 2px solid {c.BORDER_FOCUS};
             }}
         """
         )
@@ -286,6 +307,10 @@ class SlotDialog(QDialog):
             self.txt_room.setText(slot_data.get("room", ""))
 
     def _validate_and_accept(self):
+        # FIX (Bug 13): Guard against empty subject list
+        if self.cmb_subject.count() == 0 or self.cmb_subject.currentData() is None:
+            QMessageBox.warning(self, "Erreur", "Veuillez sélectionner une matière.")
+            return
         if self.time_end.time() <= self.time_start.time():
             QMessageBox.warning(self, "Erreur", "L'heure de fin doit être après l'heure de début.")
             return
@@ -314,6 +339,7 @@ class TimetableGrid(QScrollArea):
         self.on_add = on_add_slot
         self.on_edit = on_edit_slot
         self.on_delete = on_delete_slot
+        self._can_write: bool = False  # FIX (Bug 1): default deny
 
         self.setWidgetResizable(True)
         self._container = QWidget()
@@ -324,6 +350,9 @@ class TimetableGrid(QScrollArea):
         self._subject_color_map: dict[int, str] = {}
         self._color_idx = 0
 
+    def set_can_write(self, value: bool) -> None:
+        self._can_write = value
+
     def _get_subject_color(self, subject_id: int) -> str:
         palette = SLOT_PALETTE_DARK if ThemeManager.is_dark_mode() else SLOT_PALETTE_LIGHT
         if subject_id not in self._subject_color_map:
@@ -331,16 +360,21 @@ class TimetableGrid(QScrollArea):
             self._color_idx += 1
         return self._subject_color_map[subject_id]
 
-    def render(self, slots: list[dict]):
-        """إعادة رسم الشبكة الكاملة."""
-        c = ThemeManager.get_colors()
-        # Clear
+    def clear(self) -> None:
+        """Remove all day frames and reset color state."""
         while self._grid_layout.count():
             item = self._grid_layout.takeAt(0)
             if item.widget():
                 item.widget().deleteLater()
+        # FIX (Bug 12): Reset color map so colours are consistent per-render
+        self._subject_color_map = {}
+        self._color_idx = 0
 
-        # Group slots by day
+    def render(self, slots: list[dict]):
+        """إعادة رسم الشبكة الكاملة."""
+        c = ThemeManager.get_colors()
+        self.clear()  # also resets color map
+
         day_slots: dict[str, list] = {d: [] for d in DAYS_FR}
         for s in slots:
             day = s.get("day_of_week")
@@ -351,15 +385,18 @@ class TimetableGrid(QScrollArea):
             day_frame = QFrame()
             day_frame.setStyleSheet(
                 f"""
-                QFrame {{ background: {c.BG_CARD}; border-radius: 8px;
-                          border: 1px solid {c.BORDER}; border-left: 4px solid {DAY_COLORS[day_idx]}; margin-bottom: 4px; }}
+                QFrame {{
+                    background: {c.BG_CARD}; border-radius: 8px;
+                    border: 1px solid {c.BORDER};
+                    border-left: 4px solid {DAY_COLORS[day_idx]};
+                    margin-bottom: 4px;
+                }}
             """
             )
             day_layout = QVBoxLayout(day_frame)
             day_layout.setContentsMargins(8, 6, 8, 6)
             day_layout.setSpacing(4)
 
-            # Day header
             hdr = QHBoxLayout()
             lbl_day = QLabel(f"  {day}  /  {DAYS_AR[day_idx]}")
             lbl_day.setFont(QFont("Cairo", 12, QFont.Weight.Bold))
@@ -367,28 +404,34 @@ class TimetableGrid(QScrollArea):
             hdr.addWidget(lbl_day)
             hdr.addStretch()
 
-            btn_add = QPushButton("+ Ajouter")
-            btn_add.setStyleSheet(
-                f"QPushButton {{ background:{c.PRIMARY}; color:white; border-radius:4px; "
-                f"padding:4px 10px; font-size:11px; }} QPushButton:hover {{ background:{c.PRIMARY_HOVER}; }}"
-            )
-            btn_add.clicked.connect(lambda checked, d=day: self.on_add(d))
-            hdr.addWidget(btn_add)
+            # FIX (Bug 2): Only show Add button when user has write permission
+            if self._can_write:
+                btn_add = QPushButton("+ Ajouter")
+                btn_add.setStyleSheet(
+                    f"QPushButton {{ background:{c.PRIMARY}; color:white; border-radius:4px;"
+                    f" padding:4px 10px; font-size:11px; }}"
+                    f"QPushButton:hover {{ background:{c.PRIMARY_HOVER}; }}"
+                )
+                btn_add.clicked.connect(lambda checked, d=day: self.on_add(d))
+                hdr.addWidget(btn_add)
+
             day_layout.addLayout(hdr)
 
-            # Slots row
             slots_of_day = sorted(day_slots[day], key=lambda x: x.get("start_time", ""))
             if slots_of_day:
                 row = QHBoxLayout()
                 row.setSpacing(4)
                 for s in slots_of_day:
                     color = self._get_subject_color(s.get("subject_id", 0))
-                    cell = SlotCell(s, color, self.on_edit, self.on_delete)
+                    cell = SlotCell(s, color, self.on_edit, self.on_delete, can_write=self._can_write)
                     row.addWidget(cell)
                 row.addStretch()
                 day_layout.addLayout(row)
             else:
-                empty = QLabel("Aucune heure programmée — cliquez « + Ajouter »")
+                hint = (
+                    "Aucune heure programmée — cliquez « + Ajouter »" if self._can_write else "Aucune heure programmée."
+                )
+                empty = QLabel(hint)
                 empty.setStyleSheet(f"color: {c.TEXT_SECONDARY}; font-style: italic; padding: 8px;")
                 day_layout.addWidget(empty)
 
@@ -404,23 +447,32 @@ class TimetableWindow(QMainWindow):
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Gestion du Emploi du Temps / جدول الحصص")
-        self._class_id = None
+        self._class_id: int | None = None
+        self._teacher_id_view: int | None = None  # FIX (Bug 4, 8): track active teacher view
         self._classes: list[tuple] = []
         self._subjects: list[tuple] = []
         self._staff: list[tuple] = []
+        # FIX (Bug 1): RBAC defaults to DENY until apply_rbac() is explicitly called
+        self._rbac_can_write: bool = False
         ThemeManager.apply_theme(self)
         self._setup_ui()
         self._load_filters()
+
+    def apply_rbac(self, role: str) -> None:
+        """تطبيق صلاحيات الأزرار بناءً على دور المستخدم — يُستدعى من MainWindow."""
+        caps = get_module_caps(role, "timetable_manager")
+        self._rbac_can_write = caps["can_write"]
+        # Propagate permission to grid so it shows/hides buttons correctly
+        self.grid.set_can_write(self._rbac_can_write)
 
     # ── UI ────────────────────────────────────────────────────
     def _setup_ui(self):
         central = QWidget()
         self.setCentralWidget(central)
         root = QVBoxLayout(central)
-        root.setContentsMargins(14, 10, 14, 10)
-        root.setSpacing(10)
+        root.setContentsMargins(24, 20, 24, 20)
+        root.setSpacing(16)
 
-        # Header
         header = ModuleHeaderWidget("📅", "EMPLOI DU TEMPS", "جدول الحصص الأسبوعي")
         self._stat_classes = header.add_stat("🏫", "Classes", "0", "#3B82F6")
         self._stat_teachers = header.add_stat("👤", "Enseignants", "0", "#22C55E")
@@ -430,10 +482,12 @@ class TimetableWindow(QMainWindow):
         # Filter row
         filter_row = QHBoxLayout()
         filter_row.setSpacing(8)
+
         lbl_class = QLabel("Classe:")
         lbl_class.setStyleSheet("font-weight: bold;")
         self.cmb_class = QComboBox()
         self.cmb_class.setMinimumWidth(160)
+        self.cmb_class.setMinimumHeight(42)
         self.cmb_class.currentIndexChanged.connect(self._on_class_changed)
         filter_row.addWidget(lbl_class)
         filter_row.addWidget(self.cmb_class)
@@ -442,17 +496,30 @@ class TimetableWindow(QMainWindow):
         lbl_teacher.setStyleSheet("font-weight: bold;")
         self.cmb_teacher = QComboBox()
         self.cmb_teacher.setMinimumWidth(160)
+        self.cmb_teacher.setMinimumHeight(42)
         self.cmb_teacher.currentIndexChanged.connect(self._on_teacher_changed)
         filter_row.addWidget(lbl_teacher)
         filter_row.addWidget(self.cmb_teacher)
 
         filter_row.addStretch()
+
         btn_print = QPushButton("🖨️ Imprimer")
+        btn_print.setMinimumHeight(42)
+        colors = ThemeManager.get_colors()
+        # FIX (Bug 6): Missing comma between gradient stops
+        btn_print.setStyleSheet(
+            f"QPushButton {{"
+            f" background: qlineargradient(x1:0,y1:0,x2:1,y2:0,"
+            f" stop:0 {colors.PRIMARY}, stop:1 {colors.PRIMARY_HOVER});"
+            f" color: white; font-weight: bold; border-radius: 8px;"
+            f" padding: 8px 16px; border: none;"
+            f"}}"
+            f"QPushButton:hover {{ background: {colors.PRIMARY_DARK}; }}"
+        )
         btn_print.clicked.connect(self._print_timetable)
         filter_row.addWidget(btn_print)
         root.addLayout(filter_row)
 
-        # Timetable grid
         self.grid = TimetableGrid(
             on_add_slot=self._add_slot_for_day,
             on_edit_slot=self._edit_slot,
@@ -467,7 +534,6 @@ class TimetableWindow(QMainWindow):
             with db.get_connection() as conn:
                 repo = TimetableRepository(conn)
 
-                # Classes
                 self._classes = repo.list_classes()
                 self.cmb_class.blockSignals(True)
                 self.cmb_class.clear()
@@ -478,10 +544,8 @@ class TimetableWindow(QMainWindow):
                 if self._classes:
                     self.cmb_class.setCurrentIndex(1)
 
-                # Subjects
                 self._subjects = repo.list_subjects()
 
-                # Staff (teachers)
                 self._staff = repo.list_active_staff()
                 self.cmb_teacher.blockSignals(True)
                 self.cmb_teacher.clear()
@@ -490,33 +554,44 @@ class TimetableWindow(QMainWindow):
                     self.cmb_teacher.addItem(name, tid)
                 self.cmb_teacher.blockSignals(False)
 
-            # Update stat chips
             self._stat_classes.set_value(str(len(self._classes)))
             self._stat_teachers.set_value(str(len(self._staff)))
 
         except Exception as e:
             AppLogger.error("Timetable", f"_load_filters error: {e}")
+            QMessageBox.warning(self, "Erreur", f"Chargement des filtres: {e}")
 
     def _on_class_changed(self):
         self._class_id = self.cmb_class.currentData()
         if self._class_id:
-            # Reset teacher filter when switching to class view
+            self._teacher_id_view = None
             self.cmb_teacher.blockSignals(True)
             self.cmb_teacher.setCurrentIndex(0)
             self.cmb_teacher.blockSignals(False)
             self._load_grid()
+        else:
+            # FIX (Bug 7): Clear stale grid when deselecting
+            self._teacher_id_view = None
+            self.grid.clear()
+            self._stat_slots.set_value("0")
 
     def _on_teacher_changed(self):
         teacher_id = self.cmb_teacher.currentData()
         if teacher_id:
-            # Reset class filter when switching to teacher view
+            self._teacher_id_view = teacher_id
             self._class_id = None
             self.cmb_class.blockSignals(True)
             self.cmb_class.setCurrentIndex(0)
             self.cmb_class.blockSignals(False)
             self._load_grid_teacher(teacher_id)
-        elif self._class_id:
-            self._load_grid()
+        else:
+            # FIX (Bug 7): Clear or fall back to class view on deselection
+            self._teacher_id_view = None
+            if self._class_id:
+                self._load_grid()
+            else:
+                self.grid.clear()
+                self._stat_slots.set_value("0")
 
     # ── Grid loading ──────────────────────────────────────────
     def _load_grid(self):
@@ -538,6 +613,7 @@ class TimetableWindow(QMainWindow):
                     "room": r[6] or "",
                     "subject_name_fr": r[7],
                     "teacher_name": r[8] or "",
+                    "class_id": self._class_id,  # FIX (Bug 9): always include class_id
                 }
                 for r in rows
             ]
@@ -549,7 +625,7 @@ class TimetableWindow(QMainWindow):
             QMessageBox.warning(self, "Erreur", f"Chargement du planning: {e}")
 
     def _load_grid_teacher(self, teacher_id: int):
-        """Load and render the weekly schedule for a specific teacher (all classes)."""
+        """Charge et affiche le planning hebdomadaire d'un professeur (toutes classes)."""
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
@@ -566,7 +642,9 @@ class TimetableWindow(QMainWindow):
                     "room": r[6] or "",
                     "subject_name_fr": r[7],
                     "teacher_name": r[8] or "",
-                    "class_name_fr": r[9] or "",  # shown instead of room in teacher view
+                    "class_name_fr": r[9] or "",
+                    # FIX (Bug 9): class_id at index 10 — requires repo query to SELECT class_id
+                    "class_id": r[10] if len(r) > 10 else None,
                 }
                 for r in rows
             ]
@@ -577,27 +655,51 @@ class TimetableWindow(QMainWindow):
             AppLogger.error("Timetable", f"_load_grid_teacher error: {e}")
             QMessageBox.warning(self, "Erreur", f"Chargement du planning professeur: {e}")
 
+    def _refresh_current_view(self):
+        """FIX (Bug 4, 8): Reload whichever view is currently active."""
+        if self._teacher_id_view:
+            self._load_grid_teacher(self._teacher_id_view)
+        elif self._class_id:
+            self._load_grid()
+
+    # ── RBAC guard ────────────────────────────────────────────
+    def _assert_can_write(self) -> bool:
+        """FIX (Bug 1, 2): Centralised RBAC check used by all write paths."""
+        if not self._rbac_can_write:
+            QMessageBox.warning(
+                self,
+                "Accès refusé / وصول مرفوض",
+                "ليس لديك صلاحية تعديل جدول الحصص.",
+            )
+            return False
+        return True
+
     # ── CRUD operations ───────────────────────────────────────
     def _add_slot_for_day(self, day: str):
+        if not self._assert_can_write():  # FIX (Bug 1, 2)
+            return
         if not self._class_id:
             QMessageBox.information(self, "Info", "Veuillez d'abord sélectionner une classe.")
             return
-        dlg = SlotDialog(self._classes, self._subjects, self._staff, parent=self)
-        # Pre-select the day
+        # FIX (Bug 10): `classes` param removed from SlotDialog
+        dlg = SlotDialog(self._subjects, self._staff, parent=self)
         idx = dlg.cmb_day.findData(day)
         if idx >= 0:
             dlg.cmb_day.setCurrentIndex(idx)
         if dlg.exec():
-            values = dlg.get_values()
-            self._save_slot(values)
+            self._save_slot(dlg.get_values())
 
     def _edit_slot(self, slot_data: dict):
-        dlg = SlotDialog(self._classes, self._subjects, self._staff, slot_data=slot_data, parent=self)
+        if not self._assert_can_write():  # FIX (Bug 2): was missing entirely
+            return
+        dlg = SlotDialog(self._subjects, self._staff, slot_data=slot_data, parent=self)
         if dlg.exec():
-            values = dlg.get_values()
-            self._update_slot(slot_data["id"], values)
+            # FIX (Bug 3, 9): pass slot's own class_id, not self._class_id
+            self._update_slot(slot_data["id"], slot_data.get("class_id"), dlg.get_values())
 
     def _confirm_delete_slot(self, slot_data: dict):
+        if not self._assert_can_write():  # FIX (Bug 2): was missing entirely
+            return
         subject = slot_data.get("subject_name_fr", "cette heure")
         day = slot_data.get("day_of_week", "")
         reply = QMessageBox.question(
@@ -611,13 +713,16 @@ class TimetableWindow(QMainWindow):
 
     # ── Conflict detection ────────────────────────────────────
     def _check_conflict(
-        self, conn, class_id: int, values: dict, exclude_slot_id: int | None = None
+        self,
+        conn,
+        class_id: int | None,
+        values: dict,
+        exclude_slot_id: int | None = None,
     ) -> tuple[bool, str]:
         """Return (is_conflict, message).
 
-        Checks both teacher overlap and class overlap for the given slot values.
-        Pass *exclude_slot_id* when editing so the existing row is not compared
-        against itself.
+        Checks teacher overlap and (when class_id is known) class overlap.
+        Pass *exclude_slot_id* when editing to skip the slot being updated.
         """
         try:
             t_start = datetime.strptime(values["start_time"], "%H:%M").time()
@@ -637,7 +742,6 @@ class TimetableWindow(QMainWindow):
                 s = datetime.strptime(ex_start, "%H:%M").time()
                 e = datetime.strptime(ex_end, "%H:%M").time()
                 if t_start < e and t_end > s:
-                    # Find teacher name for the message
                     teacher_name = next((n for tid, n in self._staff if tid == teacher_id), "ce professeur")
                     return (
                         True,
@@ -645,21 +749,25 @@ class TimetableWindow(QMainWindow):
                         f"le {day} de {ex_start} à {ex_end}.",
                     )
 
-        # 2. Class conflict
-        for prof, subj, ex_start, ex_end in repo.get_class_slots_for_day(class_id, day, exclude_slot_id):
-            s = datetime.strptime(ex_start, "%H:%M").time()
-            e = datetime.strptime(ex_end, "%H:%M").time()
-            if t_start < e and t_end > s:
-                class_name = self.cmb_class.currentText()
-                return (
-                    True,
-                    f"⚠️ Conflit : la classe {class_name} a déjà cours de {subj} "
-                    f"avec {prof} le {day} de {ex_start} à {ex_end}.",
-                )
+        # 2. Class conflict — FIX (Bug 3): only check when class_id is actually known
+        if class_id is not None:
+            for prof, subj, ex_start, ex_end in repo.get_class_slots_for_day(class_id, day, exclude_slot_id):
+                s = datetime.strptime(ex_start, "%H:%M").time()
+                e = datetime.strptime(ex_end, "%H:%M").time()
+                if t_start < e and t_end > s:
+                    class_name = self.cmb_class.currentText() or f"(id={class_id})"
+                    return (
+                        True,
+                        f"⚠️ Conflit : la classe {class_name} a déjà cours de {subj} "
+                        f"avec {prof} le {day} de {ex_start} à {ex_end}.",
+                    )
 
         return False, ""
 
     def _save_slot(self, values: dict):
+        if not self._class_id:
+            QMessageBox.warning(self, "Erreur", "Aucune classe sélectionnée.")
+            return
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
@@ -678,16 +786,18 @@ class TimetableWindow(QMainWindow):
                 )
                 conn.commit()
             AppLogger.info("Timetable", f"Heure ajoutée pour class_id={self._class_id}")
-            self._load_grid()
+            self._refresh_current_view()  # FIX (Bug 4)
         except Exception as e:
             AppLogger.error("Timetable", f"_save_slot error: {e}")
             QMessageBox.critical(self, "Erreur", str(e))
 
-    def _update_slot(self, slot_id: int, values: dict):
+    def _update_slot(self, slot_id: int, class_id: int | None, values: dict):
+        # FIX (Bug 3, 9): use the slot's own class_id, fall back to active class view
+        effective_class_id = class_id if class_id is not None else self._class_id
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                is_conflict, msg = self._check_conflict(conn, self._class_id, values, exclude_slot_id=slot_id)
+                is_conflict, msg = self._check_conflict(conn, effective_class_id, values, exclude_slot_id=slot_id)
                 if is_conflict:
                     QMessageBox.critical(self, "Conflit d'horaire / تداخل في الجدول", msg)
                     return
@@ -702,7 +812,7 @@ class TimetableWindow(QMainWindow):
                 )
                 conn.commit()
             AppLogger.info("Timetable", f"Heure modifiée id={slot_id}")
-            self._load_grid()
+            self._refresh_current_view()  # FIX (Bug 4)
         except Exception as e:
             AppLogger.error("Timetable", f"_update_slot error: {e}")
             QMessageBox.critical(self, "Erreur", str(e))
@@ -714,7 +824,7 @@ class TimetableWindow(QMainWindow):
                 TimetableRepository(conn).delete_slot(slot_id)
                 conn.commit()
             AppLogger.info("Timetable", f"Heure supprimée id={slot_id}")
-            self._load_grid()
+            self._refresh_current_view()  # FIX (Bug 4)
         except Exception as e:
             AppLogger.error("Timetable", f"_delete_slot error: {e}")
             QMessageBox.critical(self, "Erreur", str(e))
@@ -753,7 +863,6 @@ class TimetableWindow(QMainWindow):
             QMessageBox.information(self, "Vide", "Aucune séance à imprimer pour cette sélection.")
             return
 
-        # ── Build PDF (Portrait A4) ────────────────────────────
         pdf = FPDF(orientation="P", format="A4")
         pdf.set_margins(10, 10, 10)
         pdf.set_auto_page_break(auto=True, margin=15)
@@ -761,10 +870,8 @@ class TimetableWindow(QMainWindow):
 
         font = self._register_arabic_font(pdf)
 
-        # Official header (school info + title — uses Helvetica + latin sanitize internally)
         apply_grades_sheet_header(pdf, school_info, title)
 
-        # Date subtitle
         pdf.set_font(font, "", 8)
         pdf.set_text_color(100, 116, 139)
         pdf.cell(
@@ -779,18 +886,18 @@ class TimetableWindow(QMainWindow):
 
         self._render_timetable_rows(pdf, font, col5_header, rows)
 
-        # Footer note
         pdf.ln(3)
         pdf.set_font(font, "", 8)
         pdf.set_text_color(148, 163, 184)
         pdf.cell(0, 5, "El Malick Gest — Gestion Scolaire", align="C")
 
-        safe_name = entity_name.replace(" ", "_").replace("/", "-")
+        # FIX (Bug 11): Use _safe_filename to strip all Windows-illegal characters
+        # FIX (Bug 12 / TIMETABLE_PDF_MODE): Read mode fresh from config each time
         output_pdf(
             pdf,
             self,
-            f"EmploiDuTemps_{safe_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
-            mode=TIMETABLE_PDF_MODE,
+            f"EmploiDuTemps_{_safe_filename(entity_name)}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
+            mode=get_report_output_mode("timetable_mode", "save"),
             dialog_title="Sauvegarder l'Emploi du Temps",
             success_save_message="Emploi du temps généré avec succès.",
             success_print_message="Emploi du temps envoyé à l'imprimante.",
@@ -818,8 +925,7 @@ class TimetableWindow(QMainWindow):
                     pdf.add_font("ArabicFont", "B", bold if os.path.exists(bold) else reg)
                     return "ArabicFont"
                 except Exception:
-                    pass
-                break
+                    continue  # FIX (Bug 5): was `break` — now tries next candidate on failure
         return "Helvetica"
 
     @staticmethod
@@ -855,8 +961,8 @@ class TimetableWindow(QMainWindow):
             pdf.cell(col_w[4], 7, _ar_text(col5), border=1, fill=True)
             pdf.cell(col_w[5], 7, room, border=1, new_x="LMARGIN", new_y="NEXT", fill=True)
 
-    # Called by main_dashbord refresh system
+    # ── Called by main_dashbord refresh system ─────────────────
     def refresh_data(self):
         self._load_filters()
-        if self._class_id:
-            self._load_grid()
+        # FIX (Bug 8): refresh whatever view is active, not just class view
+        self._refresh_current_view()

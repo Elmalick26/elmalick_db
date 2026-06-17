@@ -20,7 +20,9 @@ global_search_dialog.py — نافذة البحث العالمي (Ctrl+K)
 from __future__ import annotations
 
 from PyQt6.QtCore import QEvent, Qt, QTimer, pyqtSignal
-from PyQt6.QtGui import QColor, QFont, QKeySequence
+
+# FIX 1: Removed QColor, QFont, QKeySequence — all three unused.
+# Colors come from ThemeManager as strings; no QFont/QKeySequence instantiation exists.
 from PyQt6.QtWidgets import (
     QDialog,
     QFrame,
@@ -49,12 +51,9 @@ CATEGORY_ICONS = {
     "Audit": "🔍",
 }
 
-CATEGORY_MODULES = {
-    "Élève": "student_management",
-    "Personnel": "staff_management",
-    "Paiement": "finance_payments",
-    "Audit": None,  # pas de navigation pour audit
-}
+# FIX 2: Removed CATEGORY_MODULES — module_id is returned directly by
+# GlobalSearchRepository.search_all() in each ResultItem tuple; this dict
+# was an early design artifact superseded by the repo layer.
 
 
 def _search(query: str, limit: int = 40) -> list[ResultItem]:
@@ -230,7 +229,11 @@ class GlobalSearchDialog(QDialog):
         parent = self.parent()
         if parent:
             pg = parent.geometry()
-            w, h = self.sizeHint().width() or 600, self.sizeHint().height() or 300
+            # FIX 3: sizeHint() returns -1 when the widget hasn't been shown yet.
+            # `-1 or 600` evaluates to -1 (truthy), so the fallback never fired.
+            # Use explicit > 0 guard instead.
+            sh = self.sizeHint()
+            w = sh.width() if sh.width() > 0 else 600
             x = pg.x() + (pg.width() - w) // 2
             y = pg.y() + int(pg.height() * 0.18)
             self.move(x, y)
@@ -272,7 +275,9 @@ class GlobalSearchDialog(QDialog):
         if not data:
             return
         module_id, record_id = data
-        if module_id:
+        # FIX 4: Guard record_id explicitly — pyqtSignal(str, int) raises
+        # TypeError if record_id is None even when module_id is truthy.
+        if module_id and record_id is not None:
             self.navigate_to.emit(module_id, record_id)
         self.close()
 

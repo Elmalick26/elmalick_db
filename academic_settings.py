@@ -8,7 +8,6 @@ from app_logger import AppLogger
 from database_setup import DatabaseManager
 from repositories.academic_repo import AcademicRepository
 
-# محاولة استيراد ConfigManager، وتجاوز الخطأ إن لم يكن متوفراً بالكامل بعد
 try:
     from config_manager import ConfigManager
 
@@ -22,8 +21,10 @@ from PyQt6.QtWidgets import (
     QApplication,
     QComboBox,
     QDateEdit,
+    QDialog,
     QDoubleSpinBox,
     QFileDialog,
+    QFormLayout,
     QFrame,
     QGridLayout,
     QHBoxLayout,
@@ -41,26 +42,237 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from ui_components import (
+    BaseDialog,
+    BaseWindow,
+    create_card,
+    dialog_button_row,
+    dialog_error_label,
+    style_table,
+    styled_button,
+    styled_combo,
+    styled_date_edit,
+    styled_input,
+)
 from ui_styles import (
     Colors,
     ModuleHeaderWidget,
     ThemeManager,
     apply_shadow_to_widget,
+    friendly_db_error,
     get_card_style,
-    get_table_style,
+    get_module_caps,
     get_tabs_style,
 )
 
 
-class AcademicSettingsWindow(QMainWindow):
-    def __init__(self):
-        super().__init__()
-        self.setWindowTitle("Configuration Scolaire / الإعدادات المدرسية")
-        self.setMinimumSize(1100, 700)
+class YearDialog(BaseDialog):
+    def __init__(self, data: dict | None = None, parent=None):
+        super().__init__("Modifier l'Année" if data else "Ajouter une Année", parent)
+        self.setMinimumWidth(420)
+        self.setModal(True)
 
+        self._err_lbl = dialog_error_label()
+        self.dialog_layout.addWidget(self._err_lbl)
+
+        form = QFormLayout()
+        form.setSpacing(12)
+        self.txt_label = styled_input("Ex: 2025-2026")
+        self.date_start = styled_date_edit()
+        self.date_start.setCalendarPopup(True)
+        self.date_start.setMinimumDate(QDate(1900, 1, 1))
+        self.date_start.setMaximumDate(QDate(2100, 12, 31))
+        self.date_start.setDate(QDate(QDate.currentDate().year(), 9, 1))
+        self.date_end = styled_date_edit()
+        self.date_end.setCalendarPopup(True)
+        self.date_end.setMinimumDate(QDate(1900, 1, 1))
+        self.date_end.setMaximumDate(QDate(2100, 12, 31))
+        self.date_end.setDate(QDate(QDate.currentDate().year() + 1, 7, 31))
+        if data:
+            self.txt_label.setText(data.get("label", ""))
+            if data.get("start"):
+                self.date_start.setDate(QDate.fromString(str(data["start"]), "yyyy-MM-dd"))
+            if data.get("end"):
+                self.date_end.setDate(QDate.fromString(str(data["end"]), "yyyy-MM-dd"))
+        form.addRow("Année:", self.txt_label)
+        form.addRow("Début:", self.date_start)
+        form.addRow("Fin:", self.date_end)
+        self.dialog_layout.addLayout(form)
+        self.dialog_layout.addLayout(dialog_button_row("💾 Enregistrer", self._validate, self.reject))
+
+    def _validate(self):
+        if not self.txt_label.text().strip():
+            self._err_lbl.setText("Veuillez saisir le libellé de l'année.")
+            self._err_lbl.setVisible(True)
+            return
+        if self.date_end.date() < self.date_start.date():
+            self._err_lbl.setText("La date de fin doit être après la date de début.")
+            self._err_lbl.setVisible(True)
+            return
+        self.accept()
+
+    def get_values(self) -> dict:
+        return {
+            "label": self.txt_label.text().strip(),
+            "start": self.date_start.date().toPyDate().isoformat(),
+            "end": self.date_end.date().toPyDate().isoformat(),
+        }
+
+
+class CycleDialog(BaseDialog):
+    def __init__(self, data: dict | None = None, parent=None):
+        super().__init__("Modifier le Cycle" if data else "Ajouter un Cycle", parent)
+        self.setMinimumWidth(380)
+        self.setModal(True)
+
+        self._err_lbl = dialog_error_label()
+        self.dialog_layout.addWidget(self._err_lbl)
+
+        form = QFormLayout()
+        form.setSpacing(12)
+        self.txt_fr = styled_input("Nom (FR)")
+        self.txt_ar = styled_input("الاسم (عربي)")
+        if data:
+            self.txt_fr.setText(data.get("fr", ""))
+            self.txt_ar.setText(data.get("ar", ""))
+        form.addRow("Nom FR:", self.txt_fr)
+        form.addRow("Nom AR:", self.txt_ar)
+        self.dialog_layout.addLayout(form)
+        self.dialog_layout.addLayout(dialog_button_row("💾 Enregistrer", self._validate, self.reject))
+
+    def _validate(self):
+        if not self.txt_fr.text().strip():
+            self._err_lbl.setText("Veuillez saisir le nom du cycle.")
+            self._err_lbl.setVisible(True)
+            return
+        self.accept()
+
+    def get_values(self) -> dict:
+        return {"fr": self.txt_fr.text().strip(), "ar": self.txt_ar.text().strip()}
+
+
+class ClassDialog(BaseDialog):
+    def __init__(self, cycles: list, data: dict | None = None, parent=None):
+        super().__init__("Modifier la Classe" if data else "Ajouter une Classe", parent)
+        self.setMinimumWidth(400)
+        self.setModal(True)
+
+        self._err_lbl = dialog_error_label()
+        self.dialog_layout.addWidget(self._err_lbl)
+
+        form = QFormLayout()
+        form.setSpacing(12)
+        self.cmb_cycle = styled_combo()
+        for cid, name in cycles:
+            self.cmb_cycle.addItem(name, cid)
+        self.txt_fr = styled_input("Nom (FR)")
+        self.txt_ar = styled_input("الاسم (عربي)")
+        self.sp_order = QSpinBox()
+        self.sp_order.setRange(1, 20)
+        self.sp_order.setValue(1)
+        self.sp_order.setMinimumHeight(42)
+        if data:
+            idx = self.cmb_cycle.findData(data.get("cycle_id"))
+            if idx >= 0:
+                self.cmb_cycle.setCurrentIndex(idx)
+            self.txt_fr.setText(data.get("fr", ""))
+            self.txt_ar.setText(data.get("ar", ""))
+            self.sp_order.setValue(data.get("order", 1))
+        form.addRow("Cycle:", self.cmb_cycle)
+        form.addRow("Nom FR:", self.txt_fr)
+        form.addRow("Nom AR:", self.txt_ar)
+        form.addRow("Ordre:", self.sp_order)
+        self.dialog_layout.addLayout(form)
+        self.dialog_layout.addLayout(dialog_button_row("💾 Enregistrer", self._validate, self.reject))
+
+    def _validate(self):
+        if not self.txt_fr.text().strip():
+            self._err_lbl.setText("Veuillez saisir le nom de la classe.")
+            self._err_lbl.setVisible(True)
+            return
+        if not self.cmb_cycle.currentData():
+            self._err_lbl.setText("Veuillez sélectionner un cycle.")
+            self._err_lbl.setVisible(True)
+            return
+        self.accept()
+
+    def get_values(self) -> dict:
+        return {
+            "cycle_id": self.cmb_cycle.currentData(),
+            "fr": self.txt_fr.text().strip(),
+            "ar": self.txt_ar.text().strip(),
+            "order": self.sp_order.value(),
+        }
+
+
+class SubjectDialog(BaseDialog):
+    def __init__(self, cycles: list, data: dict | None = None, parent=None):
+        super().__init__("Modifier la Matière" if data else "Ajouter une Matière", parent)
+        self.setMinimumWidth(400)
+        self.setModal(True)
+
+        self._err_lbl = dialog_error_label()
+        self.dialog_layout.addWidget(self._err_lbl)
+
+        form = QFormLayout()
+        form.setSpacing(12)
+        self.cmb_cycle = styled_combo()
+        for cid, name in cycles:
+            self.cmb_cycle.addItem(name, cid)
+        self.txt_fr = styled_input("Matière (FR)")
+        self.txt_ar = styled_input("المادة (عربي)")
+        self.sp_coeff = QDoubleSpinBox()
+        self.sp_coeff.setRange(0.1, 10.0)
+        self.sp_coeff.setSingleStep(0.1)
+        self.sp_coeff.setValue(1.0)
+        self.sp_coeff.setMinimumHeight(42)
+        self.cmb_lang = styled_combo()
+        self.cmb_lang.addItems(["Français", "Arabe"])
+        if data:
+            idx = self.cmb_cycle.findData(data.get("cycle_id"))
+            if idx >= 0:
+                self.cmb_cycle.setCurrentIndex(idx)
+            self.txt_fr.setText(data.get("fr", ""))
+            self.txt_ar.setText(data.get("ar", ""))
+            self.sp_coeff.setValue(float(data.get("coeff", 1.0)))
+            idx_l = self.cmb_lang.findText(data.get("lang", "Français"))
+            if idx_l >= 0:
+                self.cmb_lang.setCurrentIndex(idx_l)
+        form.addRow("Cycle:", self.cmb_cycle)
+        form.addRow("Nom FR:", self.txt_fr)
+        form.addRow("Nom AR:", self.txt_ar)
+        form.addRow("Coeff:", self.sp_coeff)
+        form.addRow("Langue:", self.cmb_lang)
+        self.dialog_layout.addLayout(form)
+        self.dialog_layout.addLayout(dialog_button_row("💾 Enregistrer", self._validate, self.reject))
+
+    def _validate(self):
+        if not self.txt_fr.text().strip():
+            self._err_lbl.setText("Veuillez saisir le nom de la matière.")
+            self._err_lbl.setVisible(True)
+            return
+        if not self.cmb_cycle.currentData():
+            self._err_lbl.setText("Veuillez sélectionner un cycle.")
+            self._err_lbl.setVisible(True)
+            return
+        self.accept()
+
+    def get_values(self) -> dict:
+        return {
+            "cycle_id": self.cmb_cycle.currentData(),
+            "fr": self.txt_fr.text().strip(),
+            "ar": self.txt_ar.text().strip(),
+            "coeff": self.sp_coeff.value(),
+            "lang": self.cmb_lang.currentText(),
+        }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+class AcademicSettingsWindow(BaseWindow):
+    def __init__(self):
+        super().__init__("Configuration Scolaire / الإعدادات المدرسية", min_width=1100, min_height=700)
         self.config = ConfigManager() if HAS_CONFIG_MANAGER else None
 
-        # --- تهيئة المتغيرات الأساسية لتجنب أخطاء (AttributeError) ---
         self.current_year_id = None
         self.current_cycle_id = None
         self.current_class_id = None
@@ -69,22 +281,33 @@ class AcademicSettingsWindow(QMainWindow):
         self.current_generated_year_id = None
         self.current_generated_cycle_id = None
         self._period_ranges_loading = False
+        self._cycles_cache: list = []
+        # FIX 4: Cache year date ranges to avoid a DB round-trip on every keypress
+        self._year_date_cache: dict[int, tuple] = {}
 
-        ThemeManager.apply_theme(self)
-        self.central_widget = QWidget()
-        self.setCentralWidget(self.central_widget)
-        self.main_layout = QVBoxLayout(self.central_widget)
-        self.main_layout.setContentsMargins(20, 20, 20, 20)
-        self.main_layout.setSpacing(15)
+        self.main_layout.setContentsMargins(24, 20, 24, 20)
+        self.main_layout.setSpacing(16)
 
         self.init_ui()
         self.refresh_all_data()
-        self._load_kpi_stats()
+        # FIX 6: KPI stats are now loaded inside refresh_all_data — no separate call needed
+
+    def apply_rbac(self, role: str) -> None:
+        """تطبيق صلاحيات الأزرار بناءً على دور المستخدم — يُستدعى من MainWindow."""
+        caps = get_module_caps(role, "academic_settings")
+        for btn in (
+            self.btn_y,
+            self.btn_c,
+            self.btn_cls,
+            self.btn_sub,
+            self.btn_save_period_ranges,
+            self.btn_auto_fix_period_ranges,
+        ):
+            btn.setEnabled(caps["can_write"])
+            btn.setVisible(caps["can_write"])
 
     def init_ui(self):
-        colors = ThemeManager.get_colors()
 
-        # En-tête unifié
         header = ModuleHeaderWidget(
             icon="⚙️",
             title="CONFIGURATION SCOLAIRE",
@@ -96,8 +319,6 @@ class AcademicSettingsWindow(QMainWindow):
         self._stat_subjects = header.add_stat("📚", "Matières", "—", "#8B5CF6")
         self._stat_cycles = header.add_stat("🌀", "Cycles", "—", "#F59E0B")
 
-        # KPI Cards
-
         self.tabs = QTabWidget()
         self.tabs.setStyleSheet(get_tabs_style())
 
@@ -108,51 +329,7 @@ class AcademicSettingsWindow(QMainWindow):
 
         self.main_layout.addWidget(self.tabs)
 
-    # Helper Functions
-    def create_card(self, title):
-        frame = QFrame()
-        frame.setStyleSheet(get_card_style())
-        layout = QVBoxLayout(frame)
-        layout.setContentsMargins(20, 20, 20, 20)
-        lbl = QLabel(title)
-        lbl.setFont(QFont("Arial", 11, QFont.Weight.Bold))
-        colors = ThemeManager.get_colors()
-        lbl.setStyleSheet(f"color: {colors.TEXT_PRIMARY}; margin-bottom: 10px;")
-        layout.addWidget(lbl)
-        return frame, layout
-
-    def styled_input(self, placeholder):
-        le = QLineEdit()
-        le.setPlaceholderText(placeholder)
-        colors = ThemeManager.get_colors()
-        le.setStyleSheet(
-            f"QLineEdit {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }} QLineEdit:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}"
-        )
-        le.setMinimumHeight(38)
-        return le
-
-    def styled_combo(self):
-        combo = QComboBox()
-        colors = ThemeManager.get_colors()
-        combo.setStyleSheet(
-            f"QComboBox {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }} QComboBox:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}"
-        )
-        combo.setMinimumHeight(38)
-        return combo
-
-    def styled_date_edit(self):
-        de = QDateEdit()
-        de.setCalendarPopup(True)
-        de.setDisplayFormat("yyyy-MM-dd")
-        de.setMinimumDate(QDate(1900, 1, 1))
-        de.setMaximumDate(QDate(2100, 12, 31))
-        de.setDate(QDate.currentDate())
-        de.setMinimumHeight(38)
-        colors = ThemeManager.get_colors()
-        de.setStyleSheet(
-            f"QDateEdit {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }} QDateEdit:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}"
-        )
-        return de
+    # ── Helpers ───────────────────────────────────────────────────────────────
 
     def _period_date_editor_style(self, error: bool = False) -> str:
         colors = ThemeManager.get_colors()
@@ -168,43 +345,14 @@ class AcademicSettingsWindow(QMainWindow):
         )
 
     def _create_period_date_editor(self, iso_value: str = ""):
-        editor = QDateEdit()
-        editor.setCalendarPopup(True)
-        editor.setDisplayFormat("yyyy-MM-dd")
-        editor.setMinimumDate(QDate(1900, 1, 1))
-        editor.setMaximumDate(QDate(2100, 12, 31))
+        editor = styled_date_edit("yyyy-MM-dd", min_height=38)
         parsed = self._parse_period_date(iso_value)
         editor.setDate(QDate(parsed.year, parsed.month, parsed.day) if parsed else QDate.currentDate())
-        editor.setStyleSheet(self._period_date_editor_style(error=False))
         editor.dateChanged.connect(self._on_period_date_widget_changed)
         return editor
 
     def style_table(self, table):
-        table.setShowGrid(False)
-        table.setAlternatingRowColors(True)
-        table.verticalHeader().setVisible(False)
-        table.setStyleSheet(get_table_style())
-
-    def _load_kpi_stats(self):
-        """Charge les statistiques de configuration scolaire."""
-        try:
-            db = DatabaseManager()
-            with db.get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute("SELECT COUNT(*) FROM AcademicYears")
-                years = cursor.fetchone()[0] or 0
-                cursor.execute("SELECT COUNT(*) FROM Classes")
-                classes = cursor.fetchone()[0] or 0
-                cursor.execute("SELECT COUNT(*) FROM Subjects")
-                subjects = cursor.fetchone()[0] or 0
-                cursor.execute("SELECT COUNT(*) FROM Cycles")
-                cycles = cursor.fetchone()[0] or 0
-            self._stat_years.set_value(str(years))
-            self._stat_classes.set_value(str(classes))
-            self._stat_subjects.set_value(str(subjects))
-            self._stat_cycles.set_value(str(cycles))
-        except Exception as e:
-            AppLogger.error("AcademicSettingsWindow", f"Erreur KPI stats: {e}")
+        style_table(table)
 
     def safe_text(self, value):
         return "" if value is None else str(value)
@@ -225,7 +373,7 @@ class AcademicSettingsWindow(QMainWindow):
             btn_edit.setFixedSize(28, 28)
             btn_edit.setCursor(Qt.CursorShape.PointingHandCursor)
             btn_edit.setStyleSheet(
-                f"background-color: {colors.WARNING}; color: white; border-radius: 4px; border: none;"
+                f"background-color: {colors.WARNING}; color: white; border-radius: 6px; border: none;"
             )
             btn_edit.clicked.connect(lambda _, val=id_val: edit_func(val))
             layout.addWidget(btn_edit)
@@ -234,35 +382,36 @@ class AcademicSettingsWindow(QMainWindow):
             btn_del = QPushButton("✕")
             btn_del.setFixedSize(28, 28)
             btn_del.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn_del.setStyleSheet(f"background-color: {colors.DANGER}; color: white; border-radius: 4px; border: none;")
+            btn_del.setStyleSheet(f"background-color: {colors.DANGER}; color: white; border-radius: 6px; border: none;")
             btn_del.clicked.connect(lambda _, val=id_val: delete_func(val))
             layout.addWidget(btn_del)
 
         layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         table.setCellWidget(row_idx, table.columnCount() - 1, widget)
 
-    # --- 1. معلومات المؤسسة ---
+    # ── Tab 1: School Info ────────────────────────────────────────────────────
+
     def setup_school_info_tab(self):
         tab = QWidget()
         layout = QVBoxLayout(tab)
         layout.setContentsMargins(20, 20, 20, 20)
 
-        card, grid_lay = self.create_card("🏛️ Identification de l'Établissement / بيانات المؤسسة")
+        card, grid_lay = create_card("🏛️ Identification de l'Établissement / بيانات المؤسسة")
         grid = QGridLayout()
         grid.setSpacing(15)
 
         self.info_inputs = {
-            'rep': self.styled_input("Ex: République du Sénégal"),
-            'ia': self.styled_input("Inspection d'Académie (IA)"),
-            'ief': self.styled_input("Inspection IEF"),
-            'name': self.styled_input("Nom de l'établissement"),
-            'auth': self.styled_input("N° Autorisation"),
-            'director': self.styled_input("Nom du Directeur / اسم المدير"),
-            'loc': self.styled_input("Adresse"),
-            'tel': self.styled_input("Téléphone"),
+            'rep': styled_input("Ex: République du Sénégal"),
+            'ia': styled_input("Inspection d'Académie (IA)"),
+            'ief': styled_input("Inspection IEF"),
+            'name': styled_input("Nom de l'établissement"),
+            'auth': styled_input("N° Autorisation"),
+            'director': styled_input("Nom du Directeur / اسم المدير"),
+            'loc': styled_input("Adresse"),
+            'tel': styled_input("Téléphone"),
         }
 
-        self.logo_path_display = self.styled_input("Logo Path")
+        self.logo_path_display = styled_input("Logo Path")
         self.logo_path_display.setReadOnly(True)
 
         labels = {
@@ -278,118 +427,94 @@ class AcademicSettingsWindow(QMainWindow):
 
         r = 0
         for k, v in self.info_inputs.items():
+            v.setMaximumWidth(380)
             grid.addWidget(QLabel(labels[k]), r, 0)
             grid.addWidget(v, r, 1)
             r += 1
 
         grid.addWidget(QLabel("Logo:"), r, 0)
         logo_h = QHBoxLayout()
+        self.logo_path_display.setMaximumWidth(330)
         logo_h.addWidget(self.logo_path_display)
         btn_logo = QPushButton("📁")
         btn_logo.setFixedSize(40, 38)
+        btn_logo.setCursor(Qt.CursorShape.PointingHandCursor)
         colors = ThemeManager.get_colors()
+        # FIX 1: Added missing comma between gradient stop:0 and stop:1
         btn_logo.setStyleSheet(
-            f"background-color: {colors.PRIMARY}; color: white; border-radius: 6px; font-weight: bold;"
+            f"QPushButton {{ background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 {colors.PRIMARY}, stop:1 {colors.PRIMARY_HOVER}); color: white; border-radius: 6px; font-weight: bold; border: none; }} QPushButton:hover {{ background: {colors.PRIMARY_DARK}; }}"
         )
         btn_logo.clicked.connect(self.browse_logo)
         logo_h.addWidget(btn_logo)
         grid.addLayout(logo_h, r, 1)
 
-        btn_save = QPushButton("💾 Enregistrer / حفظ")
-        btn_save.setMinimumHeight(45)
-        btn_save.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_save.setStyleSheet(
-            f"background-color: {colors.SUCCESS}; color: white; border-radius: 8px; font-weight: bold; font-size: 14px;"
+        btn_save = styled_button(
+            "💾 Enregistrer / حفظ",
+            bg_color=colors.SUCCESS,
+            hover_color=colors.SUCCESS_HOVER,
+            min_height=46,
         )
         btn_save.clicked.connect(self.save_school_info)
 
-        grid_lay.addLayout(grid)
+        form_container = QWidget()
+        form_container.setMaximumWidth(640)
+        form_vlay = QVBoxLayout(form_container)
+        form_vlay.setContentsMargins(0, 0, 0, 0)
+        form_vlay.addLayout(grid)
+        form_hbox = QHBoxLayout()
+        form_hbox.addWidget(form_container)
+        form_hbox.addStretch()
+        grid_lay.addLayout(form_hbox)
         grid_lay.addWidget(btn_save)
         layout.addWidget(card)
         layout.addStretch()
         self.tabs.addTab(tab, "  🏛️ Infos / معلومات  ")
 
-    # --- 2. الهيكل ---
+    # ── Tab 2: Structure ──────────────────────────────────────────────────────
+
     def setup_structure_tab(self):
         tab = QWidget()
         layout = QHBoxLayout(tab)
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(20)
-
         colors = ThemeManager.get_colors()
 
-        # Years
-        y_card, y_lay = self.create_card("📅 Années / السنوات")
-        self.txt_year = self.styled_input("Ex: 2025-2026")
-        self.year_start_date = self.styled_date_edit()
-        self.year_end_date = self.styled_date_edit()
-        self.year_start_date.setDate(QDate(QDate.currentDate().year(), 9, 1))
-        self.year_end_date.setDate(QDate(QDate.currentDate().year() + 1, 7, 31))
-        self.btn_y = QPushButton("Ajouter")
-        self.btn_y.setStyleSheet(
-            f"background-color: {colors.PRIMARY}; color: white; padding: 8px; border-radius: 6px; font-weight: bold;"
-        )
-        self.btn_y.clicked.connect(self.save_year)
+        def _add_btn(text: str) -> QPushButton:
+            return styled_button(
+                text,
+                bg_color=colors.SUCCESS,
+                hover_color=colors.SUCCESS_HOVER,
+                min_height=36,
+            )
+
+        y_card, y_lay = create_card("📅 Années / السنوات")
+        self.btn_y = _add_btn("+ Ajouter Année")
+        self.btn_y.clicked.connect(lambda: self.open_year_dialog())
         self.table_years = QTableWidget(0, 4)
         self.style_table(self.table_years)
         self.table_years.setHorizontalHeaderLabels(["ID", "Année", "Actif", "Action"])
         self.table_years.setColumnWidth(0, 40)
-        self.table_years.setColumnWidth(2, 80)
-        y_lay.addWidget(self.txt_year)
-        y_lay.addWidget(QLabel("Date début:"))
-        y_lay.addWidget(self.year_start_date)
-        y_lay.addWidget(QLabel("Date fin:"))
-        y_lay.addWidget(self.year_end_date)
+        self.table_years.setColumnWidth(2, 60)
         y_lay.addWidget(self.btn_y)
         y_lay.addWidget(self.table_years)
 
-        # Cycles
-        c_card, c_lay = self.create_card("🏫 Cycles / المراحل")
-        self.txt_c_fr = self.styled_input("Nom (FR)")
-        self.txt_c_ar = self.styled_input("الاسم (عربي)")
-        self.btn_c = QPushButton("Ajouter")
-        self.btn_c.setStyleSheet(
-            f"background-color: {colors.PRIMARY}; color: white; padding: 8px; border-radius: 6px; font-weight: bold;"
-        )
-        self.btn_c.clicked.connect(self.save_cycle)
+        c_card, c_lay = create_card("🏫 Cycles / المراحل")
+        self.btn_c = _add_btn("+ Ajouter Cycle")
+        self.btn_c.clicked.connect(lambda: self.open_cycle_dialog())
         self.table_cycles = QTableWidget(0, 4)
         self.style_table(self.table_cycles)
         self.table_cycles.setHorizontalHeaderLabels(["ID", "Cycle (FR)", "Cycle (AR)", "Action"])
         self.table_cycles.setColumnWidth(0, 40)
-        c_lay.addWidget(self.txt_c_fr)
-        c_lay.addWidget(self.txt_c_ar)
         c_lay.addWidget(self.btn_c)
         c_lay.addWidget(self.table_cycles)
 
-        # Classes
-        cls_card, cls_lay = self.create_card("👥 Classes / الفصول")
-        self.combo_cycles_cls = self.styled_combo()
-        self.txt_cls_fr = self.styled_input("Nom (FR)")
-        self.txt_cls_ar = self.styled_input("الاسم (عربي)")
-        self.sp_order = QSpinBox()
-        self.sp_order.setRange(1, 20)
-        self.sp_order.setMinimumHeight(38)
-        self.sp_order.setStyleSheet(
-            f"border: 1px solid {colors.BORDER}; border-radius: 6px; padding: 5px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY};"
-        )
-
-        self.btn_cls = QPushButton("Ajouter")
-        self.btn_cls.setStyleSheet(
-            f"background-color: {colors.PRIMARY}; color: white; padding: 8px; border-radius: 6px; font-weight: bold;"
-        )
-        self.btn_cls.clicked.connect(self.save_class)
-
+        cls_card, cls_lay = create_card("👥 Classes / الفصول")
+        self.btn_cls = _add_btn("+ Ajouter Classe")
+        self.btn_cls.clicked.connect(lambda: self.open_class_dialog())
         self.table_classes = QTableWidget(0, 5)
         self.style_table(self.table_classes)
         self.table_classes.setHorizontalHeaderLabels(["ID", "Cycle", "Classe (FR)", "Classe (AR)", "Action"])
         self.table_classes.setColumnWidth(0, 40)
-
-        cls_lay.addWidget(QLabel("Cycle:"))
-        cls_lay.addWidget(self.combo_cycles_cls)
-        cls_lay.addWidget(self.txt_cls_fr)
-        cls_lay.addWidget(self.txt_cls_ar)
-        cls_lay.addWidget(QLabel("Ordre:"))
-        cls_lay.addWidget(self.sp_order)
         cls_lay.addWidget(self.btn_cls)
         cls_lay.addWidget(self.table_classes)
 
@@ -398,54 +523,30 @@ class AcademicSettingsWindow(QMainWindow):
         layout.addWidget(cls_card, 1)
         self.tabs.addTab(tab, "  📊 Structure / الهيكل  ")
 
-    # --- 3. المواد ---
+    # ── Tab 3: Subjects ───────────────────────────────────────────────────────
+
     def setup_subjects_tab(self):
         tab = QWidget()
-        layout = QHBoxLayout(tab)
+        layout = QVBoxLayout(tab)
         layout.setContentsMargins(20, 20, 20, 20)
-
+        layout.setSpacing(12)
         colors = ThemeManager.get_colors()
 
-        card, vlay = self.create_card("📚 Matières par Cycle / المواد حسب المرحلة")
-
-        form = QGridLayout()
-        form.setSpacing(10)
-
-        self.combo_cycles_sub = self.styled_combo()
-        self.txt_sub_fr = self.styled_input("Matière (FR)")
-        self.txt_sub_ar = self.styled_input("المادة (عربي)")
-        self.sp_coeff = QDoubleSpinBox()
-        self.sp_coeff.setRange(0.1, 10.0)
-        self.sp_coeff.setSingleStep(0.1)
-        self.sp_coeff.setMinimumHeight(38)
-        self.sp_coeff.setStyleSheet(
-            f"border: 1px solid {colors.BORDER}; border-radius: 6px; padding: 5px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY};"
+        toolbar = QHBoxLayout()
+        lbl_title = QLabel("📚 Matières par Cycle / المواد حسب المرحلة")
+        lbl_title.setFont(QFont("Arial", 11, QFont.Weight.Bold))
+        lbl_title.setStyleSheet(f"color: {colors.TEXT_PRIMARY};")
+        toolbar.addWidget(lbl_title)
+        toolbar.addStretch()
+        self.btn_sub = styled_button(
+            "+ Ajouter Matière",
+            bg_color=colors.SUCCESS,
+            hover_color=colors.SUCCESS_HOVER,
+            min_height=36,
         )
-
-        self.combo_sub_lang = self.styled_combo()
-        self.combo_sub_lang.addItems(["Français", "Arabe"])
-
-        form.addWidget(QLabel("Cycle:"), 0, 0)
-        form.addWidget(self.combo_cycles_sub, 0, 1)
-        form.addWidget(QLabel("Nom FR:"), 1, 0)
-        form.addWidget(self.txt_sub_fr, 1, 1)
-        form.addWidget(QLabel("Nom AR:"), 2, 0)
-        form.addWidget(self.txt_sub_ar, 2, 1)
-        form.addWidget(QLabel("Coeff:"), 3, 0)
-        form.addWidget(self.sp_coeff, 3, 1)
-        form.addWidget(QLabel("Langue:"), 4, 0)
-        form.addWidget(self.combo_sub_lang, 4, 1)
-
-        self.btn_sub = QPushButton("Ajouter Matière")
-        self.btn_sub.setMinimumHeight(40)
-        self.btn_sub.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_sub.setStyleSheet(
-            f"background-color: {colors.PRIMARY}; color: white; border-radius: 6px; font-weight: bold;"
-        )
-        self.btn_sub.clicked.connect(self.save_subject)
-
-        vlay.addLayout(form)
-        vlay.addWidget(self.btn_sub)
+        self.btn_sub.clicked.connect(lambda: self.open_subject_dialog())
+        toolbar.addWidget(self.btn_sub)
+        layout.addLayout(toolbar)
 
         self.table_subjects = QTableWidget(0, 7)
         self.style_table(self.table_subjects)
@@ -457,12 +558,12 @@ class AcademicSettingsWindow(QMainWindow):
             header_subjects.setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.table_subjects.setColumnWidth(0, 40)
         self.table_subjects.setColumnWidth(6, 80)
-        vlay.addWidget(self.table_subjects)
+        layout.addWidget(self.table_subjects)
 
-        layout.addWidget(card)
         self.tabs.addTab(tab, "  📖 Matières / المواد  ")
 
-    # --- 4. التقييمات ---
+    # ── Tab 4: Evaluations ────────────────────────────────────────────────────
+
     def setup_evaluations_tab(self):
         tab = QWidget()
         layout = QVBoxLayout(tab)
@@ -471,21 +572,21 @@ class AcademicSettingsWindow(QMainWindow):
 
         colors = ThemeManager.get_colors()
 
-        gen_card, gen_lay = self.create_card("⚙️ Génération Automatique (Périodes & Évaluations)")
+        gen_card, gen_lay = create_card("⚙️ Génération Automatique (Périodes & Évaluations)")
 
         hbox = QHBoxLayout()
         hbox.setSpacing(15)
-        self.combo_year_gen = self.styled_combo()
-        self.combo_cycle_gen = self.styled_combo()
+        self.combo_year_gen = styled_combo()
+        self.combo_cycle_gen = styled_combo()
         self.combo_year_gen.currentIndexChanged.connect(self._on_generation_selection_changed)
         self.combo_cycle_gen.currentIndexChanged.connect(self._on_generation_selection_changed)
-        btn_gen = QPushButton("⚡ Générer Configuration")
-        btn_gen.setMinimumHeight(40)
-        btn_gen.setStyleSheet(
-            f"background-color: {colors.WARNING}; color: white; font-weight: bold; border-radius: 6px;"
+        btn_gen = styled_button(
+            "⚡ Générer Configuration",
+            bg_color=colors.WARNING,
+            hover_color="#B45309",
+            min_height=42,
         )
         btn_gen.clicked.connect(self.generate_academic_logic)
-
         hbox.addWidget(QLabel("Année:"))
         hbox.addWidget(self.combo_year_gen, 1)
         hbox.addWidget(QLabel("Cycle:"))
@@ -493,33 +594,49 @@ class AcademicSettingsWindow(QMainWindow):
         hbox.addWidget(btn_gen)
         gen_lay.addLayout(hbox)
 
-        self.btn_save_period_ranges = QPushButton("💾 Valider Dates des Périodes")
-        self.btn_save_period_ranges.setMinimumHeight(38)
-        self.btn_save_period_ranges.setStyleSheet(
-            f"background-color: {colors.SUCCESS}; color: white; font-weight: bold; border-radius: 6px;"
-        )
-        self.btn_save_period_ranges.clicked.connect(self.save_period_ranges)
-        gen_lay.addWidget(self.btn_save_period_ranges)
-
-        self.btn_auto_fix_period_ranges = QPushButton("🛠️ Corriger Auto (Plages)")
-        self.btn_auto_fix_period_ranges.setMinimumHeight(38)
-        self.btn_auto_fix_period_ranges.setStyleSheet(
-            f"background-color: {colors.PRIMARY}; color: white; font-weight: bold; border-radius: 6px;"
-        )
-        self.btn_auto_fix_period_ranges.clicked.connect(self.auto_fix_period_ranges)
-        gen_lay.addWidget(self.btn_auto_fix_period_ranges)
+        split = QHBoxLayout()
+        split.setSpacing(16)
 
         self.table_period_ranges = QTableWidget(0, 4)
         self.style_table(self.table_period_ranges)
         self.table_period_ranges.setHorizontalHeaderLabels(["ID", "Période", "Début", "Fin"])
         self.table_period_ranges.setColumnWidth(0, 50)
+        self.table_period_ranges.setMaximumHeight(160)
         header_periods = self.table_period_ranges.horizontalHeader()
         if header_periods:
             header_periods.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
             header_periods.setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
             header_periods.setSectionResizeMode(3, QHeaderView.ResizeMode.ResizeToContents)
         self.table_period_ranges.itemChanged.connect(self._on_period_range_item_changed)
-        gen_lay.addWidget(self.table_period_ranges)
+        split.addWidget(self.table_period_ranges, 3)
+
+        sidebar = QWidget()
+        sidebar.setFixedWidth(240)
+        s_lay = QVBoxLayout(sidebar)
+        s_lay.setContentsMargins(0, 0, 0, 0)
+        s_lay.setSpacing(10)
+
+        self.btn_save_period_ranges = styled_button(
+            "💾 Valider Dates",
+            bg_color=colors.SUCCESS,
+            hover_color=colors.SUCCESS_HOVER,
+            min_height=38,
+        )
+        self.btn_save_period_ranges.clicked.connect(self.save_period_ranges)
+        s_lay.addWidget(self.btn_save_period_ranges)
+
+        self.btn_auto_fix_period_ranges = styled_button(
+            "🛠️ Corriger Auto (Plages)",
+            bg_color=colors.PRIMARY,
+            hover_color=colors.PRIMARY_HOVER,
+            min_height=38,
+        )
+        self.btn_auto_fix_period_ranges.clicked.connect(self.auto_fix_period_ranges)
+        s_lay.addWidget(self.btn_auto_fix_period_ranges)
+        s_lay.addStretch()
+
+        split.addWidget(sidebar, 0)
+        gen_lay.addLayout(split)
 
         layout.addWidget(gen_card)
 
@@ -535,6 +652,8 @@ class AcademicSettingsWindow(QMainWindow):
         layout.addWidget(self.table_evals)
 
         self.tabs.addTab(tab, "  📝 Évaluations / التقييمات  ")
+
+    # ── Period range event handlers ───────────────────────────────────────────
 
     def _on_generation_selection_changed(self):
         year_id = self.combo_year_gen.currentData()
@@ -611,20 +730,12 @@ class AcademicSettingsWindow(QMainWindow):
         for row in range(self.table_period_ranges.rowCount()):
             self._mark_period_row_error(row, is_error=False)
 
+        # FIX 4: Use cached year dates instead of opening a DB connection on every keypress
         year_start = None
         year_end = None
         year_id = self.current_generated_year_id or self.combo_year_gen.currentData()
-        if year_id:
-            try:
-                db = DatabaseManager()
-                with db.get_connection() as conn:
-                    year_data = AcademicRepository(conn).get_year(year_id)
-                    if year_data and year_data[1] and year_data[2]:
-                        year_start = date.fromisoformat(str(year_data[1]))
-                        year_end = date.fromisoformat(str(year_data[2]))
-            except Exception:
-                year_start = None
-                year_end = None
+        if year_id and year_id in self._year_date_cache:
+            year_start, year_end = self._year_date_cache[year_id]
 
         rows_data = []
         for row in range(self.table_period_ranges.rowCount()):
@@ -654,24 +765,22 @@ class AcademicSettingsWindow(QMainWindow):
                     self._mark_period_row_error(row, is_error=True)
 
     def load_period_ranges_editor(self, year_id, cycle_id):
+        # FIX 7: Block signals before the DB call so the finally always has a matching unblock
+        self._period_ranges_loading = True
+        self.table_period_ranges.blockSignals(True)
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
                 periods = AcademicRepository(conn).list_periods_for_year_cycle(year_id, cycle_id)
 
-            self._period_ranges_loading = True
-            self.table_period_ranges.blockSignals(True)
             self.table_period_ranges.setRowCount(0)
             for p in periods:
                 row = self.table_period_ranges.rowCount()
                 self.table_period_ranges.insertRow(row)
                 self.table_period_ranges.setItem(row, 0, QTableWidgetItem(self.safe_text(p[0])))
                 self.table_period_ranges.setItem(row, 1, QTableWidgetItem(self.safe_text(p[1] or p[2])))
-
                 self.table_period_ranges.setCellWidget(row, 2, self._create_period_date_editor(self.safe_text(p[4])))
                 self.table_period_ranges.setCellWidget(row, 3, self._create_period_date_editor(self.safe_text(p[5])))
-            self.table_period_ranges.blockSignals(False)
-            self._refresh_period_ranges_visual_validation()
 
             self.current_generated_year_id = year_id
             self.current_generated_cycle_id = cycle_id
@@ -679,10 +788,9 @@ class AcademicSettingsWindow(QMainWindow):
             QMessageBox.warning(self, "Attention", f"Chargement des périodes impossible: {e}")
         finally:
             self._period_ranges_loading = False
-            try:
-                self.table_period_ranges.blockSignals(False)
-            except Exception:
-                pass
+            self.table_period_ranges.blockSignals(False)
+
+        self._refresh_period_ranges_visual_validation()
 
     def auto_fix_period_ranges(self):
         year_id = self.current_generated_year_id or self.combo_year_gen.currentData()
@@ -733,7 +841,7 @@ class AcademicSettingsWindow(QMainWindow):
                 self.msg("Plages de dates recalculées automatiquement.", "تمت إعادة حساب فترات التواريخ تلقائيًا."),
             )
         except Exception as e:
-            QMessageBox.critical(self, "Erreur", str(e))
+            QMessageBox.critical(self, "Erreur", friendly_db_error(e))
         finally:
             self._period_ranges_loading = False
             try:
@@ -791,16 +899,14 @@ class AcademicSettingsWindow(QMainWindow):
                             )
                         )
 
-                    p_start = start_val
-                    p_end = end_val
-                    if p_end < p_start:
+                    if end_val < start_val:
                         raise ValueError(
                             self.msg(
                                 f"Date fin < date début pour {period_name}.",
                                 f"تاريخ النهاية أصغر من تاريخ البداية للفترة {period_name}.",
                             )
                         )
-                    if p_start < year_start or p_end > year_end:
+                    if start_val < year_start or end_val > year_end:
                         raise ValueError(
                             self.msg(
                                 f"{period_name} est hors plage de l'année scolaire.",
@@ -808,9 +914,8 @@ class AcademicSettingsWindow(QMainWindow):
                             )
                         )
 
-                    rows_to_save.append((int(period_id_item.text()), period_name, p_start, p_end))
+                    rows_to_save.append((int(period_id_item.text()), period_name, start_val, end_val))
 
-                # Validation overlap
                 sorted_rows = sorted(rows_to_save, key=lambda r: r[2])
                 for i in range(1, len(sorted_rows)):
                     prev_row = sorted_rows[i - 1]
@@ -860,59 +965,43 @@ class AcademicSettingsWindow(QMainWindow):
         except ValueError as ve:
             QMessageBox.warning(self, "Validation", str(ve))
         except Exception as e:
-            QMessageBox.critical(self, "Erreur", str(e))
+            QMessageBox.critical(self, "Erreur", friendly_db_error(e))
 
-    # --- CRUD Operations ---
+    # ── CRUD: Years ───────────────────────────────────────────────────────────
 
-    # 1. Years
-    def save_year(self):
-        label = self.txt_year.text().strip()
-        if not label:
-            return
-        start_dt = self.year_start_date.date().toPyDate()
-        end_dt = self.year_end_date.date().toPyDate()
-        if end_dt < start_dt:
-            QMessageBox.warning(
-                self,
-                "Erreur",
-                "La date de fin doit être supérieure ou égale à la date de début. / تاريخ النهاية يجب أن يكون بعد البداية.",
-            )
-            return
-        try:
-            db = DatabaseManager()
-            with db.get_connection() as conn:
-                AcademicRepository(conn).upsert_year(
-                    self.current_year_id,
-                    label,
-                    start_dt.isoformat(),
-                    end_dt.isoformat(),
-                )
-                conn.commit()
-            self.txt_year.clear()
-            self.year_start_date.setDate(QDate(QDate.currentDate().year(), 9, 1))
-            self.year_end_date.setDate(QDate(QDate.currentDate().year() + 1, 7, 31))
-            self.current_year_id = None
-            self.btn_y.setText("Ajouter")
-            self.refresh_all_data()
-        except psycopg2.IntegrityError:
-            QMessageBox.warning(self, "Erreur", "Cette année existe déjà. / هذه السنة موجودة مسبقاً.")
-        except Exception as e:
-            QMessageBox.critical(self, "Erreur", f"Erreur: {e}")
+    def open_year_dialog(self, year_id=None):
+        data = None
+        if year_id:
+            # FIX 2: Wrap initial data fetch in try/except to handle DB errors gracefully
+            try:
+                db = DatabaseManager()
+                with db.get_connection() as conn:
+                    res = AcademicRepository(conn).get_year(year_id)
+                if res:
+                    data = {
+                        "label": res[0],
+                        "start": str(res[1]) if len(res) > 1 and res[1] else "",
+                        "end": str(res[2]) if len(res) > 2 and res[2] else "",
+                    }
+            except Exception as e:
+                QMessageBox.critical(self, "Erreur", friendly_db_error(e))
+                return
 
-    def edit_year(self, id):
-        db = DatabaseManager()
-        with db.get_connection() as conn:
-            res = AcademicRepository(conn).get_year(id)
-        if res:
-            self.txt_year.setText(res[0])
-            if len(res) > 2 and res[1] and res[2]:
-                self.year_start_date.setDate(QDate.fromString(str(res[1]), "yyyy-MM-dd"))
-                self.year_end_date.setDate(QDate.fromString(str(res[2]), "yyyy-MM-dd"))
-            self.current_year_id = id
-            self.btn_y.setText("Modifier")
+        dlg = YearDialog(data=data, parent=self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            values = dlg.get_values()
+            try:
+                db = DatabaseManager()
+                with db.get_connection() as conn:
+                    AcademicRepository(conn).upsert_year(year_id, values["label"], values["start"], values["end"])
+                    conn.commit()
+                self.refresh_all_data()
+            except psycopg2.IntegrityError:
+                QMessageBox.warning(self, "Erreur", "Cette année existe déjà. / هذه السنة موجودة مسبقاً.")
+            except Exception as e:
+                QMessageBox.critical(self, "Erreur", friendly_db_error(e))
 
     def activate_year(self, id):
-        """تنشيط السنة الدراسية - إزالة التنشيط من جميع السنوات الأخرى"""
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
@@ -923,7 +1012,7 @@ class AcademicSettingsWindow(QMainWindow):
                 self, "Succès", "Année scolaire activée avec succès! / تم تنشيط هذه السنة الدراسية!"
             )
         except Exception as e:
-            QMessageBox.critical(self, "Erreur", str(e))
+            QMessageBox.critical(self, "Erreur", friendly_db_error(e))
 
     def delete_year(self, id):
         if (
@@ -954,36 +1043,35 @@ class AcademicSettingsWindow(QMainWindow):
                     "Impossible de supprimer, données liées existantes. / توجد بيانات مرتبطة بهذه السنة.",
                 )
             except Exception as e:
-                QMessageBox.critical(self, "Erreur", str(e))
+                QMessageBox.critical(self, "Erreur", friendly_db_error(e))
 
-    # 2. Cycles
-    def save_cycle(self):
-        fr = self.txt_c_fr.text().strip()
-        ar = self.txt_c_ar.text().strip()
-        if not fr:
-            return
-        try:
-            db = DatabaseManager()
-            with db.get_connection() as conn:
-                AcademicRepository(conn).upsert_cycle(self.current_cycle_id, fr, ar)
-                conn.commit()
-            self.txt_c_fr.clear()
-            self.txt_c_ar.clear()
-            self.current_cycle_id = None
-            self.btn_c.setText("Ajouter")
-            self.refresh_all_data()
-        except Exception as e:
-            QMessageBox.critical(self, "Erreur", str(e))
+    # ── CRUD: Cycles ──────────────────────────────────────────────────────────
 
-    def edit_cycle(self, id):
-        db = DatabaseManager()
-        with db.get_connection() as conn:
-            res = AcademicRepository(conn).get_cycle(id)
-        if res:
-            self.txt_c_fr.setText(res[0])
-            self.txt_c_ar.setText(res[1])
-            self.current_cycle_id = id
-            self.btn_c.setText("Modifier")
+    def open_cycle_dialog(self, cycle_id=None):
+        data = None
+        if cycle_id:
+            # FIX 2: Wrap initial data fetch in try/except
+            try:
+                db = DatabaseManager()
+                with db.get_connection() as conn:
+                    res = AcademicRepository(conn).get_cycle(cycle_id)
+                if res:
+                    data = {"fr": res[0], "ar": res[1]}
+            except Exception as e:
+                QMessageBox.critical(self, "Erreur", friendly_db_error(e))
+                return
+
+        dlg = CycleDialog(data=data, parent=self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            values = dlg.get_values()
+            try:
+                db = DatabaseManager()
+                with db.get_connection() as conn:
+                    AcademicRepository(conn).upsert_cycle(cycle_id, values["fr"], values["ar"])
+                    conn.commit()
+                self.refresh_all_data()
+            except Exception as e:
+                QMessageBox.critical(self, "Erreur", friendly_db_error(e))
 
     def delete_cycle(self, id):
         if (
@@ -1003,44 +1091,44 @@ class AcademicSettingsWindow(QMainWindow):
                 self.refresh_all_data()
             except psycopg2.IntegrityError:
                 QMessageBox.warning(self, "Erreur", "Impossible de supprimer, des classes sont liées à ce cycle.")
+            # FIX 3: Added general Exception handler — previously missing, could crash silently
+            except Exception as e:
+                QMessageBox.critical(self, "Erreur", friendly_db_error(e))
 
-    # 3. Classes
-    def save_class(self):
-        cid = self.combo_cycles_cls.currentData()
-        fr = self.txt_cls_fr.text().strip()
-        ar = self.txt_cls_ar.text().strip()
-        order = self.sp_order.value()
-        if not cid or not fr:
-            return
+    # ── CRUD: Classes ─────────────────────────────────────────────────────────
 
-        try:
-            db = DatabaseManager()
-            with db.get_connection() as conn:
-                AcademicRepository(conn).upsert_class(self.current_class_id, cid, fr, ar, order)
-                conn.commit()
+    def open_class_dialog(self, class_id=None):
+        data = None
+        if class_id:
+            # FIX 2: Wrap initial data fetch in try/except
+            try:
+                db = DatabaseManager()
+                with db.get_connection() as conn:
+                    res = AcademicRepository(conn).get_class(class_id)
+                if res:
+                    data = {
+                        "cycle_id": res[0],
+                        "fr": res[1],
+                        "ar": res[2],
+                        "order": res[3] if len(res) > 3 else 1,
+                    }
+            except Exception as e:
+                QMessageBox.critical(self, "Erreur", friendly_db_error(e))
+                return
 
-            self.txt_cls_fr.clear()
-            self.txt_cls_ar.clear()
-            self.sp_order.setValue(1)
-            self.current_class_id = None
-            self.btn_cls.setText("Ajouter")
-            self.refresh_all_data()
-        except Exception as e:
-            QMessageBox.critical(self, "Erreur", str(e))
-
-    def edit_class(self, id):
-        db = DatabaseManager()
-        with db.get_connection() as conn:
-            res = AcademicRepository(conn).get_class(id)
-
-        if res:
-            idx = self.combo_cycles_cls.findData(res[0])
-            self.combo_cycles_cls.setCurrentIndex(idx)
-            self.txt_cls_fr.setText(res[1])
-            self.txt_cls_ar.setText(res[2])
-            self.sp_order.setValue(res[3])
-            self.current_class_id = id
-            self.btn_cls.setText("Modifier")
+        dlg = ClassDialog(cycles=self._cycles_cache, data=data, parent=self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            values = dlg.get_values()
+            try:
+                db = DatabaseManager()
+                with db.get_connection() as conn:
+                    AcademicRepository(conn).upsert_class(
+                        class_id, values["cycle_id"], values["fr"], values["ar"], values["order"]
+                    )
+                    conn.commit()
+                self.refresh_all_data()
+            except Exception as e:
+                QMessageBox.critical(self, "Erreur", friendly_db_error(e))
 
     def delete_class(self, id):
         if (
@@ -1060,46 +1148,45 @@ class AcademicSettingsWindow(QMainWindow):
                 self.refresh_all_data()
             except psycopg2.IntegrityError:
                 QMessageBox.warning(self, "Erreur", "Impossible, des étudiants sont liés à cette classe.")
+            # FIX 3: Added general Exception handler — previously missing, could crash silently
+            except Exception as e:
+                QMessageBox.critical(self, "Erreur", friendly_db_error(e))
 
-    # 4. Subjects
-    def save_subject(self):
-        cid = self.combo_cycles_sub.currentData()
-        fr = self.txt_sub_fr.text().strip()
-        ar = self.txt_sub_ar.text().strip()
-        coef = self.sp_coeff.value()
-        lang = self.combo_sub_lang.currentText()
-        if not cid or not fr:
-            return
+    # ── CRUD: Subjects ────────────────────────────────────────────────────────
 
-        try:
-            db = DatabaseManager()
-            with db.get_connection() as conn:
-                AcademicRepository(conn).upsert_subject(self.current_subject_id, cid, fr, ar, coef, lang)
-                conn.commit()
+    def open_subject_dialog(self, subject_id=None):
+        data = None
+        if subject_id:
+            # FIX 2: Wrap initial data fetch in try/except
+            try:
+                db = DatabaseManager()
+                with db.get_connection() as conn:
+                    res = AcademicRepository(conn).get_subject(subject_id)
+                if res:
+                    data = {
+                        "cycle_id": res[0],
+                        "fr": res[1],
+                        "ar": res[2],
+                        "coeff": float(res[3]) if len(res) > 3 else 1.0,
+                        "lang": res[4] if len(res) > 4 else "Français",
+                    }
+            except Exception as e:
+                QMessageBox.critical(self, "Erreur", friendly_db_error(e))
+                return
 
-            self.txt_sub_fr.clear()
-            self.txt_sub_ar.clear()
-            self.sp_coeff.setValue(1)
-            self.current_subject_id = None
-            self.btn_sub.setText("Ajouter Matière")
-            self.refresh_all_data()
-        except Exception as e:
-            QMessageBox.critical(self, "Erreur", str(e))
-
-    def edit_subject(self, id):
-        db = DatabaseManager()
-        with db.get_connection() as conn:
-            res = AcademicRepository(conn).get_subject(id)
-
-        if res:
-            idx = self.combo_cycles_sub.findData(res[0])
-            self.combo_cycles_sub.setCurrentIndex(idx)
-            self.txt_sub_fr.setText(res[1])
-            self.txt_sub_ar.setText(res[2])
-            self.sp_coeff.setValue(float(res[3]))
-            self.combo_sub_lang.setCurrentText(res[4] or "Français")
-            self.current_subject_id = id
-            self.btn_sub.setText("Modifier")
+        dlg = SubjectDialog(cycles=self._cycles_cache, data=data, parent=self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            values = dlg.get_values()
+            try:
+                db = DatabaseManager()
+                with db.get_connection() as conn:
+                    AcademicRepository(conn).upsert_subject(
+                        subject_id, values["cycle_id"], values["fr"], values["ar"], values["coeff"], values["lang"]
+                    )
+                    conn.commit()
+                self.refresh_all_data()
+            except Exception as e:
+                QMessageBox.critical(self, "Erreur", friendly_db_error(e))
 
     def delete_subject(self, id):
         if (
@@ -1119,8 +1206,11 @@ class AcademicSettingsWindow(QMainWindow):
                 self.refresh_all_data()
             except psycopg2.IntegrityError:
                 QMessageBox.warning(self, "Erreur", "Impossible, des notes existent pour cette matière.")
+            except Exception as e:
+                QMessageBox.critical(self, "Erreur", friendly_db_error(e))
 
-    # 5. Evaluations
+    # ── CRUD: Evaluations ─────────────────────────────────────────────────────
+
     def delete_evaluation(self, id):
         if (
             QMessageBox.question(
@@ -1139,8 +1229,11 @@ class AcademicSettingsWindow(QMainWindow):
                 self.refresh_all_data()
             except psycopg2.IntegrityError:
                 QMessageBox.warning(self, "Erreur", "Impossible, des notes existent pour cette évaluation.")
+            except Exception as e:
+                QMessageBox.critical(self, "Erreur", friendly_db_error(e))
 
-    # --- Other Methods ---
+    # ── School Info ───────────────────────────────────────────────────────────
+
     def save_school_info(self):
         republic = self.info_inputs['rep'].text()
         ia = self.info_inputs['ia'].text()
@@ -1167,7 +1260,7 @@ class AcademicSettingsWindow(QMainWindow):
                 conn.commit()
             QMessageBox.information(self, "Succès", "Informations enregistrées et mises à jour.")
         except Exception as e:
-            QMessageBox.critical(self, "Erreur", str(e))
+            QMessageBox.critical(self, "Erreur", friendly_db_error(e))
 
     def browse_logo(self):
         file_path, _ = QFileDialog.getOpenFileName(
@@ -1198,11 +1291,8 @@ class AcademicSettingsWindow(QMainWindow):
                         "Veuillez d'abord définir les dates de début et de fin de l'année scolaire. / يرجى تحديد تاريخ البداية والنهاية للسنة أولاً.",
                     )
                     return
-                is_elementary = (
-                    "elem" in cycle_name
-                    or "prim" in cycle_name
-                    or "\u0625\u0628\u062a\u062f\u0627\u0626\u064a" in cycle_name
-                )
+                # FIX 8: Use literal Arabic string instead of unreadable unicode escape
+                is_elementary = "elem" in cycle_name or "prim" in cycle_name or "إبتدائي" in cycle_name
                 repo.generate_periods_and_assessments(
                     year_id,
                     cycle_id,
@@ -1214,9 +1304,11 @@ class AcademicSettingsWindow(QMainWindow):
 
             self.refresh_all_data()
             self.load_period_ranges_editor(year_id, cycle_id)
-            QMessageBox.information(self, "Succ\u00e8s", "Configuration g\u00e9n\u00e9r\u00e9e avec succ\u00e8s.")
+            QMessageBox.information(self, "Succès", "Configuration générée avec succès.")
         except Exception as e:
-            QMessageBox.critical(self, "Erreur", str(e))
+            QMessageBox.critical(self, "Erreur", friendly_db_error(e))
+
+    # ── Master refresh ────────────────────────────────────────────────────────
 
     def refresh_all_data(self):
         try:
@@ -1254,7 +1346,21 @@ class AcademicSettingsWindow(QMainWindow):
                 # Years
                 self.table_years.setRowCount(0)
                 self.combo_year_gen.clear()
-                for r in repo.list_years():
+                # FIX 4: Rebuild year date cache on each refresh
+                self._year_date_cache = {}
+
+                years_data = repo.list_years()
+                for r in years_data:
+                    # Populate year date cache — r = (id, label, is_active, start, end)
+                    if r[3] and r[4]:
+                        try:
+                            self._year_date_cache[r[0]] = (
+                                date.fromisoformat(str(r[3])),
+                                date.fromisoformat(str(r[4])),
+                            )
+                        except (ValueError, TypeError):
+                            pass
+
                     idx = self.table_years.rowCount()
                     self.table_years.insertRow(idx)
                     self.table_years.setItem(idx, 0, QTableWidgetItem(str(r[0])))
@@ -1275,13 +1381,16 @@ class AcademicSettingsWindow(QMainWindow):
                     layout.setSpacing(5)
 
                     colors = ThemeManager.get_colors()
-                    btn_activate = QPushButton("Activer")
+                    is_active = bool(r[2])
+                    btn_activate = QPushButton("✓ Actif" if is_active else "Activer")
                     btn_activate.setFixedHeight(28)
                     btn_activate.setCursor(Qt.CursorShape.PointingHandCursor)
+                    # FIX 5: Disable the button for already-active years to prevent no-op DB calls
+                    btn_activate.setEnabled(not is_active)
                     btn_activate.setStyleSheet(
-                        f"background-color: {colors.SUCCESS}; color: white; border-radius: 4px; border: none; font-weight: bold;"
-                        if r[2]
-                        else f"background-color: {colors.BORDER}; color: {colors.TEXT_SECONDARY}; border-radius: 4px; border: none;"
+                        f"background-color: {colors.SUCCESS}; color: white; border-radius: 6px; border: none; font-weight: bold;"
+                        if is_active
+                        else f"background-color: {colors.BORDER}; color: {colors.TEXT_SECONDARY}; border-radius: 6px; border: none;"
                     )
                     btn_activate.clicked.connect(lambda checked, id=r[0]: self.activate_year(id))
                     layout.addWidget(btn_activate)
@@ -1290,16 +1399,16 @@ class AcademicSettingsWindow(QMainWindow):
                     btn_edit.setFixedSize(28, 28)
                     btn_edit.setCursor(Qt.CursorShape.PointingHandCursor)
                     btn_edit.setStyleSheet(
-                        f"background-color: {colors.WARNING}; color: white; border-radius: 4px; border: none;"
+                        f"background-color: {colors.WARNING}; color: white; border-radius: 6px; border: none;"
                     )
-                    btn_edit.clicked.connect(lambda checked, id=r[0]: self.edit_year(id))
+                    btn_edit.clicked.connect(lambda checked, id=r[0]: self.open_year_dialog(year_id=id))
                     layout.addWidget(btn_edit)
 
                     btn_del = QPushButton("✕")
                     btn_del.setFixedSize(28, 28)
                     btn_del.setCursor(Qt.CursorShape.PointingHandCursor)
                     btn_del.setStyleSheet(
-                        f"background-color: {colors.DANGER}; color: white; border-radius: 4px; border: none;"
+                        f"background-color: {colors.DANGER}; color: white; border-radius: 6px; border: none;"
                     )
                     btn_del.clicked.connect(lambda checked, id=r[0]: self.delete_year(id))
                     layout.addWidget(btn_del)
@@ -1310,20 +1419,21 @@ class AcademicSettingsWindow(QMainWindow):
 
                 # Cycles
                 self.table_cycles.setRowCount(0)
-                self.combo_cycles_cls.clear()
-                self.combo_cycles_sub.clear()
+                self._cycles_cache = []
                 self.combo_cycle_gen.clear()
-                for r in repo.list_cycles():
+                cycles_data = repo.list_cycles()
+                for r in cycles_data:
                     idx = self.table_cycles.rowCount()
                     self.table_cycles.insertRow(idx)
                     self.table_cycles.setItem(idx, 0, QTableWidgetItem(str(r[0])))
                     self.table_cycles.setItem(idx, 1, QTableWidgetItem(self.safe_text(r[1])))
                     self.table_cycles.setItem(idx, 2, QTableWidgetItem(self.safe_text(r[2])))
-                    self.add_action_buttons(self.table_cycles, idx, r[0], self.edit_cycle, self.delete_cycle)
+                    self.add_action_buttons(
+                        self.table_cycles, idx, r[0], lambda id: self.open_cycle_dialog(cycle_id=id), self.delete_cycle
+                    )
 
                     cycle_label = self.safe_text(r[1])
-                    self.combo_cycles_cls.addItem(cycle_label, r[0])
-                    self.combo_cycles_sub.addItem(cycle_label, r[0])
+                    self._cycles_cache.append((r[0], cycle_label))
                     self.combo_cycle_gen.addItem(cycle_label, r[0])
 
                 # Classes
@@ -1335,7 +1445,9 @@ class AcademicSettingsWindow(QMainWindow):
                     self.table_classes.setItem(idx, 1, QTableWidgetItem(self.safe_text(r[1])))
                     self.table_classes.setItem(idx, 2, QTableWidgetItem(self.safe_text(r[2])))
                     self.table_classes.setItem(idx, 3, QTableWidgetItem(self.safe_text(r[3])))
-                    self.add_action_buttons(self.table_classes, idx, r[0], self.edit_class, self.delete_class)
+                    self.add_action_buttons(
+                        self.table_classes, idx, r[0], lambda id: self.open_class_dialog(class_id=id), self.delete_class
+                    )
 
                 # Subjects
                 self.table_subjects.setRowCount(0)
@@ -1344,9 +1456,15 @@ class AcademicSettingsWindow(QMainWindow):
                     self.table_subjects.insertRow(idx)
                     for c, v in enumerate(r):
                         self.table_subjects.setItem(idx, c, QTableWidgetItem(self.safe_text(v)))
-                    self.add_action_buttons(self.table_subjects, idx, r[0], self.edit_subject, self.delete_subject)
+                    self.add_action_buttons(
+                        self.table_subjects,
+                        idx,
+                        r[0],
+                        lambda id: self.open_subject_dialog(subject_id=id),
+                        self.delete_subject,
+                    )
 
-                # Evals
+                # Evaluations (r[5]=type_code is internal, not displayed; r[6]=weight shown as "Poids")
                 self.table_evals.setRowCount(0)
                 for r in repo.list_evaluations():
                     idx = self.table_evals.rowCount()
@@ -1359,8 +1477,26 @@ class AcademicSettingsWindow(QMainWindow):
                     self.table_evals.setItem(idx, 5, QTableWidgetItem(self.safe_text(r[6])))
                     self.add_action_buttons(self.table_evals, idx, r[0], None, self.delete_evaluation)
 
+                # FIX 6: Load KPI stats within the same connection — eliminates the second DB connection on init
+                try:
+                    cursor = conn.cursor()
+                    cursor.execute("SELECT COUNT(*) FROM AcademicYears")
+                    kpi_years = cursor.fetchone()[0] or 0
+                    cursor.execute("SELECT COUNT(*) FROM Classes")
+                    kpi_classes = cursor.fetchone()[0] or 0
+                    cursor.execute("SELECT COUNT(*) FROM Subjects")
+                    kpi_subjects = cursor.fetchone()[0] or 0
+                    cursor.execute("SELECT COUNT(*) FROM Cycles")
+                    kpi_cycles = cursor.fetchone()[0] or 0
+                    self._stat_years.set_value(str(kpi_years))
+                    self._stat_classes.set_value(str(kpi_classes))
+                    self._stat_subjects.set_value(str(kpi_subjects))
+                    self._stat_cycles.set_value(str(kpi_cycles))
+                except Exception as e:
+                    AppLogger.error("AcademicSettingsWindow", f"Erreur KPI stats: {e}")
+
         except Exception as e:
-            QMessageBox.critical(self, "Erreur de chargement", str(e))
+            QMessageBox.critical(self, "Erreur de chargement", friendly_db_error(e))
 
 
 if __name__ == "__main__":

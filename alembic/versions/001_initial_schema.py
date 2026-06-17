@@ -313,10 +313,12 @@ def upgrade() -> None:
             notes TEXT,
             year_id INTEGER,
             period_id INTEGER,
+            timetable_slot_id INTEGER,
             recorded_by TEXT,
             FOREIGN KEY (student_id) REFERENCES Students(id) ON DELETE CASCADE,
             FOREIGN KEY (year_id) REFERENCES AcademicYears(id),
-            FOREIGN KEY (period_id) REFERENCES AcademicPeriods(id)
+            FOREIGN KEY (period_id) REFERENCES AcademicPeriods(id),
+            FOREIGN KEY (timetable_slot_id) REFERENCES Timetable(id) ON DELETE SET NULL
         )
         """
     )
@@ -364,7 +366,9 @@ def upgrade() -> None:
             observation TEXT,
             year_id INTEGER,
             period_id INTEGER,
-            FOREIGN KEY (student_id) REFERENCES Students(id)
+            timetable_slot_id INTEGER,
+            FOREIGN KEY (student_id) REFERENCES Students(id),
+            FOREIGN KEY (timetable_slot_id) REFERENCES Timetable(id) ON DELETE SET NULL
         )
         """
     )

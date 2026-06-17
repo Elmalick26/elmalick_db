@@ -1,4 +1,4 @@
-"""
+﻿"""
 import_wizard.py — معالج الاستيراد الجماعي للطلاب من Excel/CSV
 
 الخطوات:
@@ -22,8 +22,10 @@ import os
 from datetime import date, datetime
 
 from PyQt6.QtCore import Qt, QThread, pyqtSignal
-from PyQt6.QtGui import QColor, QFont
-from PyQt6.QtWidgets import (
+
+# FIX 4: Removed QColor — never used; colors come from ThemeManager as strings.
+from PyQt6.QtGui import QFont
+from PyQt6.QtWidgets import (  # FIX 4: Removed QSizePolicy — never instantiated anywhere in the file.
     QComboBox,
     QDialog,
     QFileDialog,
@@ -35,7 +37,6 @@ from PyQt6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QScrollArea,
-    QSizePolicy,
     QTableWidget,
     QTableWidgetItem,
     QTextEdit,
@@ -515,6 +516,10 @@ class ImportWizard(QDialog):
                 errors_found += 1
                 self._log(f"❌  Ligne {row_idx + 2}: {format_errors(errs)}", color="#EF4444")
             else:
+                # FIX 2: Pop the temporary key before storing — _birth_date_obj
+                # was set for validate_student() only. If left in data, it
+                # propagates to repo.insert_student() and causes a DB column error.
+                data.pop("_birth_date_obj", None)
                 self._validated_rows.append(data)
 
         valid = len(self._validated_rows)
@@ -566,22 +571,33 @@ class ImportWizard(QDialog):
         self.progress_bar.setValue(0)
         self.log_text.clear()
 
-        # Construire la table de correspondance nom_classe → id pour l'affectation par ligne
+        # FIX 3: Build classes_map from combo_class (already populated by
+        # _load_classes_and_years) — eliminates a redundant DB round-trip.
         classes_map: dict[str, int] = {}
-        try:
-            _db = DatabaseManager()
-            with _db.get_connection() as _conn:
-                _repo = ImportWizardRepository(_conn)
-                for cid, cname in _repo.list_classes():
-                    classes_map[cname.strip().lower()] = cid
-        except Exception as _e:
-            AppLogger.error("ImportWizard", f"Chargement classes (map): {_e}")
+        for i in range(self.combo_class.count()):
+            cid = self.combo_class.itemData(i)
+            cname = self.combo_class.itemText(i)
+            if cid:
+                classes_map[cname.strip().lower()] = cid
 
         self._worker = ImportWorker(self._validated_rows, class_id, year_id, self.actor, classes_map)
         self._worker.progress.connect(self.progress_bar.setValue)
         self._worker.row_result.connect(self._on_row_result)
         self._worker.finished_sig.connect(self._on_import_finished)
         self._worker.start()
+
+    def closeEvent(self, event):
+        """Stop the import worker if the dialog is closed mid-import.
+
+        Unlike the embedded module windows, this is a standalone QDialog opened
+        via exec(), so its closeEvent does fire on close.
+        """
+        worker = getattr(self, "_worker", None)
+        if worker is not None and worker.isRunning():
+            worker.requestInterruption()
+            worker.quit()
+            worker.wait(3000)
+        super().closeEvent(event)
 
     def _on_row_result(self, idx: int, success: bool, msg: str):
         row_data = self._validated_rows[idx] if idx < len(self._validated_rows) else {}
@@ -616,15 +632,15 @@ class ImportWizard(QDialog):
                 writer.writerow(headers)
                 writer.writerow(
                     [
-                        "Ahmed",
-                        "Diallo",
-                        "أحمد",
-                        "ديالو",
+                        "Malick",
+                        "Diouf",
+                        "مالك",
+                        "ديوف",
                         "2010-05-15",
                         "Dakar",
                         "M",
                         "Rue 10 Dakar",
-                        "Moussa Diallo",
+                        "Chayba Diouf",
                         "771234567",
                         "",
                         "",
@@ -633,6 +649,8 @@ class ImportWizard(QDialog):
                 )
             QMessageBox.information(self, "Modèle enregistré", f"Modèle sauvegardé:\n{path}")
         except Exception as e:
+            # FIX 1: friendly_db_error was never defined or imported — calling it
+            # raised NameError, hiding the original exception entirely.
             QMessageBox.critical(self, "Erreur", str(e))
 
     # ---------------------------------------------------------------- Helpers

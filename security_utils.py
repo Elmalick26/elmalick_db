@@ -4,6 +4,7 @@ Security & Cryptography Utilities
 """
 
 import hashlib  # للتوافق مع تجزئة SHA256 القديمة فقط
+import hmac
 import secrets
 
 import bcrypt
@@ -43,7 +44,10 @@ def verify_password(plain_password: str, stored_hash: str) -> bool:
     else:
         # Legacy SHA256 check
         legacy_hash = hashlib.sha256(plain_password.encode('utf-8')).hexdigest()
-        return legacy_hash == stored_hash
+        # FIX 1: Use hmac.compare_digest() instead of == — plain string comparison
+        # short-circuits on the first differing byte, leaking timing information
+        # about how many leading characters match the stored hash.
+        return hmac.compare_digest(legacy_hash, stored_hash)
 
 
 def needs_rehash(stored_hash: str) -> bool:
@@ -153,5 +157,8 @@ def decrypt_value(token: str) -> str:
         from cryptography.fernet import Fernet, InvalidToken
 
         return Fernet(_get_fernet_key()).decrypt(token.encode("utf-8")).decode("utf-8")
-    except (Exception,):  # InvalidToken or key mismatch → treat as plain text legacy value
+    # FIX 2: Replaced `except (Exception,):` with `except Exception:` — the
+    # trailing-comma tuple form is valid Python but misleading (readers expect
+    # multiple exception types). InvalidToken is a subclass of Exception either way.
+    except Exception:  # InvalidToken or key mismatch → treat as plain text legacy value
         return token

@@ -44,16 +44,18 @@ from pdf_report_style import (
 from print_export_service import get_report_output_mode, output_pdf
 from repositories.analytics_repo import AnalyticsRepository
 from repositories.finance_repo import FinanceRepository
-from ui_styles import Colors, ThemeManager, apply_shadow_to_widget, get_card_style, get_tabs_style
+from ui_components import BaseWindow, create_card, styled_button, styled_combo
+from ui_styles import Colors, ThemeManager, get_tabs_style
 
 ADVANCED_COMPREHENSIVE_PDF_MODE = get_report_output_mode("advanced_comprehensive_pdf_mode", "save")
+
 
 # --- Worker Thread for Heavy Report Generation ---
 
 
 class ReportWorker(QThread):
     progress = pyqtSignal(int)
-    finished = pyqtSignal(str)  # Success message or file path
+    finished = pyqtSignal(str)
     error = pyqtSignal(str)
 
     def __init__(self, report_type, params):
@@ -61,7 +63,6 @@ class ReportWorker(QThread):
         self.report_type = report_type
         self.params = params
 
-    # ===== تم التعديل: جلب أعمدة الجدول بالطريقة القياسية لـ PostgreSQL =====
     def _student_name_sql_expr(self, columns: set, alias='s'):
         parts = []
         if {'first_name_fr', 'last_name_fr'}.issubset(columns):
@@ -96,7 +97,6 @@ class ReportWorker(QThread):
             self.error.emit(str(e))
 
     def generate_financial_excel(self):
-        """Generate comprehensive financial Excel report"""
         wb = Workbook()
         ws = wb.active
         ws.title = "Rapport Financier"
@@ -185,10 +185,8 @@ class ReportWorker(QThread):
             ws.column_dimensions['B'].width = 15
             ws.column_dimensions['C'].width = 20
 
-        safe_period = selected_period.encode('ascii', 'ignore').decode('ascii')
-        safe_period = safe_period.replace(" ", "_").replace("'", "").replace("/", "-") or "periode"
-        filename = f"Rapport_Financier_{safe_period}_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.xlsx"
-        filepath = (self.params.get("output_path") if self.params else None) or os.path.join(os.getcwd(), filename)
+        # FIX 7: Worker always receives output_path from the dialog — no fallback filename needed
+        filepath = self.params.get("output_path")
         wb.save(filepath)
 
         self.progress.emit(100)
@@ -202,18 +200,9 @@ class ReportWorker(QThread):
         header_fill = PatternFill(start_color="1E293B", end_color="1E293B", fill_type="solid")
         header_font = Font(color="FFFFFF", bold=True)
 
-        db = DatabaseManager()
-        with db.get_connection() as conn:
-            repo = AnalyticsRepository(conn)
-            active_year_id, active_year_label = repo.get_active_year_context()
-            student_cols = repo.get_student_columns()
-            student_name_expr = self._student_name_sql_expr(student_cols, alias='s')
-
         ws['A1'] = "LISTE DES ÉTUDIANTS"
         ws['A1'].font = Font(bold=True, size=16, color="1E293B")
         ws.merge_cells('A1:L1')
-        ws['A2'] = f"Année scolaire: {active_year_label}"
-        ws.merge_cells('A2:L2')
 
         headers = [
             "ID",
@@ -236,13 +225,23 @@ class ReportWorker(QThread):
 
         self.progress.emit(30)
 
-        birth_place_expr = "s.birth_place" if "birth_place" in student_cols else "''"
-        parent_expr = "s.parent_name" if "parent_name" in student_cols else "''"
-        phone_expr = "s.phone" if "phone" in student_cols else "''"
-        address_expr = "s.address" if "address" in student_cols else "''"
-        enroll_expr = "s.registration_date" if "registration_date" in student_cols else "''"
-
+        # FIX 4: Consolidate two separate DB connections into one block
+        db = DatabaseManager()
         with db.get_connection() as conn:
+            repo = AnalyticsRepository(conn)
+            active_year_id, active_year_label = repo.get_active_year_context()
+            student_cols = repo.get_student_columns()
+            student_name_expr = self._student_name_sql_expr(student_cols, alias='s')
+
+            ws['A2'] = f"Année scolaire: {active_year_label}"
+            ws.merge_cells('A2:L2')
+
+            birth_place_expr = "s.birth_place" if "birth_place" in student_cols else "''"
+            parent_expr = "s.parent_name" if "parent_name" in student_cols else "''"
+            phone_expr = "s.phone" if "phone" in student_cols else "''"
+            address_expr = "s.address" if "address" in student_cols else "''"
+            enroll_expr = "s.registration_date" if "registration_date" in student_cols else "''"
+
             cursor = conn.cursor()
             if active_year_id:
                 cursor.execute(
@@ -264,7 +263,7 @@ class ReportWorker(QThread):
                     JOIN Classes c ON scn.class_id = c.id
                     WHERE s.status='Active'
                     ORDER BY c.sort_order, COALESCE(scn.class_number, 9999), name
-                """,
+                    """,
                     (active_year_id,),
                 )
             else:
@@ -285,7 +284,7 @@ class ReportWorker(QThread):
                     FROM Students s
                     WHERE s.status='Active'
                     ORDER BY name
-                """
+                    """
                 )
             rows = cursor.fetchall()
 
@@ -309,8 +308,7 @@ class ReportWorker(QThread):
         ws.column_dimensions['K'].width = 16
         ws.column_dimensions['L'].width = 12
 
-        filename = f"Liste_Etudiants_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.xlsx"
-        filepath = (self.params.get("output_path") if self.params else None) or os.path.join(os.getcwd(), filename)
+        filepath = self.params.get("output_path")
         wb.save(filepath)
 
         self.progress.emit(100)
@@ -372,8 +370,7 @@ class ReportWorker(QThread):
         for col, width in zip(['A', 'B', 'C', 'D', 'E', 'F', 'G'], [24, 15, 12, 12, 12, 16, 14]):
             ws.column_dimensions[col].width = width
 
-        filename = f"Rapport_Assiduite_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.xlsx"
-        filepath = (self.params.get("output_path") if self.params else None) or os.path.join(os.getcwd(), filename)
+        filepath = self.params.get("output_path")
         wb.save(filepath)
 
         self.progress.emit(100)
@@ -428,22 +425,18 @@ class ReportWorker(QThread):
         for col, width in zip(['A', 'B', 'C', 'D', 'E', 'F'], [24, 15, 12, 10, 12, 10]):
             ws.column_dimensions[col].width = width
 
-        filename = f"Rapport_Notes_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.xlsx"
-        filepath = (self.params.get("output_path") if self.params else None) or os.path.join(os.getcwd(), filename)
+        filepath = self.params.get("output_path")
         wb.save(filepath)
 
         self.progress.emit(100)
         return filepath
 
 
-class AdvancedReportsWindow(QMainWindow):
+class AdvancedReportsWindow(BaseWindow):
     def __init__(self):
-        super().__init__()
-        self.setWindowTitle("Rapports Avancés / التقارير المتقدمة")
-        self.setMinimumSize(1100, 700)
-
-        ThemeManager.apply_theme(self)
+        super().__init__("Rapports Avancés / التقارير المتقدمة", min_width=1100, min_height=700)
         self.worker = None
+        self._export_buttons: list[QPushButton] = []
         self.init_ui()
 
     def _sanitize_latin(self, text):
@@ -476,10 +469,8 @@ class AdvancedReportsWindow(QMainWindow):
             total_expenses = repo.get_total_expense_by_period(selected_period)
             balance = total_income - total_expenses
 
-            if active_year_id:
-                stats = AnalyticsRepository(conn).get_comprehensive_stats(active_year_id)
-            else:
-                stats = AnalyticsRepository(conn).get_comprehensive_stats(None)
+            # FIX 5: get_comprehensive_stats handles None internally — no need for if/else here
+            stats = repo.get_comprehensive_stats(active_year_id)
             active_students = stats["active_students"]
             total_classes = stats["total_classes"]
             presents = stats["presents"]
@@ -521,13 +512,10 @@ class AdvancedReportsWindow(QMainWindow):
         return pdf
 
     def init_ui(self):
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
-        layout = QVBoxLayout(central_widget)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(20)
+        self.main_layout.setContentsMargins(20, 20, 20, 20)
+        self.main_layout.setSpacing(20)
+        layout = self.main_layout
 
-        # Header
         header_frame = QFrame()
         colors = ThemeManager.get_colors()
 
@@ -569,7 +557,6 @@ class AdvancedReportsWindow(QMainWindow):
 
         layout.addWidget(header_frame)
 
-        # Tabs
         tabs = QTabWidget()
         tabs.setStyleSheet(get_tabs_style())
 
@@ -579,47 +566,22 @@ class AdvancedReportsWindow(QMainWindow):
 
         layout.addWidget(tabs)
 
-    def create_card(self):
-        frame = QFrame()
-        frame.setStyleSheet(get_card_style())
-        apply_shadow_to_widget(frame)
-        return frame
-
-    def styled_combo(self):
-        combo = QComboBox()
-        colors = ThemeManager.get_colors()
-        combo.setStyleSheet(
-            f"""
-            QComboBox {{ padding: 6px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }}
-            QComboBox:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}
-        """
-        )
-        combo.setMinimumHeight(38)
-        return combo
-
     def create_financial_charts_tab(self):
         widget = QWidget()
         layout = QVBoxLayout(widget)
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(15)
 
-        control_card = self.create_card()
-        controls_layout = QHBoxLayout(control_card)
-        controls_layout.setContentsMargins(15, 15, 15, 15)
+        control_card, controls_layout = create_card(layout_class=QHBoxLayout, with_shadow=True)
 
         controls_layout.addWidget(QLabel("Période:"))
-        self.period_combo = self.styled_combo()
+        self.period_combo = styled_combo()
         self.period_combo.addItems(["6 derniers mois", "12 derniers mois", "Année en cours"])
         controls_layout.addWidget(self.period_combo)
 
-        btn_generate = QPushButton("🔄 Actualiser Graphique")
-        btn_generate.setCursor(Qt.CursorShape.PointingHandCursor)
         colors = ThemeManager.get_colors()
-        btn_generate.setStyleSheet(
-            f"""
-            QPushButton {{ background-color: {colors.PRIMARY}; color: white; padding: 8px 20px; border-radius: 6px; font-weight: bold; border: none; }}
-            QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}
-        """
+        btn_generate = styled_button(
+            "🔄 Actualiser Graphique", bg_color=colors.PRIMARY, hover_color=colors.PRIMARY_HOVER
         )
         btn_generate.clicked.connect(self.generate_financial_chart)
         controls_layout.addWidget(btn_generate)
@@ -627,8 +589,7 @@ class AdvancedReportsWindow(QMainWindow):
 
         layout.addWidget(control_card)
 
-        chart_card = self.create_card()
-        c_layout = QVBoxLayout(chart_card)
+        chart_card, c_layout = create_card(with_shadow=True)
 
         self.financial_figure = Figure(figsize=(10, 6))
         self.financial_figure.patch.set_facecolor(colors.BG_CARD)
@@ -644,20 +605,31 @@ class AdvancedReportsWindow(QMainWindow):
         self.financial_figure.clear()
         ax = self.financial_figure.add_subplot(111)
         selected_period = self.period_combo.currentText() if hasattr(self, 'period_combo') else "12 derniers mois"
+        colors = ThemeManager.get_colors()
 
-        db = DatabaseManager()
-        with db.get_connection() as conn:
-            repo = AnalyticsRepository(conn)
-            income_data = repo.get_monthly_income_totals(selected_period)
-            expense_data = repo.get_monthly_expense_totals(selected_period)
+        # FIX 2: Wrap DB call in try/except to prevent UI thread crash on DB error
+        try:
+            db = DatabaseManager()
+            with db.get_connection() as conn:
+                repo = AnalyticsRepository(conn)
+                income_data = repo.get_monthly_income_totals(selected_period)
+                expense_data = repo.get_monthly_expense_totals(selected_period)
+        except Exception as e:
+            AppLogger.error("AdvancedReports", f"Erreur chargement graphique financier: {e}")
+            ax.text(
+                0.5, 0.5, "Erreur de chargement des données", ha='center', va='center', fontsize=13, color=colors.DANGER
+            )
+            ax.axis('off')
+            self.financial_canvas.draw()
+            return
 
-        income_dict = {item[0]: item[1] or 0 for item in income_data}
-        expense_dict = {item[0]: item[1] or 0 for item in expense_data}
+        # FIX 1: Use item[2] (total amount) not item[1] (transaction count)
+        # get_monthly_income_totals returns (month_str, COUNT, TOTAL) — chart needs TOTAL
+        income_dict = {item[0]: item[2] or 0 for item in income_data}
+        expense_dict = {item[0]: item[2] or 0 for item in expense_data}
         months = sorted(set(income_dict.keys()) | set(expense_dict.keys()))
         income = [income_dict.get(month, 0) for month in months]
         expenses = [expense_dict.get(month, 0) for month in months]
-
-        colors = ThemeManager.get_colors()
 
         if not months:
             ax.text(
@@ -700,31 +672,23 @@ class AdvancedReportsWindow(QMainWindow):
         layout.setContentsMargins(20, 20, 20, 20)
         layout.setSpacing(15)
 
-        control_card = self.create_card()
-        controls_layout = QHBoxLayout(control_card)
-        controls_layout.setContentsMargins(15, 15, 15, 15)
+        control_card, controls_layout = create_card(layout_class=QHBoxLayout, with_shadow=True)
 
         controls_layout.addWidget(QLabel("Classe:"))
-        self.class_combo = self.styled_combo()
+        self.class_combo = styled_combo()
         self.load_classes_combo()
         controls_layout.addWidget(self.class_combo)
 
         colors = ThemeManager.get_colors()
-        btn_analyze = QPushButton("📈 Analyser Performance")
-        btn_analyze.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_analyze.setStyleSheet(
-            f"""
-            QPushButton {{ background-color: {colors.SUCCESS}; color: white; padding: 8px 20px; border-radius: 6px; font-weight: bold; border: none; }}
-            QPushButton:hover {{ background-color: {colors.SUCCESS_HOVER}; }}
-        """
+        btn_analyze = styled_button(
+            "📈 Analyser Performance", bg_color=colors.SUCCESS, hover_color=colors.SUCCESS_HOVER
         )
         btn_analyze.clicked.connect(self.generate_student_chart)
         controls_layout.addWidget(btn_analyze)
         controls_layout.addStretch()
         layout.addWidget(control_card)
 
-        chart_card = self.create_card()
-        c_layout = QVBoxLayout(chart_card)
+        chart_card, c_layout = create_card(with_shadow=True)
         self.student_figure = Figure(figsize=(10, 6))
         self.student_figure.patch.set_facecolor(colors.BG_CARD)
         self.student_canvas = FigureCanvas(self.student_figure)
@@ -753,17 +717,27 @@ class AdvancedReportsWindow(QMainWindow):
             self.student_canvas.draw()
             return
 
-        db = DatabaseManager()
+        # FIX 2: Wrap DB call in try/except to prevent UI thread crash on DB error
         grades = []
         max_score = 20
         active_year_label = "N/A"
-        with db.get_connection() as conn:
-            repo = AnalyticsRepository(conn)
-            active_year_id, active_year_label = repo.get_active_year_context()
-            max_score = repo.get_class_max_score(class_id)
+        try:
+            db = DatabaseManager()
+            with db.get_connection() as conn:
+                repo = AnalyticsRepository(conn)
+                active_year_id, active_year_label = repo.get_active_year_context()
+                max_score = repo.get_class_max_score(class_id)
 
-            if active_year_id:
-                grades = repo.get_grades_for_class(class_id, active_year_id)
+                if active_year_id:
+                    grades = repo.get_grades_for_class(class_id, active_year_id)
+        except Exception as e:
+            AppLogger.error("AdvancedReports", f"Erreur chargement graphique étudiant: {e}")
+            ax.text(
+                0.5, 0.5, "Erreur de chargement des données", ha='center', va='center', fontsize=13, color=colors.DANGER
+            )
+            ax.axis('off')
+            self.student_canvas.draw()
+            return
 
         if not grades:
             ax.text(
@@ -844,18 +818,21 @@ class AdvancedReportsWindow(QMainWindow):
         )
         btn_financial.clicked.connect(lambda: self.export_excel("financial"))
         grid.addWidget(btn_financial, 0, 0)
+        self._export_buttons.append(btn_financial)
 
         btn_students = self.create_export_button(
             "👨‍🎓 Liste des Étudiants", "Export de tous les élèves inscrits", colors.PRIMARY
         )
         btn_students.clicked.connect(lambda: self.export_excel("students"))
         grid.addWidget(btn_students, 0, 1)
+        self._export_buttons.append(btn_students)
 
         btn_attendance = self.create_export_button(
             "📅 Rapport d'Assiduité", "Statistiques de présence par classe", colors.WARNING
         )
         btn_attendance.clicked.connect(lambda: self.export_excel("attendance"))
         grid.addWidget(btn_attendance, 1, 0)
+        self._export_buttons.append(btn_attendance)
 
         secondary_color = colors.SECONDARY if hasattr(colors, "SECONDARY") else colors.PRIMARY
         btn_grades = self.create_export_button(
@@ -863,6 +840,7 @@ class AdvancedReportsWindow(QMainWindow):
         )
         btn_grades.clicked.connect(lambda: self.export_excel("grades"))
         grid.addWidget(btn_grades, 1, 1)
+        self._export_buttons.append(btn_grades)
 
         btn_comprehensive_pdf = self.create_export_button(
             "📄 Rapport PDF Global", "Résumé financier et académique avec en-tête officiel", colors.PRIMARY
@@ -928,6 +906,11 @@ class AdvancedReportsWindow(QMainWindow):
 
         return btn
 
+    def _set_export_buttons_enabled(self, enabled: bool):
+        """FIX 8: Lock all export buttons during generation to prevent concurrent workers."""
+        for btn in self._export_buttons:
+            btn.setEnabled(enabled)
+
     def export_excel(self, report_type):
         default_name = f"Rapport_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.xlsx"
         params = {}
@@ -964,6 +947,12 @@ class AdvancedReportsWindow(QMainWindow):
 
         AppLogger.info("AdvancedReports", f"Début de l'export Excel: {report_type}")
 
+        # FIX 3: Stop any previously running worker before starting a new one
+        # to prevent resource leaks and double-signal firing
+        if self.worker and self.worker.isRunning():
+            self.worker.quit()
+            self.worker.wait(3000)
+
         if report_type in ["financial", "students", "attendance", "grades"]:
             self.worker = ReportWorker(f"excel_{report_type}", params)
         else:
@@ -975,20 +964,34 @@ class AdvancedReportsWindow(QMainWindow):
         self.worker.progress.connect(self.progress_bar.setValue)
         self.worker.finished.connect(self.on_export_finished)
         self.worker.error.connect(self.on_export_error)
+        # FIX 8: Disable buttons while the worker is running
+        self._set_export_buttons_enabled(False)
         self.worker.start()
+
+    def stop_background_workers(self) -> None:
+        """Stop a running export worker before the shared DB pool is closed.
+
+        This window is embedded in the main dashboard, so its own closeEvent
+        never fires — the main window calls this on application shutdown.
+        """
+        worker = getattr(self, "worker", None)
+        if worker is not None and worker.isRunning():
+            worker.requestInterruption()
+            worker.quit()
+            worker.wait(3000)
 
     def export_comprehensive_pdf(self):
         selected_period = self.period_combo.currentText() if hasattr(self, 'period_combo') else "12 derniers mois"
         try:
             pdf = self._build_comprehensive_pdf(selected_period)
-            mode = get_report_output_mode("advanced_comprehensive_pdf_mode", ADVANCED_COMPREHENSIVE_PDF_MODE)
             AppLogger.info("AdvancedReports", "Génération du PDF compréhensif terminée")
 
+            # FIX 6: Use the already-resolved module-level constant directly
             output_pdf(
                 pdf,
                 self,
                 default_name=f"Rapport_Complet_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}.pdf",
-                mode=mode,
+                mode=ADVANCED_COMPREHENSIVE_PDF_MODE,
                 dialog_title="Enregistrer le rapport PDF",
                 success_save_message="Rapport PDF généré avec succès.",
                 success_print_message="Rapport PDF envoyé à l'imprimante.",
@@ -999,6 +1002,8 @@ class AdvancedReportsWindow(QMainWindow):
 
     def on_export_finished(self, filepath):
         self.progress_bar.hide()
+        # FIX 8: Re-enable buttons when export completes
+        self._set_export_buttons_enabled(True)
         colors = ThemeManager.get_colors()
         self.status_label.setText(f"✅ Export réussi: {os.path.basename(filepath)}")
         self.status_label.setStyleSheet(f"color: {colors.SUCCESS}; font-weight: bold;")
@@ -1023,6 +1028,8 @@ class AdvancedReportsWindow(QMainWindow):
 
     def on_export_error(self, error):
         self.progress_bar.hide()
+        # FIX 8: Re-enable buttons on error too
+        self._set_export_buttons_enabled(True)
         colors = ThemeManager.get_colors()
         self.status_label.setText("❌ Erreur lors de l'export")
         self.status_label.setStyleSheet(f"color: {colors.DANGER}; font-weight: bold;")

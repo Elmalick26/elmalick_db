@@ -17,17 +17,22 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
 from typing import Optional
 
-from database_setup import DatabaseManager
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+
+from api.auth import TokenData, get_current_user, require_role
 from app_logger import AppLogger
-from api.auth import get_current_user, require_role, TokenData
+from database_setup import DatabaseManager, log_audit
+from error_codes import DB_QUERY
 from repositories.students_api_repo import StudentsApiRepository
 
 router = APIRouter(prefix="/students", tags=["Students"])
 
-_ALLOWED = require_role("Admin", "Teacher", "Staff")
+# Lecture générale : Admin, Prof (alias Teacher), Secretaire (alias Staff), Pédagogique
+_READ = require_role("Admin", "Teacher", "Staff", "Pédagogique")
+# Données financières : Admin et Comptable uniquement
+_FINANCE = require_role("Admin", "Comptable")
 
 
 # ──────────────────────────────────────────── routes
@@ -36,7 +41,7 @@ async def list_students(
     q: Optional[str] = Query(None, description="Recherche par nom"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
-    current: TokenData = Depends(_ALLOWED),
+    current: TokenData = Depends(_READ),
 ):
     try:
         db = DatabaseManager()
@@ -49,11 +54,11 @@ async def list_students(
         return {"total": total, "page": page, "page_size": page_size, "data": rows}
     except Exception as e:
         AppLogger.error("API.Students", f"list_students error: {e}")
-        raise HTTPException(status_code=500, detail="Erreur serveur")
+        raise HTTPException(status_code=500, detail={"message": "Erreur serveur", "error_code": DB_QUERY})
 
 
 @router.get("/{student_id}", summary="Détails d'un élève")
-async def get_student(student_id: int, current: TokenData = Depends(_ALLOWED)):
+async def get_student(student_id: int, current: TokenData = Depends(_READ)):
     try:
         db = DatabaseManager()
         with db.get_connection() as conn:
@@ -65,11 +70,11 @@ async def get_student(student_id: int, current: TokenData = Depends(_ALLOWED)):
         raise
     except Exception as e:
         AppLogger.error("API.Students", f"get_student({student_id}) error: {e}")
-        raise HTTPException(status_code=500, detail="Erreur serveur")
+        raise HTTPException(status_code=500, detail={"message": "Erreur serveur", "error_code": DB_QUERY})
 
 
 @router.get("/{student_id}/grades", summary="Notes de l'élève")
-async def get_student_grades(student_id: int, current: TokenData = Depends(_ALLOWED)):
+async def get_student_grades(student_id: int, current: TokenData = Depends(_READ)):
     try:
         db = DatabaseManager()
         with db.get_connection() as conn:
@@ -78,11 +83,11 @@ async def get_student_grades(student_id: int, current: TokenData = Depends(_ALLO
             return repo.get_grades(student_id, year_id)
     except Exception as e:
         AppLogger.error("API.Students", f"get_student_grades({student_id}) error: {e}")
-        raise HTTPException(status_code=500, detail="Erreur serveur")
+        raise HTTPException(status_code=500, detail={"message": "Erreur serveur", "error_code": DB_QUERY})
 
 
 @router.get("/{student_id}/attendance", summary="Présences de l'élève")
-async def get_student_attendance(student_id: int, current: TokenData = Depends(_ALLOWED)):
+async def get_student_attendance(student_id: int, current: TokenData = Depends(_READ)):
     try:
         db = DatabaseManager()
         with db.get_connection() as conn:
@@ -91,17 +96,18 @@ async def get_student_attendance(student_id: int, current: TokenData = Depends(_
             return repo.get_attendance(student_id, year_id)
     except Exception as e:
         AppLogger.error("API.Students", f"get_student_attendance({student_id}) error: {e}")
-        raise HTTPException(status_code=500, detail="Erreur serveur")
+        raise HTTPException(status_code=500, detail={"message": "Erreur serveur", "error_code": DB_QUERY})
 
 
-@router.get("/{student_id}/dues", summary="Frais scolaires de l'élève")
-async def get_student_dues(student_id: int, current: TokenData = Depends(_ALLOWED)):
+@router.get("/{student_id}/dues", summary="Frais scolaires de l'élève — Admin/Comptable uniquement")
+async def get_student_dues(student_id: int, current: TokenData = Depends(_FINANCE)):
     try:
         db = DatabaseManager()
         with db.get_connection() as conn:
             repo = StudentsApiRepository(conn)
             year_id = repo.get_active_year_id()
+            log_audit(conn, actor=current.username, action="VIEW_DUES", target=f"student_id={student_id}")
             return repo.get_dues(student_id, year_id)
     except Exception as e:
         AppLogger.error("API.Students", f"get_student_dues({student_id}) error: {e}")
-        raise HTTPException(status_code=500, detail="Erreur serveur")
+        raise HTTPException(status_code=500, detail={"message": "Erreur serveur", "error_code": DB_QUERY})

@@ -1,18 +1,13 @@
-import os
-import sys
+﻿import sys
 from datetime import datetime
 
-import psycopg2
 from fpdf import FPDF
-from PyQt6.QtCore import QDate, Qt
+from PyQt6.QtCore import QDate, Qt, QTimer
 from PyQt6.QtGui import QColor, QFont
 from PyQt6.QtWidgets import (
     QApplication,
-    QComboBox,
-    QDateEdit,
-    QFrame,
-    QGridLayout,
-    QGroupBox,
+    QDialog,
+    QFormLayout,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -22,7 +17,6 @@ from PyQt6.QtWidgets import (
     QTableWidget,
     QTableWidgetItem,
     QTabWidget,
-    QTextEdit,
     QVBoxLayout,
     QWidget,
 )
@@ -38,85 +32,138 @@ from pdf_report_style import (
 )
 from print_export_service import get_report_output_mode, output_pdf
 from repositories.staff_repo import StaffRepository
-from ui_styles import (
-    Colors,
-    ModuleHeaderWidget,
-    ThemeManager,
-    apply_shadow_to_widget,
-    get_card_style,
-    get_table_style,
-    get_tabs_style,
-)
+from ui_styles import ModuleHeaderWidget, ThemeManager, get_module_caps, get_tabs_style
 
 STAFF_LEAVES_REPORT_OUTPUT_MODE = get_report_output_mode("staff_leaves_report_mode", "save")
 
-try:
-    import arabic_reshaper
-    from bidi.algorithm import get_display
+from pdf_helpers import ARABIC_SUPPORT
+from pdf_helpers import (
+    contains_arabic as _contains_arabic,  # FIX 1: alias was `sanitize` but sanitize_text() called `_sanitize_latin(text)` —; NameError on every non-Arabic PDF cell, crashing all report exports.
+)
+from pdf_helpers import find_arabic_font_path as _get_arabic_font_path
+from pdf_helpers import prepare_pdf_text as _prepare_pdf_text
+from pdf_helpers import sanitize_latin as _sanitize_latin
+from pdf_helpers import setup_pdf_arabic_font
+from ui_components import (
+    BaseDialog,
+    card_frame,
+    dialog_button_row,
+    dialog_error_label,
+    style_table,
+    styled_combo,
+    styled_date_edit,
+    styled_text_edit,
+)
 
-    ARABIC_SUPPORT = True
-except ModuleNotFoundError:
-    ARABIC_SUPPORT = False
-
-
-def _get_arabic_font_path():
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    candidates = [
-        os.path.join(base_dir, "fonts", "Amiri-Regular.ttf"),
-        os.path.join(base_dir, "fonts", "NotoNaskhArabic-Regular.ttf"),
-        os.path.join(base_dir, "fonts", "Cairo-Regular.ttf"),
-        os.path.join(base_dir, "Fonts", "Amiri", "Amiri-Regular.ttf"),
-        os.path.join(base_dir, "Fonts", "Noto_Naskh_Arabic", "NotoNaskhArabic-Regular.ttf"),
-        os.path.join(base_dir, "Fonts", "Cairo", "Cairo-Regular.ttf"),
-    ]
-    for path in candidates:
-        if os.path.exists(path):
-            return path
-    return None
-
-
-def _contains_arabic(text):
-    if text is None:
-        return False
-    if not isinstance(text, str):
-        text = str(text)
-    return any("\u0600" <= ch <= "\u06FF" or "\u0750" <= ch <= "\u077F" or "\u08A0" <= ch <= "\u08FF" for ch in text)
+# ---------------------------------------------------------------------------
+# Dialog : Nouvelle Demande de Congé
+# ---------------------------------------------------------------------------
 
 
-def _prepare_pdf_text(text):
-    if text is None:
-        return ""
-    if not isinstance(text, str):
-        text = str(text)
-    if _contains_arabic(text) and ARABIC_SUPPORT:
-        try:
-            reshaped = arabic_reshaper.reshape(text)
-            return get_display(reshaped)
-        except Exception:
-            return text
-    return text
+class LeaveDialog(BaseDialog):
+    def __init__(self, staff_items: list, parent=None):
+        super().__init__("Nouvelle Demande de Congé / طلب إجازة جديد", parent)
+        self.setMinimumWidth(480)
+        self._staff_items = staff_items
+        self._build_ui()
 
+    def _build_ui(self):
+        colors = ThemeManager.get_colors()
 
-def _sanitize_latin(text):
-    if text is None:
-        return ""
-    if not isinstance(text, str):
-        text = str(text)
-    return text.encode('latin-1', 'ignore').decode('latin-1')
+        self._err_lbl = dialog_error_label()
+        self.add_widget(self._err_lbl)
 
+        form = QFormLayout()
+        form.setSpacing(12)
+        form.setLabelAlignment(Qt.AlignmentFlag.AlignRight)
 
-def _register_arabic_font(pdf):
-    font_path = _get_arabic_font_path()
-    if not font_path:
-        return False
-    try:
-        pdf.add_font("ArabicFont", "", font_path, uni=True)
-        pdf.add_font("ArabicFont", "B", font_path, uni=True)
-        pdf.add_font("ArabicFont", "I", font_path, uni=True)
-        pdf.add_font("ArabicFont", "BI", font_path, uni=True)
-        return True
-    except Exception:
-        return False
+        self.combo_staff = styled_combo()
+        for name, staff_id in self._staff_items:
+            self.combo_staff.addItem(name, staff_id)
+
+        self.combo_type = styled_combo()
+        self.combo_type.addItems(
+            [
+                "Maladie (مرضية)",
+                "Annuel (سنوية)",
+                "Sans Solde (بدون راتب)",
+                "Maternité (أمومة)",
+                "Urgence (طارئة)",
+            ]
+        )
+
+        self.date_start = styled_date_edit()
+        self.date_start.setDate(QDate.currentDate())
+
+        self.date_end = styled_date_edit()
+        self.date_end.setDate(QDate.currentDate())
+
+        self.lbl_days = QLabel("⏱️ Durée: 1 jour(s)")
+        self.lbl_days.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_days.setStyleSheet(
+            f"color: {colors.PRIMARY}; font-weight: bold; background-color: {colors.BG_MAIN};"
+            f" padding: 10px; border-radius: 6px; border: 1px solid {colors.BORDER};"
+        )
+
+        self.date_start.dateChanged.connect(self._calculate_days)
+        self.date_end.dateChanged.connect(self._calculate_days)
+
+        self.txt_reason = styled_text_edit("Motif de l'absence / سبب الإجازة...")
+        self.txt_reason.setMaximumHeight(90)
+
+        form.addRow("Employé:", self.combo_staff)
+        form.addRow("Type:", self.combo_type)
+        form.addRow("Du:", self.date_start)
+        form.addRow("Au:", self.date_end)
+        self.dialog_layout.addLayout(form)
+        self.add_widget(self.lbl_days)
+
+        form2 = QFormLayout()
+        form2.setSpacing(12)
+        form2.addRow("Motif:", self.txt_reason)
+        self.dialog_layout.addLayout(form2)
+
+        self.dialog_layout.addLayout(dialog_button_row("✅ Enregistrer", self._validate, self.reject))
+
+    def _calculate_days(self):
+        colors = ThemeManager.get_colors()
+        d1 = self.date_start.date()
+        d2 = self.date_end.date()
+        days = d1.daysTo(d2) + 1
+        if days < 1:
+            self.lbl_days.setText("Erreur: Date de fin invalide")
+            self.lbl_days.setStyleSheet(
+                f"color: {colors.DANGER}; font-weight: bold; background-color: {colors.BG_MAIN};"
+                f" padding: 10px; border-radius: 6px; border: 1px solid {colors.DANGER};"
+            )
+        else:
+            self.lbl_days.setText(f"⏱️ Durée: {days} jour(s)")
+            self.lbl_days.setStyleSheet(
+                f"color: {colors.PRIMARY}; font-weight: bold; background-color: {colors.BG_MAIN};"
+                f" padding: 10px; border-radius: 6px; border: 1px solid {colors.BORDER};"
+            )
+
+    def _validate(self):
+        if not self.combo_staff.currentData():
+            self._err_lbl.setText("Veuillez sélectionner un employé.")
+            self._err_lbl.setVisible(True)
+            return
+        if self.date_start.date().daysTo(self.date_end.date()) + 1 < 1:
+            self._err_lbl.setText("La date de fin doit être après la date de début.")
+            self._err_lbl.setVisible(True)
+            return
+        self._err_lbl.setVisible(False)
+        self.accept()
+
+    def get_data(self) -> dict:
+        return {
+            "staff_id": self.combo_staff.currentData(),
+            "leave_type": self.combo_type.currentText().split("(")[0].strip(),
+            "date_start": self.date_start.date().toString("yyyy-MM-dd"),
+            "date_end": self.date_end.date().toString("yyyy-MM-dd"),
+            "days": self.date_start.date().daysTo(self.date_end.date()) + 1,
+            "reason": self.txt_reason.toPlainText(),
+        }
 
 
 class StaffLeaveWindow(QMainWindow):
@@ -127,20 +174,26 @@ class StaffLeaveWindow(QMainWindow):
         self.current_leave_report_rows = []
         self.current_leave_report_headers = []
         self.current_leave_report_title = ""
+        self._staff_items: list = []
 
-        # تطبيق المظهر
         ThemeManager.apply_theme(self)
         self.init_ui()
         self.load_staff()
         self.load_leaves()
         self._load_kpi_stats()
 
+    def apply_rbac(self, role: str) -> None:
+        """تطبيق صلاحيات الأزرار بناءً على دور المستخدم — يُستدعى من MainWindow."""
+        caps = get_module_caps(role, "staff_leaves")
+        self.btn_new_leave.setEnabled(caps["can_write"])
+        self.btn_new_leave.setVisible(caps["can_write"])
+
     def init_ui(self):
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
         self.main_layout = QVBoxLayout(self.central_widget)
-        self.main_layout.setContentsMargins(20, 20, 20, 20)
-        self.main_layout.setSpacing(15)
+        self.main_layout.setContentsMargins(24, 20, 24, 20)
+        self.main_layout.setSpacing(16)
 
         # 1. En-tête unifié
         header = ModuleHeaderWidget(
@@ -160,51 +213,10 @@ class StaffLeaveWindow(QMainWindow):
         self.tabs = QTabWidget()
         self.tabs.setStyleSheet(get_tabs_style())
 
-        self.setup_request_tab()
         self.setup_history_tab()
         self.setup_reports_tab()
 
         self.main_layout.addWidget(self.tabs)
-
-    def create_card(self):
-        frame = QFrame()
-        frame.setStyleSheet(get_card_style())
-        return frame
-
-    def styled_date(self):
-        de = QDateEdit()
-        de.setCalendarPopup(True)
-        de.setMinimumHeight(38)
-        colors = ThemeManager.get_colors()
-        de.setStyleSheet(
-            f"QDateEdit {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }} QDateEdit:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}"
-        )
-        return de
-
-    def styled_combo(self):
-        combo = QComboBox()
-        combo.setMinimumHeight(38)
-        colors = ThemeManager.get_colors()
-        combo.setStyleSheet(
-            f"QComboBox {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }} QComboBox:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}"
-        )
-        return combo
-
-    def styled_text_edit(self, placeholder=""):
-        text_edit = QTextEdit()
-        if placeholder:
-            text_edit.setPlaceholderText(placeholder)
-        colors = ThemeManager.get_colors()
-        text_edit.setStyleSheet(
-            f"QTextEdit {{ padding: 10px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }} QTextEdit:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}"
-        )
-        return text_edit
-
-    def style_table(self, table):
-        table.setShowGrid(False)
-        table.setAlternatingRowColors(True)
-        table.verticalHeader().setVisible(False)
-        table.setStyleSheet(get_table_style())
 
     def _load_kpi_stats(self):
         """Charge les statistiques des congés dans les KPI Cards."""
@@ -238,106 +250,46 @@ class StaffLeaveWindow(QMainWindow):
         except Exception as e:
             AppLogger.error("StaffLeaveWindow", f"Erreur KPI stats: {e}")
 
-    def setup_request_tab(self):
-        tab = QWidget()
-        layout = QVBoxLayout(tab)
-        layout.setSpacing(15)
-        layout.setContentsMargins(20, 20, 20, 20)
-
-        colors = ThemeManager.get_colors()
-
-        form_card = self.create_card()
-        flay = QGridLayout(form_card)
-        flay.setSpacing(15)
-        flay.setContentsMargins(20, 20, 20, 20)
-
-        card_title = QLabel("📝 Nouvelle Demande / طلب جديد")
-        card_title.setStyleSheet(
-            f"font-weight: bold; color: {colors.TEXT_PRIMARY}; font-size: 14px; margin-bottom: 5px;"
-        )
-        flay.addWidget(card_title, 0, 0, 1, 4)
-
-        self.combo_staff = self.styled_combo()
-        self.combo_type = self.styled_combo()
-        self.combo_type.addItems(
-            ["Maladie (مرضية)", "Annuel (سنوية)", "Sans Solde (بدون راتب)", "Maternité (أمومة)", "Urgence (طارئة)"]
-        )
-
-        flay.addWidget(QLabel("Employé:"), 1, 0)
-        flay.addWidget(self.combo_staff, 1, 1)
-        flay.addWidget(QLabel("Type:"), 1, 2)
-        flay.addWidget(self.combo_type, 1, 3)
-
-        self.date_start = self.styled_date()
-        self.date_start.setDate(QDate.currentDate())
-
-        self.date_end = self.styled_date()
-        self.date_end.setDate(QDate.currentDate())
-
-        self.lbl_days = QLabel("⏱️ Durée: 1 jour(s)")
-        self.lbl_days.setStyleSheet(
-            f"color: {colors.PRIMARY}; font-weight: bold; background-color: {colors.BG_MAIN}; padding: 10px; border-radius: 6px; border: 1px solid {colors.BORDER};"
-        )
-        self.lbl_days.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
-        self.date_start.dateChanged.connect(self.calculate_days)
-        self.date_end.dateChanged.connect(self.calculate_days)
-
-        flay.addWidget(QLabel("Du:"), 2, 0)
-        flay.addWidget(self.date_start, 2, 1)
-        flay.addWidget(QLabel("Au:"), 2, 2)
-        flay.addWidget(self.date_end, 2, 3)
-
-        flay.addWidget(self.lbl_days, 3, 0, 1, 4)
-
-        self.txt_reason = self.styled_text_edit("Motif de l'absence / سبب الإجازة...")
-        self.txt_reason.setMaximumHeight(100)
-
-        flay.addWidget(QLabel("Motif:"), 4, 0)
-        flay.addWidget(self.txt_reason, 4, 1, 1, 3)
-
-        btn_save = QPushButton("✅ Enregistrer la Demande / حفظ الطلب")
-        btn_save.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_save.setMinimumHeight(45)
-        btn_save.setStyleSheet(
-            f"""
-            QPushButton {{ background-color: {colors.SUCCESS}; color: white; font-weight: bold; border-radius: 8px; border: none; font-size: 14px; }}
-            QPushButton:hover {{ background-color: {colors.SUCCESS_HOVER}; }}
-        """
-        )
-        btn_save.clicked.connect(self.save_leave)
-
-        flay.addWidget(btn_save, 5, 0, 1, 4)
-
-        layout.addWidget(form_card)
-        layout.addStretch()
-        self.tabs.addTab(tab, "  ➕ Nouvelle Demande / طلب جديد  ")
-
     def setup_history_tab(self):
         tab = QWidget()
         layout = QVBoxLayout(tab)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(15)
+        layout.setContentsMargins(14, 14, 14, 14)
+        layout.setSpacing(10)
 
         toolbar = QHBoxLayout()
+        colors = ThemeManager.get_colors()
+
+        self.btn_new_leave = QPushButton("➕ Nouvelle Demande / طلب جديد")
+        self.btn_new_leave.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_new_leave.setFixedHeight(32)
+        self.btn_new_leave.setStyleSheet(
+            f"QPushButton {{ background: qlineargradient(x1:0,y1:0,x2:1,y2:0,"
+            f" stop:0 {colors.SUCCESS}, stop:1 #16A34A);"
+            f" color: white; font-weight: bold; font-size:11px;"
+            f" padding: 4px 14px; border-radius: 7px; border: none; }}"
+            f"QPushButton:hover {{ background: {colors.SUCCESS_HOVER}; }}"
+        )
+        self.btn_new_leave.clicked.connect(self._open_leave_dialog)
+
         btn_refresh = QPushButton("🔄 Actualiser")
         btn_refresh.setCursor(Qt.CursorShape.PointingHandCursor)
-        colors = ThemeManager.get_colors()
+        btn_refresh.setFixedHeight(32)
         btn_refresh.setStyleSheet(
-            f"""
-            QPushButton {{ background-color: {colors.PRIMARY}; color: white; font-weight: bold; padding: 8px 15px; border-radius: 6px; border: none; }}
-            QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}
-        """
+            f"QPushButton {{ background: qlineargradient(x1:0,y1:0,x2:1,y2:0,"
+            f" stop:0 {colors.PRIMARY}, stop:1 {colors.PRIMARY_HOVER});"
+            f" color: white; font-weight: bold; font-size:11px;"
+            f" padding: 4px 12px; border-radius: 7px; border: none; }}"
+            f"QPushButton:hover {{ background: {colors.PRIMARY_DARK}; }}"
         )
         btn_refresh.clicked.connect(self.load_leaves)
 
-        toolbar.addWidget(QLabel("Historique des Demandes / سجل الطلبات"))
         toolbar.addStretch()
+        toolbar.addWidget(self.btn_new_leave)
         toolbar.addWidget(btn_refresh)
         layout.addLayout(toolbar)
 
         self.table_leaves = QTableWidget()
-        self.style_table(self.table_leaves)
+        style_table(self.table_leaves)
         self.table_leaves.setColumnCount(8)
         self.table_leaves.setHorizontalHeaderLabels(
             ["ID", "Employé", "Type", "Début", "Fin", "Jours", "Statut", "Action"]
@@ -352,58 +304,64 @@ class StaffLeaveWindow(QMainWindow):
     def setup_reports_tab(self):
         tab = QWidget()
         layout = QVBoxLayout(tab)
-        layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(15)
+        layout.setContentsMargins(14, 14, 14, 14)
+        layout.setSpacing(10)
 
-        controls_card = self.create_card()
-        controls = QGridLayout(controls_card)
-        controls.setContentsMargins(20, 20, 20, 20)
-        controls.setSpacing(12)
+        controls_card = card_frame()
+        hlay_rep = QHBoxLayout(controls_card)
+        hlay_rep.setContentsMargins(12, 10, 12, 10)
+        hlay_rep.setSpacing(8)
 
-        self.combo_leave_report_type = self.styled_combo()
+        self.combo_leave_report_type = styled_combo(min_height=32)
         self.combo_leave_report_type.addItem("Synthèse par employé", "summary")
         self.combo_leave_report_type.addItem("Détails des demandes", "details")
 
-        self.report_leave_from = self.styled_date()
-        self.report_leave_to = self.styled_date()
+        self.report_leave_from = styled_date_edit(min_height=32)
+        self.report_leave_to = styled_date_edit(min_height=32)
         self.report_leave_from.setDate(QDate.currentDate().addMonths(-1))
         self.report_leave_to.setDate(QDate.currentDate())
 
         colors = ThemeManager.get_colors()
 
-        btn_generate = QPushButton("Générer Rapport")
+        btn_generate = QPushButton("📊 Générer")
         btn_generate.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_generate.setMinimumHeight(40)
+        btn_generate.setFixedHeight(32)
         btn_generate.setStyleSheet(
-            f"""
-            QPushButton {{ background-color: {colors.PRIMARY}; color: white; font-weight: bold; border-radius: 6px; border: none; padding: 8px 16px; }}
-            QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}
-        """
+            f"QPushButton {{ background: qlineargradient(x1:0,y1:0,x2:1,y2:0,"
+            f" stop:0 {colors.PRIMARY}, stop:1 {colors.PRIMARY_HOVER});"
+            f" color: white; font-weight: bold; border-radius: 7px;"
+            f" border: none; padding: 4px 12px; font-size:11px; }}"
+            f"QPushButton:hover {{ background: {colors.PRIMARY_DARK}; }}"
         )
         btn_generate.clicked.connect(self.run_leave_report)
 
-        btn_export = QPushButton("Exporter PDF")
+        btn_export = QPushButton("🖨 PDF")
         btn_export.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_export.setMinimumHeight(40)
+        btn_export.setFixedHeight(32)
         btn_export.setStyleSheet(
-            f"""
-            QPushButton {{ background-color: {colors.SUCCESS}; color: white; font-weight: bold; border-radius: 6px; border: none; padding: 8px 16px; }}
-            QPushButton:hover {{ background-color: {colors.SUCCESS_HOVER}; }}
-        """
+            f"QPushButton {{ background: qlineargradient(x1:0,y1:0,x2:1,y2:0,"
+            f" stop:0 {colors.SUCCESS}, stop:1 #16A34A);"
+            f" color: white; font-weight: bold; border-radius: 7px;"
+            f" border: none; padding: 4px 12px; font-size:11px; }}"
+            f"QPushButton:hover {{ background: {colors.SUCCESS_HOVER}; }}"
         )
         btn_export.clicked.connect(self.export_leave_report_pdf)
 
-        controls.addWidget(QLabel("Type Rapport:"), 0, 0)
-        controls.addWidget(self.combo_leave_report_type, 0, 1)
-        controls.addWidget(QLabel("Du:"), 0, 2)
-        controls.addWidget(self.report_leave_from, 0, 3)
-        controls.addWidget(QLabel("Au:"), 0, 4)
-        controls.addWidget(self.report_leave_to, 0, 5)
-        controls.addWidget(btn_generate, 1, 4)
-        controls.addWidget(btn_export, 1, 5)
+        hlay_rep.addWidget(self.combo_leave_report_type, 2)
+        lbl_du_r = QLabel("Du:")
+        lbl_du_r.setStyleSheet("font-size:11px;")
+        hlay_rep.addWidget(lbl_du_r)
+        hlay_rep.addWidget(self.report_leave_from, 1)
+        lbl_arrow_r = QLabel("→")
+        lbl_arrow_r.setStyleSheet("font-size:13px;")
+        hlay_rep.addWidget(lbl_arrow_r)
+        hlay_rep.addWidget(self.report_leave_to, 1)
+        hlay_rep.addSpacing(8)
+        hlay_rep.addWidget(btn_generate)
+        hlay_rep.addWidget(btn_export)
 
         self.table_leave_reports = QTableWidget(0, 1)
-        self.style_table(self.table_leave_reports)
+        style_table(self.table_leave_reports)
         self.table_leave_reports.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
 
         layout.addWidget(controls_card)
@@ -425,55 +383,32 @@ class StaffLeaveWindow(QMainWindow):
             db = DatabaseManager()
             with db.get_connection() as conn:
                 rows = StaffRepository(conn).list_active_staff_fullname()
-            self.combo_staff.clear()
-            for row in rows:
-                self.combo_staff.addItem(row[1] or "-", row[0])
+            self._staff_items = [(row[1] or "-", row[0]) for row in rows]
         except Exception as e:
             AppLogger.error("StaffLeaves", f"Error loading staff: {e}")
 
-    def calculate_days(self):
-        d1 = self.date_start.date()
-        d2 = self.date_end.date()
-        days = d1.daysTo(d2) + 1
-        colors = ThemeManager.get_colors()
+    def _open_leave_dialog(self):
+        dlg = LeaveDialog(staff_items=self._staff_items, parent=self)
+        if dlg.exec() == QDialog.DialogCode.Accepted:
+            self._save_leave(dlg.get_data())
 
-        if days < 1:
-            self.lbl_days.setText("Erreur: Date invalide")
-            self.lbl_days.setStyleSheet(
-                f"color: {colors.DANGER}; font-weight: bold; background-color: {colors.BG_MAIN}; padding: 10px; border-radius: 6px; border: 1px solid {colors.DANGER};"
-            )
-        else:
-            self.lbl_days.setText(f"Durée: {days} jour(s)")
-            self.lbl_days.setStyleSheet(
-                f"color: {colors.PRIMARY}; font-weight: bold; background-color: {colors.BG_MAIN}; padding: 10px; border-radius: 6px; border: 1px solid {colors.BORDER};"
-            )
-
-    def save_leave(self):
-        staff_id = self.combo_staff.currentData()
-        l_type = self.combo_type.currentText().split("(")[0].strip()
-        d1 = self.date_start.date()
-        d2 = self.date_end.date()
-        days = d1.daysTo(d2) + 1
-        reason = self.txt_reason.toPlainText()
-
-        if days < 1:
-            QMessageBox.warning(self, "Erreur", "La date de fin doit être après la date de début.")
-            return
-        if not staff_id:
-            QMessageBox.warning(self, "Erreur", "Veuillez sélectionner un employé.")
-            return
-
+    def _save_leave(self, data: dict):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
                 repo = StaffRepository(conn)
-                repo.insert_leave(staff_id, l_type, d1.toString("yyyy-MM-dd"), d2.toString("yyyy-MM-dd"), days, reason)
+                repo.insert_leave(
+                    data["staff_id"],
+                    data["leave_type"],
+                    data["date_start"],
+                    data["date_end"],
+                    data["days"],
+                    data["reason"],
+                )
                 conn.commit()
-
             QMessageBox.information(self, "Succès", "Demande de congé enregistrée.")
-            self.txt_reason.clear()
             self.load_leaves()
-            self.tabs.setCurrentIndex(1)
+            self._load_kpi_stats()
         except Exception as e:
             QMessageBox.critical(self, "Erreur", f"Erreur lors de l'enregistrement: {e}")
 
@@ -645,7 +580,7 @@ class StaffLeaveWindow(QMainWindow):
         table_width = pdf.w - 20
         col_width = table_width / max(1, len(self.current_leave_report_headers))
 
-        font_to_use = "ArabicFont" if _register_arabic_font(pdf) else "Arial"
+        font_to_use = "ArabicFont" if setup_pdf_arabic_font(pdf) else "Arial"
 
         apply_table_header_style(pdf, font_to_use, 9)
         for header in self.current_leave_report_headers:
@@ -701,7 +636,7 @@ class StaffLeaveWindow(QMainWindow):
                 return
 
             pdf = FPDF()
-            font_to_use = "ArabicFont" if _register_arabic_font(pdf) else "Arial"
+            font_to_use = "ArabicFont" if setup_pdf_arabic_font(pdf) else "Arial"
             pdf.add_page()
 
             school_info = get_school_info_row()

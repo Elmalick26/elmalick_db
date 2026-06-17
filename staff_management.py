@@ -1,23 +1,20 @@
-import base64
-import os
+﻿import os
 import shutil
 import sys
 from datetime import datetime
 
-import psycopg2
 from fpdf import FPDF
-from PyQt6.QtCore import QBuffer, QByteArray, QDate, QSize, Qt
-from PyQt6.QtGui import QColor, QFont, QIcon, QPixmap, QTextDocument
-from PyQt6.QtPrintSupport import QPrintDialog, QPrinter
+from PyQt6.QtCore import QDate, QSize, Qt
+from PyQt6.QtGui import QColor, QIcon, QPixmap
 from PyQt6.QtWidgets import (
     QApplication,
     QComboBox,
     QDateEdit,
+    QDialog,
     QDoubleSpinBox,
     QFileDialog,
     QFrame,
     QGridLayout,
-    QGroupBox,
     QHBoxLayout,
     QHeaderView,
     QLabel,
@@ -25,7 +22,6 @@ from PyQt6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPushButton,
-    QScrollArea,
     QTableWidget,
     QTableWidgetItem,
     QTabWidget,
@@ -35,96 +31,29 @@ from PyQt6.QtWidgets import (
 
 from app_logger import AppLogger
 from database_setup import DatabaseManager, log_audit
-from pdf_report_style import (
-    apply_grades_sheet_header,
-    apply_table_body_style,
-    apply_table_header_style,
-    get_school_info_row,
-    set_zebra_row_fill,
-)
 from print_export_service import get_report_output_mode, output_pdf
 from repositories.finance_repo import FinanceRepository
 from repositories.staff_repo import StaffRepository
-from ui_styles import (
-    Colors,
-    ModuleHeaderWidget,
-    ThemeManager,
-    apply_shadow_to_widget,
-    get_card_style,
-    get_module_caps,
-    get_table_style,
-    get_tabs_style,
+from ui_components import (
+    card_frame,
+    compact_icon_btn,
+    horizontal_separator,
+    section_label,
+    style_table,
+    styled_button,
+    styled_combo,
+    styled_date_edit,
+    styled_input,
 )
+from ui_styles import ModuleHeaderWidget, ThemeManager, friendly_db_error, get_module_caps, get_tabs_style
 
 STAFF_LIST_OUTPUT_MODE = get_report_output_mode("staff_list_mode", "save")
 
-try:
-    import arabic_reshaper
-    from bidi.algorithm import get_display
-
-    ARABIC_SUPPORT = True
-except ModuleNotFoundError:
-    ARABIC_SUPPORT = False
-
-
-def _get_arabic_font_path():
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    candidates = [
-        os.path.join(base_dir, "fonts", "Amiri-Regular.ttf"),
-        os.path.join(base_dir, "fonts", "NotoNaskhArabic-Regular.ttf"),
-        os.path.join(base_dir, "fonts", "Cairo-Regular.ttf"),
-        os.path.join(base_dir, "Fonts", "Amiri", "Amiri-Regular.ttf"),
-        os.path.join(base_dir, "Fonts", "Noto_Naskh_Arabic", "NotoNaskhArabic-Regular.ttf"),
-        os.path.join(base_dir, "Fonts", "Cairo", "Cairo-Regular.ttf"),
-    ]
-    for path in candidates:
-        if os.path.exists(path):
-            return path
-    return None
-
-
-def _contains_arabic(text):
-    if text is None:
-        return False
-    if not isinstance(text, str):
-        text = str(text)
-    return any("\u0600" <= ch <= "\u06FF" or "\u0750" <= ch <= "\u077F" or "\u08A0" <= ch <= "\u08FF" for ch in text)
-
-
-def _prepare_pdf_text(text):
-    if text is None:
-        return ""
-    if not isinstance(text, str):
-        text = str(text)
-    if _contains_arabic(text) and ARABIC_SUPPORT:
-        try:
-            reshaped = arabic_reshaper.reshape(text)
-            return get_display(reshaped)
-        except Exception:
-            return text
-    return text
-
-
-def _sanitize_latin(text):
-    if text is None:
-        return ""
-    if not isinstance(text, str):
-        text = str(text)
-    return text.encode('latin-1', 'ignore').decode('latin-1')
-
-
-def _register_arabic_font(pdf):
-    font_path = _get_arabic_font_path()
-    if not font_path:
-        return False
-    try:
-        pdf.add_font("ArabicFont", "", font_path, uni=True)
-        pdf.add_font("ArabicFont", "B", font_path, uni=True)
-        pdf.add_font("ArabicFont", "I", font_path, uni=True)
-        pdf.add_font("ArabicFont", "BI", font_path, uni=True)
-        return True
-    except Exception:
-        return False
+from pdf_helpers import (
+    prepare_pdf_text as _prepare_pdf_text,  # FIX 1: alias was `sanitize` but StaffReportPDF.sanitize() called `_sanitize_latin(text)` —; NameError on every non-Arabic cell, crashing all staff list PDF exports.
+)
+from pdf_helpers import sanitize_latin as _sanitize_latin
+from pdf_helpers import setup_pdf_arabic_font
 
 
 class StaffReportPDF(FPDF):
@@ -135,7 +64,7 @@ class StaffReportPDF(FPDF):
         self.set_auto_page_break(True, margin=12)
         self.font_name = "Helvetica"
         self.arabic_font_ready = False
-        if _register_arabic_font(self):
+        if setup_pdf_arabic_font(self):
             self.font_name = "ArabicFont"
             self.arabic_font_ready = True
 
@@ -150,7 +79,8 @@ class StaffReportPDF(FPDF):
         self.set_xy(left_x, left_y)
         self.set_font(self.font_name, '', 8)
 
-        if self.school_info:
+        # FIX 3: Added len > 7 guard — indices 1–7 raised IndexError on partial tuples.
+        if self.school_info and len(self.school_info) > 7:
             republic = self.sanitize(self.school_info[1])
             self.cell(80, 3, republic, 0, 1, 'L')
             ia_text = self.sanitize(self.school_info[2])
@@ -198,6 +128,397 @@ class StaffReportPDF(FPDF):
         self.cell(page_w / 2, 4, f"Page {self.page_no()}", 0, 0, 'R')
 
 
+class StaffDialog(QDialog):
+    """Fenêtre modale pour ajouter / modifier un employé."""
+
+    RESULT_SAVE_AND_NEW = 10
+
+    def __init__(self, parent=None, staff_id: int | None = None):
+        super().__init__(parent)
+        self._staff_id = staff_id
+        self._photo_path: str = ""
+        is_edit = staff_id is not None
+        self.setWindowTitle("✏️ Modifier l'employé" if is_edit else "➕ Nouvel Employé")
+        self.setMinimumWidth(720)
+        self.setModal(True)
+        ThemeManager.apply_theme(self)
+        self._build_ui(is_edit)
+
+    # ─────────────────────────── Construction UI ───────────────────────────
+
+    def _build_ui(self, is_edit: bool) -> None:
+        colors = ThemeManager.get_colors()
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(20, 16, 20, 16)
+        main_layout.setSpacing(12)
+
+        self.tabs = QTabWidget()
+        self.tabs.setStyleSheet(get_tabs_style())
+        self._build_tab_profile()
+        self._build_tab_contract()
+        main_layout.addWidget(self.tabs)
+
+        # ─── Pied de navigation ───
+        nav_row = QHBoxLayout()
+        nav_row.setSpacing(8)
+
+        self._btn_prev = styled_button(
+            "← Précédent",
+            bg_color="transparent",
+            text_color=colors.TEXT_SECONDARY,
+            hover_color=colors.BG_MAIN,
+            min_height=36,
+        )
+        self._btn_prev.setEnabled(False)
+        self._btn_prev.setStyleSheet(
+            self._btn_prev.styleSheet()
+            + f"QPushButton:disabled {{ color:{colors.BORDER}; border:1.5px solid {colors.BORDER}; }}"
+        )
+        self._btn_prev.clicked.connect(self._go_prev)
+
+        self._btn_next = styled_button("Suivant →", min_height=36)
+        self._btn_next.clicked.connect(self._go_next)
+
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.VLine)
+        sep.setFixedHeight(28)
+        sep.setStyleSheet(f"color:{colors.BORDER};")
+
+        if not is_edit:
+            self._btn_save_new = QPushButton("💾+ Enregistrer & Nouveau")
+            self._btn_save_new.setMinimumHeight(36)
+            self._btn_save_new.setCursor(Qt.CursorShape.PointingHandCursor)
+            self._btn_save_new.setVisible(False)
+            self._btn_save_new.setStyleSheet(
+                f"QPushButton {{ background:transparent; color:{colors.PRIMARY};"
+                f" font-weight:700; font-size:12px; border-radius:7px;"
+                f" border:2px solid {colors.PRIMARY}; padding:6px 16px; }}"
+                f"QPushButton:hover {{ background:{colors.PRIMARY_LIGHT}; }}"
+            )
+            self._btn_save_new.clicked.connect(self._on_accept_and_new)
+        else:
+            self._btn_save_new = None
+
+        save_label = "✏️ Modifier" if is_edit else "💾 Enregistrer"
+        self._btn_save = styled_button(
+            save_label, bg_color=colors.SUCCESS, hover_color=colors.SUCCESS_HOVER, min_height=36
+        )
+        self._btn_save.setVisible(False)
+        self._btn_save.clicked.connect(self._on_accept)
+
+        btn_cancel = styled_button(
+            "✕ Annuler",
+            bg_color="transparent",
+            text_color=colors.TEXT_SECONDARY,
+            hover_color=colors.BG_MAIN,
+            min_height=36,
+        )
+        btn_cancel.clicked.connect(self.reject)
+
+        nav_row.addWidget(self._btn_prev)
+        nav_row.addWidget(self._btn_next)
+        nav_row.addWidget(sep)
+        nav_row.addStretch()
+        if self._btn_save_new:
+            nav_row.addWidget(self._btn_save_new)
+        nav_row.addWidget(self._btn_save)
+        nav_row.addWidget(btn_cancel)
+        main_layout.addLayout(nav_row)
+
+        self.tabs.currentChanged.connect(self._on_tab_changed)
+        self._on_tab_changed(0)
+
+    def _styled_input(self, placeholder: str) -> QLineEdit:
+        return styled_input(placeholder, min_height=40)
+
+    def _styled_combo(self) -> QComboBox:
+        return styled_combo(min_height=40)
+
+    def _section_label(self, icon: str, text: str) -> QLabel:
+        return section_label(icon, text)
+
+    def _build_tab_profile(self) -> None:
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setSpacing(12)
+        layout.setContentsMargins(16, 16, 16, 16)
+        colors = ThemeManager.get_colors()
+
+        # صورة الموظف — مطابق لنمط StudentDialog
+        top_photo_row = QHBoxLayout()
+        top_photo_row.setSpacing(16)
+
+        photo_col = QVBoxLayout()
+        photo_col.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignHCenter)
+        self.lbl_photo = QLabel()
+        self.lbl_photo.setFixedSize(90, 90)
+        self.lbl_photo.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.lbl_photo.setText("📷")
+        self.lbl_photo.setStyleSheet(
+            f"QLabel {{ background:{colors.PRIMARY_LIGHT}; border-radius:45px;"
+            f"border:3px solid {colors.PRIMARY}; color:{colors.TEXT_SECONDARY};"
+            f"font-size:24px; }}"
+        )
+        btn_upload = QPushButton("Changer")
+        btn_upload.setMinimumHeight(28)
+        btn_upload.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_upload.setStyleSheet(
+            f"QPushButton {{ background:transparent; color:{colors.PRIMARY};"
+            f"font-size:11px; font-weight:600; border:1px solid {colors.PRIMARY};"
+            f"border-radius:5px; padding:3px 8px; }}"
+            f"QPushButton:hover {{ background:{colors.PRIMARY_LIGHT}; }}"
+        )
+        btn_upload.clicked.connect(self._upload_photo)
+        photo_col.addWidget(self.lbl_photo, 0, Qt.AlignmentFlag.AlignHCenter)
+        photo_col.addWidget(btn_upload, 0, Qt.AlignmentFlag.AlignHCenter)
+        top_photo_row.addLayout(photo_col)
+        top_photo_row.addStretch(1)
+        layout.addLayout(top_photo_row)
+
+        # Identité
+        layout.addWidget(self._section_label("👤", "Identité"))
+        grid1 = QGridLayout()
+        grid1.setSpacing(10)
+        grid1.setColumnStretch(1, 1)
+        grid1.setColumnStretch(3, 1)
+
+        self.txt_fname = self._styled_input("Prénom / الاسم")
+        self.txt_lname = self._styled_input("Nom / اللقب")
+        self.combo_role = self._styled_combo()
+        self.combo_role.addItems(["Professeur", "Administration", "Comptabilité", "Agent", "Sécurité"])
+        self.txt_spec = self._styled_input("Spécialité (Ex: Math)")
+
+        grid1.addWidget(QLabel("Prénom:"), 0, 0)
+        grid1.addWidget(self.txt_fname, 0, 1)
+        grid1.addWidget(QLabel("Nom:"), 0, 2)
+        grid1.addWidget(self.txt_lname, 0, 3)
+        grid1.addWidget(QLabel("Fonction:"), 1, 0)
+        grid1.addWidget(self.combo_role, 1, 1)
+        grid1.addWidget(QLabel("Spécialité:"), 1, 2)
+        grid1.addWidget(self.txt_spec, 1, 3)
+        layout.addLayout(grid1)
+
+        # Coordonnées
+        layout.addWidget(self._section_label("📞", "Coordonnées & Statut"))
+        grid2 = QGridLayout()
+        grid2.setSpacing(10)
+        grid2.setColumnStretch(1, 1)
+        grid2.setColumnStretch(3, 1)
+
+        self.txt_phone = self._styled_input("Téléphone / الهاتف")
+        self.txt_email = self._styled_input("Email / البريد")
+        self.txt_address = self._styled_input("Adresse / العنوان")
+        self.combo_status = self._styled_combo()
+        self.combo_status.addItems(
+            [
+                "Actif / نشط",
+                "Congé / إجازة",
+                "Suspendu / موقوف",
+                "Démission / استقالة",
+                "Licencié / مفصول",
+                "Retraité / متقاعد",
+            ]
+        )
+
+        grid2.addWidget(QLabel("Téléphone:"), 0, 0)
+        grid2.addWidget(self.txt_phone, 0, 1)
+        grid2.addWidget(QLabel("Email:"), 0, 2)
+        grid2.addWidget(self.txt_email, 0, 3)
+        grid2.addWidget(QLabel("Adresse:"), 1, 0)
+        grid2.addWidget(self.txt_address, 1, 1)
+        grid2.addWidget(QLabel("Statut:"), 1, 2)
+        grid2.addWidget(self.combo_status, 1, 3)
+        layout.addLayout(grid2)
+
+        layout.addStretch()
+
+        self.txt_fname.textChanged.connect(self._refresh_tab_indicators)
+        self.txt_lname.textChanged.connect(self._refresh_tab_indicators)
+        self.tabs.addTab(tab, "○ Profil")
+
+    def _build_tab_contract(self) -> None:
+        tab = QWidget()
+        layout = QVBoxLayout(tab)
+        layout.setSpacing(12)
+        layout.setContentsMargins(16, 16, 16, 16)
+        colors = ThemeManager.get_colors()
+
+        layout.addWidget(self._section_label("💼", "Contrat & Salaire / العقد والراتب"))
+        grid = QGridLayout()
+        grid.setSpacing(10)
+        grid.setColumnStretch(1, 1)
+        grid.setColumnStretch(3, 1)
+
+        self.date_hire = QDateEdit()
+        self.date_hire.setCalendarPopup(True)
+        self.date_hire.setDate(QDate.currentDate())
+        self.date_hire.setMinimumHeight(40)
+        self.date_hire.setStyleSheet(
+            f"QDateEdit {{padding:8px 12px;border:1.5px solid {colors.INPUT_BORDER};"
+            f"border-radius:8px;background:{colors.INPUT_BG};color:{colors.TEXT_PRIMARY};font-size:13px;}}"
+            f"QDateEdit:focus{{border:2px solid {colors.BORDER_FOCUS};}}"
+        )
+
+        self.combo_contract = self._styled_combo()
+        self.combo_contract.addItems(["Salaire Mensuel (راتب شهري)", "Vacataire/Horaire (بالساعة)"])
+        self.combo_contract.currentIndexChanged.connect(self._toggle_salary_fields)
+
+        spin_style = (
+            f"QDoubleSpinBox {{padding:8px 12px;border:1.5px solid {colors.INPUT_BORDER};"
+            f"border-radius:8px;background:{colors.INPUT_BG};color:{colors.TEXT_PRIMARY};font-size:13px;}}"
+            f"QDoubleSpinBox:focus{{border:2px solid {colors.BORDER_FOCUS};}}"
+        )
+
+        self.spin_salary = QDoubleSpinBox()
+        self.spin_salary.setRange(0, 5000000)
+        self.spin_salary.setPrefix("FCFA ")
+        self.spin_salary.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)
+        self.spin_salary.setMinimumHeight(40)
+        self.spin_salary.setStyleSheet(spin_style)
+
+        self.spin_hourly = QDoubleSpinBox()
+        self.spin_hourly.setRange(0, 100000)
+        self.spin_hourly.setPrefix("FCFA ")
+        self.spin_hourly.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)
+        self.spin_hourly.setMinimumHeight(40)
+        self.spin_hourly.setStyleSheet(spin_style)
+
+        self.lbl_salary = QLabel("Salaire de base:")
+        self.lbl_hourly = QLabel("Taux horaire:")
+
+        grid.addWidget(QLabel("Date d'embauche:"), 0, 0)
+        grid.addWidget(self.date_hire, 0, 1)
+        grid.addWidget(QLabel("Type de contrat:"), 0, 2)
+        grid.addWidget(self.combo_contract, 0, 3)
+        grid.addWidget(self.lbl_salary, 1, 0)
+        grid.addWidget(self.spin_salary, 1, 1)
+        grid.addWidget(self.lbl_hourly, 1, 2)
+        grid.addWidget(self.spin_hourly, 1, 3)
+        layout.addLayout(grid)
+        layout.addStretch()
+
+        self._toggle_salary_fields()
+        self.tabs.addTab(tab, "✓ Contrat")
+
+    # ─────────────────────────── Navigation ───────────────────────────
+
+    def _go_prev(self) -> None:
+        self.tabs.setCurrentIndex(self.tabs.currentIndex() - 1)
+
+    def _go_next(self) -> None:
+        self.tabs.setCurrentIndex(self.tabs.currentIndex() + 1)
+
+    def _on_tab_changed(self, idx: int) -> None:
+        count = self.tabs.count()
+        self._btn_prev.setEnabled(idx > 0)
+        self._btn_next.setVisible(idx < count - 1)
+        if self._btn_save_new:
+            self._btn_save_new.setVisible(idx == count - 1)
+        self._btn_save.setVisible(idx == count - 1)
+
+    def _refresh_tab_indicators(self) -> None:
+        has_id = bool(self.txt_fname.text().strip() and self.txt_lname.text().strip())
+        self.tabs.setTabText(0, ("✓ " if has_id else "○ ") + "Profil")
+        self.tabs.setTabText(1, "✓  Contrat")
+
+    # ─────────────────────────── Actions ───────────────────────────
+
+    def _toggle_salary_fields(self) -> None:
+        is_monthly = self.combo_contract.currentIndex() == 0
+        self.lbl_salary.setVisible(is_monthly)
+        self.spin_salary.setVisible(is_monthly)
+        self.lbl_hourly.setVisible(not is_monthly)
+        self.spin_hourly.setVisible(not is_monthly)
+
+    def _upload_photo(self) -> None:
+        file_path, _ = QFileDialog.getOpenFileName(self, "Choisir une photo", "", "Images (*.png *.jpg *.jpeg)")
+        if file_path:
+            self._photo_path = file_path
+            pixmap = QPixmap(file_path)
+            self.lbl_photo.setPixmap(
+                pixmap.scaled(
+                    84, 84, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation
+                )
+            )
+            self.lbl_photo.setText("")
+
+    def _validate(self) -> bool:
+        if not self.txt_fname.text().strip() or not self.txt_lname.text().strip():
+            QMessageBox.warning(self, "Champs obligatoires", "Prénom et Nom sont obligatoires.")
+            self.tabs.setCurrentIndex(0)
+            self.txt_fname.setFocus()
+            return False
+        return True
+
+    def _on_accept(self) -> None:
+        if self._validate():
+            self.accept()
+
+    def _on_accept_and_new(self) -> None:
+        if self._validate():
+            self.done(self.RESULT_SAVE_AND_NEW)
+
+    # ─────────────────────────── Données ───────────────────────────
+
+    def populate(self, data: tuple) -> None:
+        """Remplir depuis get_staff_details() tuple:
+        (first_name, last_name, role, specialty, phone, email, address,
+         hire_date, contract_type, salary_base, hourly_rate, photo_path, status)
+        """
+        self.txt_fname.setText(data[0] or "")
+        self.txt_lname.setText(data[1] or "")
+        self.combo_role.setCurrentText(data[2] or "")
+        self.txt_spec.setText(data[3] or "")
+        self.txt_phone.setText(data[4] or "")
+        self.txt_email.setText(data[5] or "")
+        self.txt_address.setText(data[6] or "")
+        try:
+            if data[7]:
+                self.date_hire.setDate(QDate.fromString(str(data[7]), "yyyy-MM-dd"))
+        except Exception:
+            pass
+        self.combo_contract.setCurrentIndex(0 if data[8] == "Monthly" else 1)
+        self.spin_salary.setValue(float(data[9]) if data[9] else 0.0)
+        self.spin_hourly.setValue(float(data[10]) if data[10] else 0.0)
+        if data[11] and os.path.exists(data[11]):
+            self._photo_path = data[11]
+            pixmap = QPixmap(data[11])
+            self.lbl_photo.setPixmap(
+                pixmap.scaled(
+                    84, 84, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation
+                )
+            )
+            self.lbl_photo.setText("")
+        status_map = {"Actif": 0, "Congé": 1, "Suspendu": 2, "Démission": 3, "Licencié": 4, "Retraité": 5}
+        self.combo_status.setCurrentIndex(status_map.get(data[12] or "Actif", 0))
+        self._refresh_tab_indicators()
+
+    def get_values(self) -> dict:
+        """Retourner un dict prêt pour StaffRepository.add_staff / update_staff."""
+        status_text = self.combo_status.currentText()
+        status = status_text.split(" / ")[0]
+        is_monthly = self.combo_contract.currentIndex() == 0
+        return {
+            "first_name": self.txt_fname.text().strip(),
+            "last_name": self.txt_lname.text().strip(),
+            "role": self.combo_role.currentText(),
+            "specialty": self.txt_spec.text().strip(),
+            "phone": self.txt_phone.text().strip(),
+            "email": self.txt_email.text().strip(),
+            "address": self.txt_address.text().strip(),
+            "hire_date": self.date_hire.date().toString("yyyy-MM-dd"),
+            "contract_type": "Monthly" if is_monthly else "Hourly",
+            "salary_base": self.spin_salary.value() if is_monthly else 0.0,
+            "hourly_rate": 0.0 if is_monthly else self.spin_hourly.value(),
+            "status": status,
+            "photo_path": "",  # will be set by caller after copying the file
+        }
+
+    def get_new_photo_path(self) -> str:
+        """Chemin local de la nouvelle photo sélectionnée, ou chaîne vide."""
+        return self._photo_path
+
+
 class ModernStaffManagement(QMainWindow):
     def __init__(self):
         super().__init__()
@@ -205,8 +526,6 @@ class ModernStaffManagement(QMainWindow):
         self.setMinimumSize(1100, 700)
 
         ThemeManager.apply_theme(self)
-        self.current_photo_path = None
-        self.selected_staff_id = None
 
         self.init_ui()
         self.load_staff_list()
@@ -215,15 +534,16 @@ class ModernStaffManagement(QMainWindow):
     def apply_rbac(self, role: str) -> None:
         """تطبيق صلاحيات الأزرار بناءً على دور المستخدم — يُستدعى من MainWindow."""
         caps = get_module_caps(role, "staff_management")
-        self.btn_save.setEnabled(caps["can_write"])
-        self.btn_save.setVisible(caps["can_write"])
+        if hasattr(self, "btn_add"):
+            self.btn_add.setEnabled(caps["can_write"])
+            self.btn_add.setVisible(caps["can_write"])
 
     def init_ui(self):
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
         self.main_layout = QVBoxLayout(self.central_widget)
-        self.main_layout.setContentsMargins(20, 20, 20, 20)
-        self.main_layout.setSpacing(15)
+        self.main_layout.setContentsMargins(24, 20, 24, 20)
+        self.main_layout.setSpacing(16)
 
         # 1. En-tête unifié
         header = ModuleHeaderWidget(
@@ -247,285 +567,68 @@ class ModernStaffManagement(QMainWindow):
 
         self.main_layout.addWidget(self.tabs)
 
-    def create_card(self):
-        frame = QFrame()
-        frame.setStyleSheet(get_card_style())
-        return frame
-
-    def styled_input(self, placeholder):
-        le = QLineEdit()
-        le.setPlaceholderText(placeholder)
-        le.setMinimumHeight(38)
-        colors = ThemeManager.get_colors()
-        le.setStyleSheet(
-            f"QLineEdit {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }} QLineEdit:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}"
-        )
-        return le
-
-    def sanitize(self, text):
-        if not text:
-            return ""
-        return str(text).encode('latin-1', 'ignore').decode('latin-1')
-
-    def styled_combo(self):
-        combo = QComboBox()
-        combo.setMinimumHeight(38)
-        colors = ThemeManager.get_colors()
-        combo.setStyleSheet(
-            f"QComboBox {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }} QComboBox:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}"
-        )
-        return combo
-
-    def style_table(self, table):
-        table.setShowGrid(False)
-        table.setAlternatingRowColors(True)
-        table.verticalHeader().setVisible(False)
-        table.setStyleSheet(get_table_style())
-
     def setup_staff_tab(self):
         tab = QWidget()
-        layout = QHBoxLayout(tab)
-        layout.setSpacing(20)
+        layout = QVBoxLayout(tab)
+        layout.setSpacing(16)
         layout.setContentsMargins(20, 20, 20, 20)
         colors = ThemeManager.get_colors()
 
-        # --- العمود الأيمن: نموذج الإدخال (مع Scroll) ---
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFixedWidth(420)
+        # ─── Barre d'outils ───
+        toolbar_card = card_frame()
+        tlay = QHBoxLayout(toolbar_card)
+        tlay.setContentsMargins(10, 6, 10, 6)
+        tlay.setSpacing(8)
 
-        form_container = QFrame()
-        form_container.setStyleSheet(
-            f"background-color: {colors.BG_CARD}; border-radius: 12px; border: 1px solid {colors.BORDER};"
+        self.btn_add = QPushButton("➕  Nouvel Employé")
+        self.btn_add.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_add.setFixedHeight(32)
+        self.btn_add.setStyleSheet(
+            f"QPushButton {{ background: qlineargradient(x1:0,y1:0,x2:1,y2:0,"
+            f"stop:0 {colors.SUCCESS}, stop:1 #16A34A); color:white; font-weight:700;"
+            f"font-size:12px; border-radius:7px; border:none; padding:4px 14px; }}"
+            f"QPushButton:hover {{ background:{colors.SUCCESS_HOVER}; }}"
+            f"QPushButton:disabled {{ background:{colors.BORDER}; color:{colors.TEXT_SECONDARY}; }}"
         )
+        self.btn_add.clicked.connect(lambda: self.open_staff_dialog())
 
-        form_layout = QVBoxLayout(form_container)
-        form_layout.setSpacing(15)
-        form_layout.setContentsMargins(20, 20, 20, 20)
-
-        lbl_new = QLabel("📝 Nouveau Profil / ملف جديد")
-        lbl_new.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        lbl_new.setStyleSheet(
-            f"background-color: {colors.BG_MAIN}; color: {colors.TEXT_SECONDARY}; font-weight: bold; font-size: 14px; padding: 10px; border-radius: 6px; border: 1px dashed {colors.BORDER};"
-        )
-        form_layout.addWidget(lbl_new)
-
-        # الصورة الشخصية
-        photo_layout = QHBoxLayout()
-        self.lbl_photo = QLabel()
-        self.lbl_photo.setFixedSize(110, 110)
-        self.lbl_photo.setStyleSheet(
-            f"background-color: {colors.BG_MAIN}; border-radius: 55px; border: 3px solid {colors.BORDER}; color: {colors.TEXT_SECONDARY};"
-        )
-        self.lbl_photo.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.lbl_photo.setText("Photo")
-
-        btn_upload = QPushButton("📷")
-        btn_upload.setFixedSize(36, 36)
-        btn_upload.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_upload.setStyleSheet(
-            f"background-color: {colors.PRIMARY_DARK}; color: white; border-radius: 18px; border: 2px solid {colors.BG_CARD};"
-        )
-        btn_upload.clicked.connect(self.upload_photo)
-
-        photo_wrapper = QWidget()
-        photo_wrapper.setStyleSheet("background: transparent;")
-        pw_layout = QVBoxLayout(photo_wrapper)
-        pw_layout.addWidget(self.lbl_photo)
-
-        photo_layout.addStretch()
-        photo_layout.addWidget(photo_wrapper)
-        photo_layout.addWidget(btn_upload, 0, Qt.AlignmentFlag.AlignBottom)
-        photo_layout.addStretch()
-        form_layout.addLayout(photo_layout)
-
-        # الحقول الأساسية
-        lbl_info = QLabel("👤 Infos Personnelles / البيانات الشخصية")
-        lbl_info.setStyleSheet(
-            f"font-weight: bold; color: {colors.TEXT_PRIMARY}; border-bottom: 2px solid {colors.BORDER}; padding-bottom: 5px;"
-        )
-        form_layout.addWidget(lbl_info)
-
-        self.txt_fname = self.styled_input("Prénom / الاسم")
-        self.txt_lname = self.styled_input("Nom / اللقب")
-
-        self.combo_role = self.styled_combo()
-        self.combo_role.addItems(["Professeur", "Administration", "Comptabilité", "Agent", "Sécurité"])
-
-        form_layout.addWidget(self.txt_fname)
-        form_layout.addWidget(self.txt_lname)
-        form_layout.addWidget(self.combo_role)
-
-        self.txt_spec = self.styled_input("Spécialité (Ex: Math)")
-        self.txt_phone = self.styled_input("Téléphone / الهاتف")
-        self.txt_email = self.styled_input("Email / البريد الإلكتروني")
-        self.txt_address = self.styled_input("Adresse / العنوان")
-
-        self.combo_status = self.styled_combo()
-        self.combo_status.addItems(
-            [
-                "Actif / نشط",
-                "Congé / إجازة",
-                "Suspendu / موقوف",
-                "Démission / استقالة",
-                "Licencié / مفصول",
-                "Retraité / متقاعد",
-            ]
-        )
-
-        form_layout.addWidget(self.txt_spec)
-        form_layout.addWidget(self.txt_phone)
-        form_layout.addWidget(self.txt_email)
-        form_layout.addWidget(self.txt_address)
-        form_layout.addWidget(QLabel("Statut / الحالة:"))
-        form_layout.addWidget(self.combo_status)
-
-        # إعدادات العقد والراتب
-        lbl_contract = QLabel("💼 Contrat & Salaire / العقد والراتب")
-        lbl_contract.setStyleSheet(
-            f"font-weight: bold; color: {colors.TEXT_PRIMARY}; margin-top: 10px; border-bottom: 2px solid {colors.BORDER}; padding-bottom: 5px;"
-        )
-        form_layout.addWidget(lbl_contract)
-
-        self.date_hire = QDateEdit()
-        self.date_hire.setCalendarPopup(True)
-        self.date_hire.setDate(QDate.currentDate())
-        self.date_hire.setStyleSheet(
-            f"QDateEdit {{ padding: 8px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }} QDateEdit:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}"
-        )
-        self.date_hire.setMinimumHeight(38)
-
-        form_layout.addWidget(QLabel("Date d'embauche:"))
-        form_layout.addWidget(self.date_hire)
-
-        self.combo_contract = self.styled_combo()
-        self.combo_contract.addItems(["Salaire Mensuel (راتب شهري)", "Vacataire/Horaire (بالساعة)"])
-        self.combo_contract.currentIndexChanged.connect(self.toggle_salary_fields)
-        form_layout.addWidget(self.combo_contract)
-
-        # Salary Inputs
-        self.spin_salary = QDoubleSpinBox()
-        self.spin_salary.setRange(0, 5000000)
-        self.spin_salary.setPrefix("FCFA ")
-        self.spin_salary.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)
-        self.spin_salary.setStyleSheet(
-            f"QDoubleSpinBox {{ padding: 8px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }} QDoubleSpinBox:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}"
-        )
-        self.spin_salary.setMinimumHeight(38)
-        self.lbl_salary = QLabel("Salaire de Base:")
-
-        self.spin_hourly = QDoubleSpinBox()
-        self.spin_hourly.setRange(0, 100000)
-        self.spin_hourly.setPrefix("FCFA ")
-        self.spin_hourly.setButtonSymbols(QDoubleSpinBox.ButtonSymbols.NoButtons)
-        self.spin_hourly.setStyleSheet(
-            f"QDoubleSpinBox {{ padding: 8px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }} QDoubleSpinBox:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}"
-        )
-        self.spin_hourly.setMinimumHeight(38)
-        self.lbl_hourly = QLabel("Taux Horaire:")
-
-        form_layout.addWidget(self.lbl_salary)
-        form_layout.addWidget(self.spin_salary)
-        form_layout.addWidget(self.lbl_hourly)
-        form_layout.addWidget(self.spin_hourly)
-
-        # Buttons
-        btn_layout = QHBoxLayout()
-        self.btn_save = QPushButton("💾 Enregistrer")
-        self.btn_save.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.btn_save.setMinimumHeight(45)
-        self.btn_save.setStyleSheet(
-            f"QPushButton {{ background-color: {colors.SUCCESS}; color: white; border-radius: 8px; font-weight: bold; border: none; }} QPushButton:hover {{ background-color: {colors.SUCCESS_HOVER}; }}"
-        )
-        self.btn_save.clicked.connect(self.save_staff)
-
-        btn_clear = QPushButton("🔄")
-        btn_clear.setMinimumHeight(45)
-        btn_clear.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_clear.setStyleSheet(
-            f"QPushButton {{ background-color: {colors.BG_CARD}; color: {colors.TEXT_SECONDARY}; border-radius: 8px; font-weight: bold; border: 1px solid {colors.BORDER}; }} QPushButton:hover {{ background-color: {colors.BG_MAIN}; }}"
-        )
-        btn_clear.clicked.connect(self.clear_form)
-
-        btn_layout.addWidget(self.btn_save)
-        btn_layout.addWidget(btn_clear)
-        form_layout.addLayout(btn_layout)
-
-        form_layout.addStretch()
-        scroll.setWidget(form_container)
-        scroll.setStyleSheet("QScrollArea { background: transparent; border: none; }")
-        layout.addWidget(scroll)
-
-        # --- العمود الأيسر: الجدول والبحث ---
-        list_container = QWidget()
-        list_layout = QVBoxLayout(list_container)
-        list_layout.setSpacing(15)
-        list_layout.setContentsMargins(0, 0, 0, 0)
-
-        # Search Bar
-        search_card = self.create_card()
-        slayout = QHBoxLayout(search_card)
-        slayout.setContentsMargins(10, 10, 10, 10)
-
-        self.txt_search = self.styled_input("🔍 Rechercher un employé...")
+        self.txt_search = styled_input("🔍 Rechercher un employé...", min_height=32)
+        self.txt_search.setMaximumWidth(380)
         self.txt_search.textChanged.connect(self.load_staff_list)
 
-        btn_print = QPushButton("🖨️ Liste")
+        btn_print = QPushButton("🖨 Liste")
         btn_print.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_print.setFixedHeight(32)
         btn_print.setStyleSheet(
-            f"QPushButton {{ background-color: {colors.PRIMARY}; color: white; padding: 8px 15px; border-radius: 6px; font-weight: bold; border: none; }} QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}"
+            f"QPushButton {{ background:transparent; color:{colors.PRIMARY};"
+            f" font-weight:600; border:1.5px solid {colors.PRIMARY};"
+            f" border-radius:7px; font-size:11px; padding:4px 12px; }}"
+            f"QPushButton:hover {{ background:{colors.PRIMARY_LIGHT}; }}"
         )
         btn_print.clicked.connect(self.print_staff_list)
 
-        slayout.addWidget(self.txt_search)
-        slayout.addWidget(btn_print)
-        list_layout.addWidget(search_card)
+        tlay.addWidget(self.btn_add)
+        tlay.addStretch()
+        tlay.addWidget(self.txt_search)
+        tlay.addStretch()
+        tlay.addWidget(btn_print)
+        layout.addWidget(toolbar_card)
 
-        # Table
+        # ─── Tableau ───
         self.table_staff = QTableWidget()
-        self.style_table(self.table_staff)
+        style_table(self.table_staff)
         self.table_staff.setColumnCount(9)
         self.table_staff.setHorizontalHeaderLabels(
-            ["ID", "Nom & Prénom", "Fonction", "Spécialité", "Tél", "Contrat", "Montant", "Statut", "Actions"]
+            ["ID", "Nom & Prénom", "Fonction", "Spécialité", "Tél", "Contrat", "Montant", "Statut", "⚙️"]
         )
         self.table_staff.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.table_staff.setColumnWidth(0, 50)
-        self.table_staff.setColumnWidth(7, 80)
-        self.table_staff.setColumnWidth(8, 120)
+        self.table_staff.setColumnWidth(7, 90)
+        self.table_staff.setColumnWidth(8, 80)
         self.table_staff.setIconSize(QSize(32, 32))
-        self.table_staff.itemSelectionChanged.connect(self.on_staff_selected)
+        layout.addWidget(self.table_staff)
 
-        list_layout.addWidget(self.table_staff)
-        layout.addWidget(list_container)
-
-        self.toggle_salary_fields()
         self.tabs.addTab(tab, "  👨‍💼 Personnel / الموظفون  ")
-
-    # --- Logic Methods ---
-    def toggle_salary_fields(self):
-        idx = self.combo_contract.currentIndex()
-        if idx == 0:  # Monthly
-            self.lbl_salary.setVisible(True)
-            self.spin_salary.setVisible(True)
-            self.lbl_hourly.setVisible(False)
-            self.spin_hourly.setVisible(False)
-        else:  # Hourly
-            self.lbl_salary.setVisible(False)
-            self.spin_salary.setVisible(False)
-            self.lbl_hourly.setVisible(True)
-            self.spin_hourly.setVisible(True)
-
-    def upload_photo(self):
-        file_path, _ = QFileDialog.getOpenFileName(self, "Choisir une photo", "", "Images (*.png *.jpg *.jpeg)")
-        if file_path:
-            self.current_photo_path = file_path
-            pixmap = QPixmap(file_path)
-            self.lbl_photo.setPixmap(
-                pixmap.scaled(
-                    100, 100, Qt.AspectRatioMode.KeepAspectRatioByExpanding, Qt.TransformationMode.SmoothTransformation
-                )
-            )
-            self.lbl_photo.setText("")
 
     def load_staff_list(self):
         self.table_staff.setRowCount(0)
@@ -574,20 +677,24 @@ class ModernStaffManagement(QMainWindow):
                 btn_layout.setContentsMargins(2, 2, 2, 2)
                 btn_layout.setSpacing(5)
 
-                colors = ThemeManager.get_colors()
-                btn_edit = QPushButton("✎")
-                btn_edit.setFixedSize(28, 28)
+                _c = ThemeManager.get_colors()
+                btn_edit = QPushButton("✎ Modifier")
+                btn_edit.setFixedHeight(28)
                 btn_edit.setCursor(Qt.CursorShape.PointingHandCursor)
                 btn_edit.setStyleSheet(
-                    f"background-color: {colors.WARNING}; color: white; border-radius: 4px; border: none;"
+                    f"QPushButton {{ background:{_c.PRIMARY}; color:white; border-radius:6px;"
+                    f"border:none; font-weight:600; font-size:11px; padding:3px 8px; }}"
+                    f"QPushButton:hover {{ background:{_c.PRIMARY_HOVER}; }}"
                 )
-                btn_edit.clicked.connect(lambda ch, pid=row[0]: self.load_staff_details(pid))
+                btn_edit.clicked.connect(lambda ch, pid=row[0]: self.open_staff_dialog(pid))
 
-                btn_del = QPushButton("✕")
-                btn_del.setFixedSize(28, 28)
+                btn_del = QPushButton("✕ Archiver")
+                btn_del.setFixedHeight(28)
                 btn_del.setCursor(Qt.CursorShape.PointingHandCursor)
                 btn_del.setStyleSheet(
-                    f"background-color: {colors.DANGER}; color: white; border-radius: 4px; border: none;"
+                    f"QPushButton {{ background:{_c.DANGER}; color:white; border-radius:6px;"
+                    f"border:none; font-weight:600; font-size:11px; padding:3px 8px; }}"
+                    f"QPushButton:hover {{ background:#B91C1C; }}"
                 )
                 btn_del.clicked.connect(lambda ch, pid=row[0]: self.delete_staff_from_table(pid))
 
@@ -620,168 +727,74 @@ class ModernStaffManagement(QMainWindow):
         except Exception as e:
             AppLogger.error("StaffManagement", f"KPI load error: {e}")
 
-    def save_staff(self):
-        fname = self.txt_fname.text().strip()
-        lname = self.txt_lname.text().strip()
-        role = self.combo_role.currentText()
-        spec = self.txt_spec.text().strip()
-        phone = self.txt_phone.text().strip()
-        email = self.txt_email.text().strip()
-        address = self.txt_address.text().strip()
-        hire_d = self.date_hire.date().toString("yyyy-MM-dd")
-
-        is_monthly = self.combo_contract.currentIndex() == 0
-        contract = "Monthly" if is_monthly else "Hourly"
-        base_sal = self.spin_salary.value() if is_monthly else 0.0
-        hr_rate = 0.0 if is_monthly else self.spin_hourly.value()
-
-        status_text = self.combo_status.currentText()
-        status = status_text.split(" / ")[0]
-
-        if not fname or not lname:
-            QMessageBox.warning(self, "Erreur", "Nom et Prénom obligatoires.")
-            return
-
-        saved_photo_path = ""
-
-        try:
-            db = DatabaseManager()
-            if self.current_photo_path:
-                save_dir = "staff_photos"
-                if not os.path.exists(save_dir):
-                    os.makedirs(save_dir)
-                ext = os.path.splitext(self.current_photo_path)[1]
-                filename = f"staff_{datetime.now().strftime('%Y%m%d%H%M%S')}{ext}"
-                saved_photo_path = os.path.join(save_dir, filename)
-                try:
-                    shutil.copy(self.current_photo_path, saved_photo_path)
-                except Exception as e:
-                    print(f"Failed to copy photo: {e}")
-            elif self.selected_staff_id:
+    def open_staff_dialog(self, staff_id: int | None = None) -> None:
+        """Ouvrir la boîte de dialogue pour ajouter ou modifier un employé."""
+        dialog = StaffDialog(self, staff_id=staff_id)
+        if staff_id is not None:
+            try:
+                db = DatabaseManager()
                 with db.get_connection() as conn:
                     repo = StaffRepository(conn)
-                    saved_photo_path = repo.get_photo_path(self.selected_staff_id) or ""
+                    data = repo.get_staff_details(staff_id)
+                if data:
+                    dialog.populate(data)
+            except Exception as e:
+                QMessageBox.critical(self, "Erreur", friendly_db_error(e))
+                return
 
-            staff_data = {
-                "first_name": fname,
-                "last_name": lname,
-                "role": role,
-                "specialty": spec,
-                "phone": phone,
-                "hire_date": hire_d,
-                "contract_type": contract,
-                "salary_base": base_sal,
-                "hourly_rate": hr_rate,
-                "photo_path": saved_photo_path,
-                "email": email,
-                "address": address,
-                "status": status,
-            }
+        result = dialog.exec()
+        if result in (QDialog.DialogCode.Accepted, StaffDialog.RESULT_SAVE_AND_NEW):
+            values = dialog.get_values()
+            self._save_staff_from_dialog(dialog, values, staff_id)
+            if result == StaffDialog.RESULT_SAVE_AND_NEW:
+                self.open_staff_dialog()
+
+    def _save_staff_from_dialog(self, dialog: "StaffDialog", values: dict, staff_id: int | None) -> None:
+        """Copier la photo et enregistrer les données via le repository."""
+        try:
+            db = DatabaseManager()
+            new_photo = dialog.get_new_photo_path()
+            if new_photo:
+                save_dir = "staff_photos"
+                os.makedirs(save_dir, exist_ok=True)
+                ext = os.path.splitext(new_photo)[1]
+                filename = f"staff_{datetime.now().strftime('%Y%m%d%H%M%S')}{ext}"
+                saved_path = os.path.join(save_dir, filename)
+                try:
+                    shutil.copy(new_photo, saved_path)
+                    values["photo_path"] = saved_path
+                except Exception as e:
+                    AppLogger.error("StaffManagement", f"Photo copy failed: {e}")
+            elif staff_id is not None:
+                with db.get_connection() as conn:
+                    repo = StaffRepository(conn)
+                    values["photo_path"] = repo.get_photo_path(staff_id) or ""
 
             with db.get_connection() as conn:
                 repo = StaffRepository(conn)
-                if self.selected_staff_id:
-                    repo.update_staff(self.selected_staff_id, staff_data)
+                if staff_id is not None:
+                    repo.update_staff(staff_id, values)
                     log_audit(
                         conn,
                         getattr(self, "current_user", "system"),
                         "EDIT_STAFF",
-                        f"{fname} {lname} (id={self.selected_staff_id})",
+                        f"{values['first_name']} {values['last_name']} (id={staff_id})",
                     )
                     QMessageBox.information(self, "Succès", "Mise à jour réussie.")
                 else:
-                    repo.add_staff(staff_data)
-                    log_audit(conn, getattr(self, "current_user", "system"), "ADD_STAFF", f"{fname} {lname}")
+                    repo.add_staff(values)
+                    log_audit(
+                        conn,
+                        getattr(self, "current_user", "system"),
+                        "ADD_STAFF",
+                        f"{values['first_name']} {values['last_name']}",
+                    )
                     QMessageBox.information(self, "Succès", "Employé ajouté avec succès.")
                 conn.commit()
-
             self.load_staff_list()
-            self.clear_form()
-
+            self._load_kpi_stats()
         except Exception as e:
-            QMessageBox.critical(self, "Erreur", f"Une erreur s'est produite lors de l'enregistrement: {str(e)}")
-
-    def clear_form(self):
-        self.txt_fname.clear()
-        self.txt_lname.clear()
-        self.txt_spec.clear()
-        self.txt_phone.clear()
-        self.txt_email.clear()
-        self.txt_address.clear()
-        self.spin_salary.setValue(0)
-        self.spin_hourly.setValue(0)
-        self.lbl_photo.clear()
-        self.lbl_photo.setText("Photo")
-        self.current_photo_path = None
-        self.selected_staff_id = None
-        self.combo_status.setCurrentIndex(0)
-        self.btn_save.setText("💾 Enregistrer")
-        colors = ThemeManager.get_colors()
-        self.btn_save.setStyleSheet(
-            f"QPushButton {{ background-color: {colors.SUCCESS}; color: white; border-radius: 8px; font-weight: bold; border: none; }} QPushButton:hover {{ background-color: {colors.SUCCESS_HOVER}; }}"
-        )
-
-    def on_staff_selected(self):
-        selected_rows = self.table_staff.selectedIndexes()
-        if selected_rows:
-            row = selected_rows[0].row()
-            staff_id = int(self.table_staff.item(row, 0).text())
-            self.load_staff_details(staff_id)
-
-    def load_staff_details(self, staff_id):
-        try:
-            db = DatabaseManager()
-            with db.get_connection() as conn:
-                repo = StaffRepository(conn)
-                data = repo.get_staff_details(staff_id)
-
-            if data:
-                self.selected_staff_id = staff_id
-                self.txt_fname.setText(data[0] or "")
-                self.txt_lname.setText(data[1] or "")
-                self.combo_role.setCurrentText(data[2] or "")
-                self.txt_spec.setText(data[3] or "")
-                self.txt_phone.setText(data[4] or "")
-                self.txt_email.setText(data[5] or "")
-                self.txt_address.setText(data[6] or "")
-
-                try:
-                    if data[7]:
-                        self.date_hire.setDate(QDate.fromString(data[7], "yyyy-MM-dd"))
-                except Exception:
-                    pass
-                idx = 0 if data[8] == "Monthly" else 1
-                self.combo_contract.setCurrentIndex(idx)
-                self.spin_salary.setValue(data[9] or 0)
-                self.spin_hourly.setValue(data[10] or 0)
-
-                if data[11] and os.path.exists(data[11]):
-                    self.current_photo_path = data[11]
-                    pixmap = QPixmap(data[11])
-                    self.lbl_photo.setPixmap(
-                        pixmap.scaled(
-                            100,
-                            100,
-                            Qt.AspectRatioMode.KeepAspectRatioByExpanding,
-                            Qt.TransformationMode.SmoothTransformation,
-                        )
-                    )
-                else:
-                    self.lbl_photo.clear()
-                    self.lbl_photo.setText("Photo")
-                    self.current_photo_path = None
-
-                staff_status = data[12] or "Actif"
-                status_map = {"Actif": 0, "Congé": 1, "Suspendu": 2, "Démission": 3, "Licencié": 4, "Retraité": 5}
-                self.combo_status.setCurrentIndex(status_map.get(staff_status, 0))
-
-                self.btn_save.setText("✏️ Modifier")
-                colors = ThemeManager.get_colors()
-                self.btn_save.setStyleSheet(
-                    f"QPushButton {{ background-color: {colors.WARNING}; color: white; border-radius: 8px; font-weight: bold; border: none; }}"
-                )
-        except Exception as e:
-            QMessageBox.critical(self, "Erreur", f"Impossible de charger les détails: {str(e)}")
+            QMessageBox.critical(self, "Erreur", friendly_db_error(e))
 
     def delete_staff_from_table(self, pid):
         reply = QMessageBox.question(
@@ -799,9 +812,8 @@ class ModernStaffManagement(QMainWindow):
                     log_audit(conn, getattr(self, "current_user", "system"), "ARCHIVE_STAFF", f"id={pid}")
                     conn.commit()
                 self.load_staff_list()
-                self.clear_form()
             except Exception as e:
-                QMessageBox.critical(self, "Erreur", str(e))
+                QMessageBox.critical(self, "Erreur", friendly_db_error(e))
 
     def print_staff_list(self):
         try:

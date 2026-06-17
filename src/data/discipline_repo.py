@@ -6,6 +6,7 @@ Covers: StudentDiscipline CRUD, period resolution, class context,
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 
@@ -114,6 +115,110 @@ class DisciplineRepository:
         row = cursor.fetchone()
         return row[0] if row else None
 
+    def list_timetable_slots_for_class_date(self, class_id: int, date_str: str) -> list[tuple]:
+        """Return class timetable slots for the weekday of date_str."""
+        if not class_id or not date_str:
+            return []
+        try:
+            day_of_week = {
+                0: "Lundi",
+                1: "Mardi",
+                2: "Mercredi",
+                3: "Jeudi",
+                4: "Vendredi",
+                5: "Samedi",
+                6: "Dimanche",
+            }[datetime.strptime(date_str, "%Y-%m-%d").weekday()]
+        except (KeyError, ValueError):
+            return []
+
+        cursor = self.conn.cursor()
+        cursor.execute(
+            """
+            SELECT T.id, T.start_time, T.end_time, COALESCE(SB.subject_name_fr, '')
+            FROM Timetable T
+            JOIN Subjects SB ON T.subject_id = SB.id
+            WHERE T.class_id = %s AND T.day_of_week = %s
+            ORDER BY T.start_time, T.id
+            """,
+            (class_id, day_of_week),
+        )
+        return cursor.fetchall()
+
+    def list_subjects_for_history(self, class_id: int | None = None) -> list[tuple]:
+        """Return distinct subjects for discipline history filters."""
+        cursor = self.conn.cursor()
+        if class_id:
+            cursor.execute(
+                """
+                SELECT DISTINCT SB.id, SB.subject_name_fr
+                FROM Timetable T
+                JOIN Subjects SB ON T.subject_id = SB.id
+                WHERE T.class_id = %s
+                ORDER BY SB.subject_name_fr
+                """,
+                (class_id,),
+            )
+        else:
+            cursor.execute("SELECT id, subject_name_fr FROM Subjects ORDER BY subject_name_fr")
+        return cursor.fetchall()
+
+    def list_slots_for_history(self, class_id: int, subject_id: int | None = None) -> list[tuple]:
+        """Return timetable slots for history filters, optionally by subject."""
+        if not class_id:
+            return []
+        cursor = self.conn.cursor()
+        query = """
+            SELECT T.id, T.day_of_week, T.start_time, T.end_time, COALESCE(SB.subject_name_fr, '')
+            FROM Timetable T
+            JOIN Subjects SB ON T.subject_id = SB.id
+            WHERE T.class_id = %s
+        """
+        params: list[Any] = [class_id]
+        if subject_id:
+            query += " AND T.subject_id = %s"
+            params.append(subject_id)
+        query += " ORDER BY T.day_of_week, T.start_time, T.id"
+        cursor.execute(query, params)
+        return cursor.fetchall()
+
+    def resolve_timetable_slot_context_for_class_datetime(
+        self, class_id: int, date_str: str, time_str: str
+    ) -> tuple[int, Any, Any, str] | None:
+        """Return (slot_id, start_time, end_time, subject_name) for class/date/time."""
+        if not class_id or not date_str or not time_str:
+            return None
+        try:
+            day_of_week = {
+                0: "Lundi",
+                1: "Mardi",
+                2: "Mercredi",
+                3: "Jeudi",
+                4: "Vendredi",
+                5: "Samedi",
+                6: "Dimanche",
+            }[datetime.strptime(date_str, "%Y-%m-%d").weekday()]
+        except (KeyError, ValueError):
+            return None
+
+        cursor = self.conn.cursor()
+        cursor.execute(
+            """
+            SELECT T.id, T.start_time, T.end_time, COALESCE(SB.subject_name_fr, '')
+            FROM Timetable T
+            JOIN Subjects SB ON T.subject_id = SB.id
+            WHERE T.class_id = %s
+              AND T.day_of_week = %s
+              AND T.start_time <= %s
+              AND T.end_time > %s
+            ORDER BY T.start_time
+            LIMIT 1
+            """,
+            (class_id, day_of_week, time_str, time_str),
+        )
+        row = cursor.fetchone()
+        return row if row else None
+
     # ── StudentDiscipline ──────────────────────────────────
 
     def insert_incident(
@@ -126,16 +231,17 @@ class DisciplineRepository:
         observation: str,
         year_id: int,
         period_id: int | None,
+        timetable_slot_id: int | None = None,
     ) -> None:
         cursor = self.conn.cursor()
         cursor.execute(
             """
             INSERT INTO StudentDiscipline
                 (student_id, incident_date, incident_type, sanction,
-                 points_deducted, observation, year_id, period_id)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                 points_deducted, observation, year_id, period_id, timetable_slot_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
-            (student_id, date, incident_type, sanction, points, observation, year_id, period_id),
+            (student_id, date, incident_type, sanction, points, observation, year_id, period_id, timetable_slot_id),
         )
 
     def update_incident(
@@ -146,16 +252,17 @@ class DisciplineRepository:
         sanction: str,
         points: int,
         observation: str,
+        timetable_slot_id: int | None = None,
     ) -> None:
         cursor = self.conn.cursor()
         cursor.execute(
             """
             UPDATE StudentDiscipline
             SET incident_date=%s, incident_type=%s, sanction=%s,
-                points_deducted=%s, observation=%s
+                points_deducted=%s, observation=%s, timetable_slot_id=%s
             WHERE id=%s
             """,
-            (date, incident_type, sanction, points, observation, incident_id),
+            (date, incident_type, sanction, points, observation, timetable_slot_id, incident_id),
         )
 
     def delete_incident(self, incident_id: int) -> None:
@@ -172,12 +279,18 @@ class DisciplineRepository:
                    C.class_name_fr,
                    SCN.class_id,
                    D.incident_date, D.incident_type, D.sanction,
-                   D.points_deducted, D.observation
+                     D.points_deducted, D.observation,
+                     D.timetable_slot_id,
+                     T.start_time,
+                     T.end_time,
+                     COALESCE(SB.subject_name_fr, '')
             FROM StudentDiscipline D
             JOIN Students S ON D.student_id = S.id
             LEFT JOIN StudentClassNumbers SCN
                    ON S.id = SCN.student_id AND SCN.year_id = D.year_id
             LEFT JOIN Classes C ON SCN.class_id = C.id
+                 LEFT JOIN Timetable T ON D.timetable_slot_id = T.id
+                 LEFT JOIN Subjects SB ON T.subject_id = SB.id
             WHERE D.id = %s
             """,
             (incident_id,),
@@ -195,6 +308,10 @@ class DisciplineRepository:
             "sanction": row[6],
             "points": row[7],
             "observation": row[8],
+            "timetable_slot_id": row[9],
+            "slot_start_time": row[10],
+            "slot_end_time": row[11],
+            "slot_subject": row[12],
         }
 
     def get_recent_incidents(self, year_id: int, limit: int = 10) -> list:
@@ -230,24 +347,30 @@ class DisciplineRepository:
         year_id: int,
         class_id: int | None = None,
         period_id: int | None = None,
+        subject_id: int | None = None,
+        timetable_slot_id: int | None = None,
         search: str | None = None,
     ) -> list:
         """Return discipline history rows with optional filters.
 
         Columns: (id, student_name, class_name, incident_date,
-                  incident_type, sanction, points_deducted, observation)
+                incident_type, sanction, points_deducted, observation,
+                start_time, end_time, subject_name_fr)
         """
         query = """
             SELECT D.id,
                    S.first_name_fr || ' ' || S.last_name_fr,
                    C.class_name_fr,
                    D.incident_date, D.incident_type, D.sanction,
-                   D.points_deducted, D.observation
+                 D.points_deducted, D.observation,
+                 T.start_time, T.end_time, COALESCE(SB.subject_name_fr, '')
             FROM StudentDiscipline D
             JOIN Students S ON D.student_id = S.id
             LEFT JOIN StudentClassNumbers SCN
                    ON S.id = SCN.student_id AND SCN.year_id = D.year_id
             LEFT JOIN Classes C ON SCN.class_id = C.id
+             LEFT JOIN Timetable T ON D.timetable_slot_id = T.id
+             LEFT JOIN Subjects SB ON T.subject_id = SB.id
             WHERE 1=1
         """
         params: list = []
@@ -273,6 +396,12 @@ class DisciplineRepository:
         if class_id:
             query += " AND SCN.class_id = %s"
             params.append(class_id)
+        if subject_id:
+            query += " AND T.subject_id = %s"
+            params.append(subject_id)
+        if timetable_slot_id:
+            query += " AND D.timetable_slot_id = %s"
+            params.append(timetable_slot_id)
         if search:
             query += " AND (S.first_name_fr ILIKE %s OR S.last_name_fr ILIKE %s)"
             params.extend([f"%{search}%", f"%{search}%"])

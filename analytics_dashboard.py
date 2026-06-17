@@ -13,6 +13,7 @@ analytics_dashboard.py — Phase 6.1+ (consolidé avec advanced_reports)
 from __future__ import annotations
 
 import os
+import subprocess
 import sys
 from datetime import datetime
 
@@ -57,7 +58,7 @@ from print_export_service import get_report_output_mode, output_pdf  # noqa: E40
 from repositories.analytics_repo import AnalyticsRepository  # noqa: E402
 from repositories.finance_repo import FinanceRepository  # noqa: E402
 from services.grade_service import GradeService  # noqa: E402
-from ui_styles import Colors, KpiCard, ModuleHeaderWidget, ThemeManager, get_tabs_style  # noqa: E402
+from ui_styles import Colors, KpiCard, ModuleHeaderWidget, ThemeManager, get_module_caps, get_tabs_style  # noqa: E402
 
 COMPREHENSIVE_PDF_MODE = get_report_output_mode("advanced_comprehensive_pdf_mode", "save")
 
@@ -222,6 +223,8 @@ class ReportWorker(QThread):
         ws.title = "Étudiants"
         hf, hfont = self._hdr_fill(), self._hdr_font()
 
+        # FIX 1: Merge two separate DB connections into one block to avoid
+        # opening a second connection after the first is already closed
         db = DatabaseManager()
         with db.get_connection() as conn:
             repo = AnalyticsRepository(conn)
@@ -233,6 +236,31 @@ class ReportWorker(QThread):
             ph = "s.phone" if "phone" in cols else "''"
             ad = "s.address" if "address" in cols else "''"
             en = "s.registration_date" if "registration_date" in cols else "''"
+
+            cur = conn.cursor()
+            if year_id:
+                cur.execute(
+                    f"""SELECT s.id,COALESCE(CAST(scn.class_number AS VARCHAR),''),
+                    {name_expr} AS n,c.class_name_fr,
+                    CASE WHEN s.gender IN ('0','M') THEN 'M' ELSE 'F' END,
+                    CAST(s.birth_date AS VARCHAR),{bp},{pr},{ph},{ad},
+                    CAST({en} AS VARCHAR),s.status
+                    FROM Students s
+                    JOIN StudentClassNumbers scn ON scn.student_id=s.id AND scn.year_id=%s
+                    JOIN Classes c ON scn.class_id=c.id
+                    WHERE s.status='Active'
+                    ORDER BY c.sort_order,COALESCE(scn.class_number,9999),n""",
+                    (year_id,),
+                )
+            else:
+                cur.execute(
+                    f"""SELECT s.id,'',{name_expr} AS n,'N/A',
+                    CASE WHEN s.gender IN ('0','M') THEN 'M' ELSE 'F' END,
+                    CAST(s.birth_date AS VARCHAR),{bp},{pr},{ph},{ad},
+                    CAST({en} AS VARCHAR),s.status
+                    FROM Students s WHERE s.status='Active' ORDER BY n"""
+                )
+            rows = cur.fetchall()
 
         ws["A1"] = "LISTE DES ÉTUDIANTS"
         ws["A1"].font = Font(bold=True, size=16, color="1E293B")
@@ -258,32 +286,6 @@ class ReportWorker(QThread):
             c.fill = hf
             c.font = hfont
         self.progress.emit(25)
-
-        with db.get_connection() as conn:
-            cur = conn.cursor()
-            if year_id:
-                cur.execute(
-                    f"""SELECT s.id,COALESCE(CAST(scn.class_number AS VARCHAR),''),
-                    {name_expr} AS n,c.class_name_fr,
-                    CASE WHEN s.gender IN ('0','M') THEN 'M' ELSE 'F' END,
-                    CAST(s.birth_date AS VARCHAR),{bp},{pr},{ph},{ad},
-                    CAST({en} AS VARCHAR),s.status
-                    FROM Students s
-                    JOIN StudentClassNumbers scn ON scn.student_id=s.id AND scn.year_id=%s
-                    JOIN Classes c ON scn.class_id=c.id
-                    WHERE s.status='Active'
-                    ORDER BY c.sort_order,COALESCE(scn.class_number,9999),n""",
-                    (year_id,),
-                )
-            else:
-                cur.execute(
-                    f"""SELECT s.id,'',{name_expr} AS n,'N/A',
-                    CASE WHEN s.gender IN ('0','M') THEN 'M' ELSE 'F' END,
-                    CAST(s.birth_date AS VARCHAR),{bp},{pr},{ph},{ad},
-                    CAST({en} AS VARCHAR),s.status
-                    FROM Students s WHERE s.status='Active' ORDER BY n"""
-                )
-            rows = cur.fetchall()
 
         for i, student in enumerate(rows, 5):
             for col, val in enumerate(student, 1):
@@ -391,6 +393,9 @@ class AnalyticsWorker(QThread):
         self.class_id = class_id
 
     def run(self) -> None:
+        # FIX 3: Each sub-method has its own try/except so a grades query failure
+        # does not prevent attendance and finance signals from being emitted.
+        # Without this, a single failure leaves attendance/finance charts stuck on "Chargement…".
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
@@ -399,27 +404,39 @@ class AnalyticsWorker(QThread):
                 self._load_attendance(repo)
                 self._load_finance(repo)
         except Exception as exc:
-            AppLogger.error("AnalyticsDashboard", f"Worker error: {exc}")
+            AppLogger.error("AnalyticsDashboard", f"Worker DB error: {exc}")
             self.error_signal.emit(str(exc))
 
     def _load_grades(self, repo: AnalyticsRepository) -> None:
-        rows = repo.get_grades_by_subject(self.year_id, self.class_id)
-        names = [r[0] for r in rows]
-        averages = [float(r[1]) if r[1] is not None else 0.0 for r in rows]
-        max_scores = [float(r[3]) for r in rows]
-        normalized = [avg / mx * 20 if mx else 0 for avg, mx in zip(averages, max_scores)]
-        self.grades_ready.emit(names, normalized, [float(r[2]) for r in rows])
+        try:
+            rows = repo.get_grades_by_subject(self.year_id, self.class_id)
+            names = [r[0] for r in rows]
+            averages = [float(r[1]) if r[1] is not None else 0.0 for r in rows]
+            max_scores = [float(r[3]) for r in rows]
+            normalized = [avg / mx * 20 if mx else 0 for avg, mx in zip(averages, max_scores)]
+            self.grades_ready.emit(names, normalized, [float(r[2]) for r in rows])
+        except Exception as exc:
+            AppLogger.error("AnalyticsDashboard", f"_load_grades: {exc}")
+            self.grades_ready.emit([], [], [])
 
     def _load_attendance(self, repo: AnalyticsRepository) -> None:
-        monthly: dict[str, float] = {}
-        for month, total, present in repo.get_monthly_attendance_rate(self.year_id, self.class_id):
-            if total and total > 0:
-                monthly[month] = round(present / total * 100, 1)
-        self.attendance_ready.emit(monthly)
+        try:
+            monthly: dict[str, float] = {}
+            for month, total, present in repo.get_monthly_attendance_rate(self.year_id, self.class_id):
+                if total and total > 0:
+                    monthly[month] = round(present / total * 100, 1)
+            self.attendance_ready.emit(monthly)
+        except Exception as exc:
+            AppLogger.error("AnalyticsDashboard", f"_load_attendance: {exc}")
+            self.attendance_ready.emit({})
 
     def _load_finance(self, repo: AnalyticsRepository) -> None:
-        paid, due = repo.get_finance_summary(self.year_id, self.class_id)
-        self.finance_ready.emit(paid, due)
+        try:
+            paid, due = repo.get_finance_summary(self.year_id, self.class_id)
+            self.finance_ready.emit(paid, due)
+        except Exception as exc:
+            AppLogger.error("AnalyticsDashboard", f"_load_finance: {exc}")
+            self.finance_ready.emit(0.0, 0.0)
 
 
 # ──────────────────────────────────────────────────────────────────────────
@@ -645,12 +662,16 @@ class AnalyticsDashboardWindow(QMainWindow):
         self._setup_ui()
         self._load_filters()
 
+    def apply_rbac(self, role: str) -> None:
+        """لوحة تحليلات قراءة فقط — لا توجد أزرار كتابة للتحكم بها."""
+        pass  # read-only analytics dashboard
+
     def _setup_ui(self) -> None:
         central = QWidget()
         self.setCentralWidget(central)
         root = QVBoxLayout(central)
-        root.setContentsMargins(16, 12, 16, 12)
-        root.setSpacing(10)
+        root.setContentsMargins(24, 20, 24, 20)
+        root.setSpacing(16)
         # ThemeManager applies via apply_theme() in __init__ — no hardcoded background needed
         root.addWidget(self._build_header())
         root.addLayout(self._build_kpi_row())
@@ -666,10 +687,11 @@ class AnalyticsDashboardWindow(QMainWindow):
         # Append year/class filters and refresh button
         c = ThemeManager.get_colors()
         _combo_style = (
-            f"QComboBox {{ background:{c.INPUT_BG}; color:{c.TEXT_PRIMARY}; border:1px solid {c.BORDER}; "
-            "border-radius:4px; padding:4px 8px; min-width:120px; } "
-            "QComboBox::drop-down { border:none; } "
-            f"QComboBox QAbstractItemView {{ background:{c.BG_CARD}; color:{c.TEXT_PRIMARY}; }}"
+            f"QComboBox {{ background:{c.INPUT_BG}; color:{c.TEXT_PRIMARY}; border:1.5px solid {c.INPUT_BORDER}; "
+            "border-radius:8px; padding:7px 12px; min-width:120px; } "
+            "QComboBox::drop-down { border:none; width:22px; } "
+            f"QComboBox QAbstractItemView {{ background:{c.BG_CARD}; color:{c.TEXT_PRIMARY}; "
+            f"selection-background-color:{c.PRIMARY_LIGHT}; }}"
         )
         lbl_yr = QLabel("Année:")
         lbl_yr.setStyleSheet(f"color:{c.HEADER_TEXT}; background:transparent;")
@@ -690,9 +712,10 @@ class AnalyticsDashboardWindow(QMainWindow):
         hl.addWidget(self.cmb_class)
         btn = QPushButton("🔄 Actualiser")
         btn.setStyleSheet(
-            "QPushButton { background:#2962ff; color:white; border-radius:6px; "
-            "padding:6px 14px; font-weight:bold; border:none; } "
-            "QPushButton:hover { background:#1565c0; }"
+            # FIX 2: Added missing comma between gradient stop values — Qt silently falls back to flat color without it
+            f"QPushButton {{ background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 {c.PRIMARY}, stop:1 {c.PRIMARY_HOVER}); color:white; border-radius:8px; "
+            "padding:7px 14px; font-weight:bold; border:none; } "
+            f"QPushButton:hover {{ background:{c.PRIMARY_DARK}; }}"
         )
         btn.clicked.connect(self._refresh)
         hl.addWidget(btn)
@@ -936,12 +959,29 @@ class AnalyticsDashboardWindow(QMainWindow):
             return
         if self._worker and self._worker.isRunning():
             self._worker.quit()
+            # FIX 4: wait() ensures the old thread finishes before the new one starts.
+            # Without it, queued signals from the old thread can overwrite fresh data
+            # emitted by the new worker, causing stale KPI values and chart data.
+            self._worker.wait(2000)
         self._worker = AnalyticsWorker(self._year_id, self._class_id)
         self._worker.grades_ready.connect(self._on_grades)
         self._worker.attendance_ready.connect(self._on_attendance)
         self._worker.finance_ready.connect(self._on_finance)
         self._worker.error_signal.connect(lambda e: AppLogger.error("Analytics", e))
         self._worker.start()
+
+    def stop_background_workers(self) -> None:
+        """Stop any running QThread workers before the shared DB pool is closed.
+
+        This window is embedded (its central widget is reparented into the main
+        dashboard), so its own closeEvent never fires — the main window calls this
+        on application shutdown instead.
+        """
+        for worker in (self._worker, self._report_worker):
+            if worker is not None and worker.isRunning():
+                worker.requestInterruption()
+                worker.quit()
+                worker.wait(3000)
 
     def _on_grades(self, names: list, averages: list, coefficients: list) -> None:
         self.grades_chart.update_data(names, averages, coefficients)
@@ -971,15 +1011,17 @@ class AnalyticsDashboardWindow(QMainWindow):
             ax.axis("off")
             self.hist_canvas.draw()
             return
-        grades, max_score, year_label = [], 20, "—"
+        # FIX 6: Use self._year_id (the year selected via cmb_year) instead of
+        # get_active_year_context() which always returns the DB-active year.
+        # All other tabs respect the user's year selection — the histogram must too.
+        grades, max_score, year_label = [], 20, self.cmb_year.currentText() or "—"
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
                 repo = AnalyticsRepository(conn)
-                year_id, year_label = repo.get_active_year_context()
                 max_score = repo.get_class_max_score(class_id) or 20
-                if year_id:
-                    grades = repo.get_grades_for_class(class_id, year_id)
+                if self._year_id:
+                    grades = repo.get_grades_for_class(class_id, self._year_id)
         except Exception as exc:
             AppLogger.error("AnalyticsDashboard", f"histogram: {exc}")
         if not grades:
@@ -1032,8 +1074,11 @@ class AnalyticsDashboardWindow(QMainWindow):
             ax.axis("off")
             self.fin_bar_canvas.draw()
             return
-        inc_dict = {r[0]: r[1] or 0 for r in income_data}
-        exp_dict = {r[0]: r[1] or 0 for r in expense_data}
+        # FIX 5: get_monthly_income_totals returns (month_str, COUNT, TOTAL).
+        # r[1] is the transaction count — r[2] is the actual FCFA amount.
+        # The chart Y-axis says "Montant (FCFA)" so we must use r[2].
+        inc_dict = {r[0]: r[2] or 0 for r in income_data}
+        exp_dict = {r[0]: r[2] or 0 for r in expense_data}
         months = sorted(set(inc_dict) | set(exp_dict))
         if not months:
             ax.text(0.5, 0.5, "Aucune donnée financière", ha="center", va="center", color=c["muted"], fontsize=12)
@@ -1130,6 +1175,15 @@ class AnalyticsDashboardWindow(QMainWindow):
         self.progress_bar.setValue(0)
         self.status_lbl.setText("⏳ Génération en cours…")
         self.status_lbl.setStyleSheet(f"color:{ThemeManager.get_colors().TEXT_SECONDARY}; font-weight:bold;")
+
+        # FIX 7: Stop any running report worker before starting a new one.
+        # Without this, rapid clicks create concurrent threads that both hold DB
+        # connections and write files — the replaced worker's finished signal
+        # also fires _on_export_done() for an already-replaced export.
+        if self._report_worker and self._report_worker.isRunning():
+            self._report_worker.quit()
+            self._report_worker.wait(3000)
+
         self._report_worker = ReportWorker(f"excel_{report_type}", params)
         self._report_worker.progress.connect(self.progress_bar.setValue)
         self._report_worker.finished.connect(self._on_export_done)
@@ -1168,9 +1222,15 @@ class AnalyticsDashboardWindow(QMainWindow):
         )
         if reply == QMessageBox.StandardButton.Yes:
             try:
-                os.startfile(filepath)
+                # FIX 8: os.startfile() is Windows-only — raises AttributeError on Linux/Mac
+                if os.name == "nt":
+                    os.startfile(filepath)
+                elif sys.platform == "darwin":
+                    subprocess.call(["open", filepath])
+                else:
+                    subprocess.call(["xdg-open", filepath])
             except Exception as exc:
-                AppLogger.warning("AnalyticsDashboard", f"Impossible d\'ouvrir: {exc}")
+                AppLogger.warning("AnalyticsDashboard", f"Impossible d'ouvrir: {exc}")
 
     def _on_export_err(self, error: str) -> None:
         self.progress_bar.hide()

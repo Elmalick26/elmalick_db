@@ -31,7 +31,8 @@ from pydantic import BaseModel
 from api.auth import ALGORITHM, SECRET_KEY, create_access_token, get_current_user, require_role
 from api.limiter import limiter
 from app_logger import AppLogger
-from database_setup import DatabaseManager
+from database_setup import DatabaseManager, log_audit
+from error_codes import DB_QUERY
 from repositories.parent_repo import ParentRepository
 
 router = APIRouter(prefix="/parent", tags=["Parent Portal"])
@@ -98,6 +99,7 @@ async def parent_login(request: Request, data: ParentLoginRequest):
             row = repo.get_student_for_parent_login(code)
 
             if not row:
+                AppLogger.warning("API.Parent", f"parent_login échoué — code introuvable: {data.student_code}")
                 raise HTTPException(
                     status_code=404, detail=f"Code élève '{code}' introuvable. Vérifiez le code sur le carnet scolaire."
                 )
@@ -107,10 +109,12 @@ async def parent_login(request: Request, data: ParentLoginRequest):
             if pin_hash:
                 # ── Cas normal : PIN hashé présent
                 if not _verify_pin(data.pin, pin_hash):
+                    AppLogger.warning("API.Parent", f"parent_login PIN incorrect — élève {s_id} ({scode})")
                     raise HTTPException(status_code=401, detail="PIN incorrect.")
             elif pin_plain:
                 # ── Cas de migration : ancien PIN en texte clair → comparer puis upgrader
                 if data.pin != pin_plain:
+                    AppLogger.warning("API.Parent", f"parent_login PIN incorrect (migration) — élève {s_id}")
                     raise HTTPException(status_code=401, detail="PIN incorrect.")
                 # Mise à niveau vers bcrypt
                 new_hash = _hash_pin(data.pin)
@@ -130,6 +134,7 @@ async def parent_login(request: Request, data: ParentLoginRequest):
                 {"student_id": s_id, "role": "parent"}, expires_delta=timedelta(minutes=PARENT_TOKEN_EXPIRE_MINUTES)
             )
             AppLogger.info("API.Parent", f"Connexion réussie — {scode} ({fn} {ln})")
+            log_audit(conn, actor=f"parent:{scode}", action="LOGIN", target=f"student_id={s_id}")
             return {
                 "access_token": token,
                 "token_type": "bearer",
@@ -142,7 +147,7 @@ async def parent_login(request: Request, data: ParentLoginRequest):
         raise
     except Exception as e:
         AppLogger.error("API.Parent", f"parent_login error: {e}")
-        raise HTTPException(status_code=500, detail="Erreur serveur")
+        raise HTTPException(status_code=500, detail={"message": "Erreur serveur", "error_code": DB_QUERY})
 
 
 @router.get("/me", summary="Infos de l'élève (parent)")
@@ -163,7 +168,7 @@ async def parent_me(parent: dict = Depends(get_current_parent)):
         raise
     except Exception as e:
         AppLogger.error("API.Parent", f"parent_me({student_id}) error: {e}")
-        raise HTTPException(status_code=500, detail="Erreur serveur")
+        raise HTTPException(status_code=500, detail={"message": "Erreur serveur", "error_code": DB_QUERY})
 
 
 @router.get("/grades", summary="Notes (parent)")
@@ -179,7 +184,7 @@ async def parent_grades(parent: dict = Depends(get_current_parent)):
             return repo.get_student_grades(student_id, year_id)
     except Exception as e:
         AppLogger.error("API.Parent", f"parent_grades({student_id}) error: {e}")
-        raise HTTPException(status_code=500, detail="Erreur serveur")
+        raise HTTPException(status_code=500, detail={"message": "Erreur serveur", "error_code": DB_QUERY})
 
 
 @router.get("/attendance", summary="Présences (parent)")
@@ -191,7 +196,7 @@ async def parent_attendance(parent: dict = Depends(get_current_parent)):
             return ParentRepository(conn).get_student_attendance(student_id)
     except Exception as e:
         AppLogger.error("API.Parent", f"parent_attendance({student_id}) error: {e}")
-        raise HTTPException(status_code=500, detail="Erreur serveur")
+        raise HTTPException(status_code=500, detail={"message": "Erreur serveur", "error_code": DB_QUERY})
 
 
 @router.get("/dues", summary="Frais scolaires (parent)")
@@ -203,7 +208,7 @@ async def parent_dues(parent: dict = Depends(get_current_parent)):
             return ParentRepository(conn).get_student_dues(student_id)
     except Exception as e:
         AppLogger.error("API.Parent", f"parent_dues({student_id}) error: {e}")
-        raise HTTPException(status_code=500, detail="Erreur serveur")
+        raise HTTPException(status_code=500, detail={"message": "Erreur serveur", "error_code": DB_QUERY})
 
 
 # ──────────────────────── Admin: Réinitialiser le PIN parent
@@ -224,6 +229,7 @@ async def reset_parent_pin(
                 raise HTTPException(status_code=404, detail="Élève introuvable")
             repo.reset_student_pin(student_id)
             conn.commit()
+            log_audit(conn, actor=current_user.username, action="RESET_PARENT_PIN", target=f"student_id={student_id}")
             AppLogger.info("API.Parent", f"PIN parent réinitialisé — élève {student_id} par {current_user.username}")
             return {
                 "detail": f"PIN réinitialisé pour l'élève {student_id}. Le parent pourra définir un nouveau PIN à la prochaine connexion."

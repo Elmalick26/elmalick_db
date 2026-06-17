@@ -1,12 +1,11 @@
-import sys
+﻿import sys
 from datetime import datetime
 
 import matplotlib.pyplot as plt
-import psycopg2
 from fpdf import FPDF
-from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QColor, QFont, QIcon
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
+from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QColor, QFont
 from PyQt6.QtWidgets import (
     QApplication,
     QFrame,
@@ -33,33 +32,37 @@ from pdf_report_style import (
 )
 from print_export_service import get_report_output_mode, output_pdf
 from repositories.finance_repo import FinanceRepository
-from ui_styles import Colors, ThemeManager, get_table_style, rgba
+from ui_components import BaseWindow, create_card, style_table, styled_button
+from ui_styles import Colors, ThemeManager, get_module_caps, rgba
 
 FINANCE_DASHBOARD_REPORT_MODE = get_report_output_mode("finance_dashboard_report_mode", "save")
 
 
-class ModernFinanceDashboard(QMainWindow):
+def _to_float(value) -> float:
+    try:
+        return float(value)
+    except Exception:
+        return 0.0
+
+
+class ModernFinanceDashboard(BaseWindow):
     def __init__(self):
-        super().__init__()
-        self.setWindowTitle("Tableau de Bord Financier / لوحة التحكم المالية")
-        self.setMinimumSize(1100, 700)
+        super().__init__(title="Tableau de Bord Financier / لوحة التحكم المالية", min_width=1100, min_height=700)
         self.last_income = 0.0
         self.last_expenses = 0.0
         self.last_balance = 0.0
         self.last_inventory = 0.0
         self.last_recent_transactions = []
 
-        ThemeManager.apply_theme(self)
         self.init_ui()
         self.refresh_data()
 
-    def init_ui(self):
-        central_widget = QWidget()
-        self.setCentralWidget(central_widget)
-        self.main_layout = QVBoxLayout(central_widget)
-        self.main_layout.setContentsMargins(20, 20, 20, 20)
-        self.main_layout.setSpacing(20)
+    def apply_rbac(self, role: str) -> None:
+        """لوحة قراءة فقط — لا توجد أزرار كتابة للتحكم بها."""
+        pass  # read-only dashboard
 
+    def init_ui(self):
+        self.main_layout.setSpacing(20)
         colors = ThemeManager.get_colors()
 
         # Header
@@ -103,21 +106,11 @@ class ModernFinanceDashboard(QMainWindow):
         header_layout.addLayout(title_box)
         header_layout.addStretch()
 
-        btn_export = QPushButton("📄 Rapport Exécutif")
-        btn_export.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_export.setMinimumHeight(36)
-        btn_export.setStyleSheet(
-            f"""
-            QPushButton {{
-                background-color: {ThemeManager.get_colors().SUCCESS};
-                color: white;
-                font-weight: bold;
-                border-radius: 6px;
-                border: none;
-                padding: 6px 14px;
-            }}
-            QPushButton:hover {{ background-color: {ThemeManager.get_colors().SUCCESS_HOVER}; }}
-        """
+        btn_export = styled_button(
+            "📄 Rapport Exécutif",
+            bg_color=ThemeManager.get_colors().SUCCESS,
+            hover_color=ThemeManager.get_colors().SUCCESS_HOVER,
+            min_height=38,
         )
         btn_export.clicked.connect(self.export_executive_report_pdf)
 
@@ -131,10 +124,16 @@ class ModernFinanceDashboard(QMainWindow):
         cards_layout = QHBoxLayout()
         cards_layout.setSpacing(20)
 
-        self.card_income = self.create_modern_card("REVENUS / المداخيل", "0.00", colors.SUCCESS, "↗")
-        self.card_expenses = self.create_modern_card("DÉPENSES / المصاريف", "0.00", colors.DANGER, "↘")
-        self.card_profit = self.create_modern_card("SOLDE / الرصيد", "0.00", colors.PRIMARY, "💰")
-        self.card_inventory = self.create_modern_card("STOCK / المخزون", "0.00", colors.WARNING, "📦")
+        self.card_income, self.lbl_income_val = self.create_modern_card(
+            "REVENUS / المداخيل", "0.00", colors.SUCCESS, "↗"
+        )
+        self.card_expenses, self.lbl_expenses_val = self.create_modern_card(
+            "DÉPENSES / المصاريف", "0.00", colors.DANGER, "↘"
+        )
+        self.card_profit, self.lbl_profit_val = self.create_modern_card("SOLDE / الرصيد", "0.00", colors.PRIMARY, "💰")
+        self.card_inventory, self.lbl_inventory_val = self.create_modern_card(
+            "STOCK / المخزون", "0.00", colors.WARNING, "📦"
+        )
 
         cards_layout.addWidget(self.card_income)
         cards_layout.addWidget(self.card_expenses)
@@ -147,24 +146,24 @@ class ModernFinanceDashboard(QMainWindow):
         content_layout.setSpacing(20)
 
         # Chart Container
-        self.chart_frame = self.create_container("Analyse des Flux / تحليل التدفقات")
+        self.chart_frame, chart_layout = create_card("Analyse des Flux / تحليل التدفقات", with_shadow=True)
         self.figure, self.ax = plt.subplots(figsize=(5, 4), dpi=100)
         self.figure.patch.set_facecolor(colors.BG_CARD)
         self.ax.set_facecolor(colors.BG_CARD)
         self.canvas = FigureCanvas(self.figure)
-        self.chart_frame.layout().addWidget(self.canvas)
+        chart_layout.addWidget(self.canvas)
         content_layout.addWidget(self.chart_frame, 4)
 
         # Recent Transactions Table Container
-        self.table_frame = self.create_container("Transactions Récentes / أحدث العمليات")
+        self.table_frame, table_layout = create_card("Transactions Récentes / أحدث العمليات", with_shadow=True)
         self.table_recent = QTableWidget()
-        self.style_table(self.table_recent)
+        style_table(self.table_recent)
         self.table_recent.setColumnCount(4)
         self.table_recent.setHorizontalHeaderLabels(["Type", "Source/Desc", "Montant", "Date"])
         self.table_recent.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
         self.table_recent.setFocusPolicy(Qt.FocusPolicy.NoFocus)
 
-        self.table_frame.layout().addWidget(self.table_recent)
+        table_layout.addWidget(self.table_recent)
         content_layout.addWidget(self.table_frame, 6)
 
         self.main_layout.addLayout(content_layout)
@@ -177,7 +176,7 @@ class ModernFinanceDashboard(QMainWindow):
             f"""
             QFrame {{
                 background-color: {colors.BG_CARD};
-                border-radius: 12px;
+                border-radius: 16px;
                 border: 1px solid {colors.BORDER};
                 border-left: 6px solid {color};
             }}
@@ -219,53 +218,21 @@ class ModernFinanceDashboard(QMainWindow):
             f"color: {ThemeManager.get_colors().TEXT_PRIMARY}; font-size: 28px; font-weight: 800; border: none; background: transparent;"
         )
         layout.addWidget(lbl_value)
-        return card
-
-    def create_container(self, title_text):
-        colors = ThemeManager.get_colors()
-        frame = QFrame()
-        frame.setStyleSheet(
-            """
-            QFrame {
-                background-color: %(bg)s;
-                border-radius: 12px;
-                border: 1px solid %(border)s;
-            }
-        """
-            % {
-                "bg": colors.BG_CARD if colors else "white",
-                "border": colors.BORDER,
-            }
-        )
-        shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(20)
-        shadow.setColor(QColor(15, 23, 42, 15))
-        shadow.setOffset(0, 4)
-        frame.setGraphicsEffect(shadow)
-
-        layout = QVBoxLayout(frame)
-        layout.setContentsMargins(20, 20, 20, 20)
-
-        title = QLabel(title_text)
-        title.setFont(QFont("Segoe UI", 11, QFont.Weight.Bold))
-        title.setStyleSheet(f"color: {ThemeManager.get_colors().TEXT_PRIMARY}; margin-bottom: 10px; border: none;")
-        layout.addWidget(title)
-        return frame
-
-    def style_table(self, table):
-        table.setShowGrid(False)
-        table.setAlternatingRowColors(True)
-        table.verticalHeader().setVisible(False)
-        table.setStyleSheet(get_table_style())
+        # FIX 1: Return the value label alongside the card so callers hold a
+        # direct reference instead of using fragile findChild(QLabel, "val_label"),
+        # which returns None if the layout hierarchy ever changes.
+        return card, lbl_value
 
     def refresh_data(self):
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
                 repo = FinanceRepository(conn)
-                inc = repo.get_total_income()
-                exp = repo.get_total_expenses()
-                inventory_val = repo.get_total_inventory_value()
+                # FIX 2: Coerce to float here — repo returns None when no rows
+                # exist, and `inc - exp` raises TypeError on NoneType operands.
+                inc = float(repo.get_total_income() or 0)
+                exp = float(repo.get_total_expenses() or 0)
+                inventory_val = float(repo.get_total_inventory_value() or 0)
                 try:
                     recent_rows = repo.get_recent_transactions(limit=15)
                     self.last_recent_transactions = recent_rows
@@ -274,23 +241,17 @@ class ModernFinanceDashboard(QMainWindow):
                     self.last_recent_transactions = []
                     AppLogger.error("FinanceDashboard", f"Dashboard Recent Transactions Error: {e}")
 
-            def _to_float(value):
-                try:
-                    return float(value)
-                except Exception:
-                    return 0.0
-
             solde = inc - exp
-            self.last_income = float(inc)
-            self.last_expenses = float(exp)
-            self.last_balance = float(solde)
-            self.last_inventory = float(inventory_val)
+            self.last_income = inc
+            self.last_expenses = exp
+            self.last_balance = solde
+            self.last_inventory = inventory_val
 
-            # Update Labels
-            self.card_income.findChild(QLabel, "val_label").setText(f"{inc:,.0f} FCFA")
-            self.card_expenses.findChild(QLabel, "val_label").setText(f"{exp:,.0f} FCFA")
-            self.card_profit.findChild(QLabel, "val_label").setText(f"{solde:,.0f} FCFA")
-            self.card_inventory.findChild(QLabel, "val_label").setText(f"{inventory_val:,.0f} FCFA")
+            # FIX 1: Use stored label references instead of fragile findChild().
+            self.lbl_income_val.setText(f"{inc:,.0f} FCFA")
+            self.lbl_expenses_val.setText(f"{exp:,.0f} FCFA")
+            self.lbl_profit_val.setText(f"{solde:,.0f} FCFA")
+            self.lbl_inventory_val.setText(f"{inventory_val:,.0f} FCFA")
 
             # Chart
             self.ax.clear()
@@ -307,7 +268,12 @@ class ModernFinanceDashboard(QMainWindow):
                     wedgeprops={'width': 0.5, 'edgecolor': 'w'},  # Donut
                     textprops={'color': text_color},
                 )
-                plt.setp(autotexts, size=9, weight="bold", color="white")
+                # FIX 5: Use object-method calls instead of plt.setp() —
+                # the global pyplot call can affect other embedded figures.
+                for autotext in autotexts:
+                    autotext.set_size(9)
+                    autotext.set_weight("bold")
+                    autotext.set_color("white")
             else:
                 self.ax.text(
                     0.5, 0.5, "Pas de données", ha='center', va='center', color=ThemeManager.get_colors().TEXT_SECONDARY
@@ -391,7 +357,8 @@ class ModernFinanceDashboard(QMainWindow):
                 pdf.cell(widths[i], 7, text, 1, 0, align, True)
             pdf.ln()
 
-        mode = get_report_output_mode("finance_dashboard_report_mode", FINANCE_DASHBOARD_REPORT_MODE)
+        # FIX 3: FINANCE_DASHBOARD_REPORT_MODE is already the resolved value.
+        mode = FINANCE_DASHBOARD_REPORT_MODE
         output_pdf(
             pdf,
             self,

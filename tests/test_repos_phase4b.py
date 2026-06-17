@@ -6,23 +6,23 @@ GradesRepository, StaffRepository (missing methods).
 
 from __future__ import annotations
 
-import sys
 import os
+import sys
 import types
 from unittest.mock import MagicMock, call
 
 # ── ensure project root is on sys.path ───────────────────────────────────────
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from repositories.login_repo import LoginRepository
 from repositories.attendance_repo import AttendanceRepository
 from repositories.grades_repo import GradesRepository
+from repositories.login_repo import LoginRepository
 from repositories.staff_repo import StaffRepository
-
 
 # ════════════════════════════════════════════════════════════════════════════
 # Helpers
 # ════════════════════════════════════════════════════════════════════════════
+
 
 def _ctx_cursor(rows=None, fetchone_val=None):
     """Build a mock connection whose cursor() works as context manager."""
@@ -59,6 +59,7 @@ def _multi_cursor(*side_effects):
 # ════════════════════════════════════════════════════════════════════════════
 # LoginRepository
 # ════════════════════════════════════════════════════════════════════════════
+
 
 class TestLoginRepository:
     def test_count_users_returns_int(self):
@@ -113,6 +114,7 @@ class TestLoginRepository:
 # ════════════════════════════════════════════════════════════════════════════
 # AttendanceRepository
 # ════════════════════════════════════════════════════════════════════════════
+
 
 class TestAttendanceRepoLookups:
     def test_list_classes_returns_rows(self):
@@ -176,6 +178,25 @@ class TestAttendanceRepoLookups:
         repo = AttendanceRepository(conn)
         assert repo.resolve_period_id_for_class_date(1, "2025-01-15", 1) is None
 
+    def test_resolve_timetable_slot_found(self):
+        conn = MagicMock()
+        cur = MagicMock()
+        conn.cursor.return_value = cur
+        cur.fetchone.return_value = (77,)
+        repo = AttendanceRepository(conn)
+        result = repo.resolve_timetable_slot_for_class_datetime(1, "2025-01-13", "09:15")
+        assert result == 77
+
+    def test_list_timetable_slots_for_class_date(self):
+        rows = [(12, "08:00", "09:00", "Math")]
+        conn, cur = _plain_cursor(rows=rows)
+        repo = AttendanceRepository(conn)
+        result = repo.list_timetable_slots_for_class_date(1, "2025-01-13")
+        assert result == rows
+        sql = cur.execute.call_args[0][0]
+        assert "FROM Timetable" in sql
+        assert "Subjects" in sql
+
 
 class TestAttendanceRepoDailyEntry:
     def test_load_students_with_period(self):
@@ -195,6 +216,15 @@ class TestAttendanceRepoDailyEntry:
         assert result == rows
         sql = cur.execute.call_args[0][0]
         assert "period_id" not in sql.split("AND")[1] if "AND" in sql else True
+
+    def test_load_students_with_slot(self):
+        rows = [(1, "Ali Ben", "Present", 0, "", "")]
+        conn, cur = _plain_cursor(rows=rows)
+        repo = AttendanceRepository(conn)
+        result = repo.load_students_for_attendance(1, "2025-01-15", 1, timetable_slot_id=12)
+        assert result == rows
+        sql = cur.execute.call_args[0][0]
+        assert "timetable_slot_id" in sql
 
     def test_upsert_attendance_update_path(self):
         conn = MagicMock()
@@ -236,6 +266,16 @@ class TestAttendanceRepoDailyEntry:
         first_sql = cur.execute.call_args_list[0][0][0]
         assert "period_id IS NULL" in first_sql
 
+    def test_upsert_attendance_slot_select(self):
+        conn = MagicMock()
+        cur = MagicMock()
+        conn.cursor.return_value = cur
+        cur.fetchone.return_value = None
+        repo = AttendanceRepository(conn)
+        repo.upsert_attendance(2, "2025-02-01", "Present", 1, "", "", 1, None, 12)
+        first_sql = cur.execute.call_args_list[0][0][0]
+        assert "timetable_slot_id = %s" in first_sql
+
 
 class TestAttendanceRepoReport:
     def test_load_students_for_report_combo(self):
@@ -245,14 +285,35 @@ class TestAttendanceRepoReport:
         result = repo.load_students_for_report_combo(1, 1)
         assert result == rows
 
+    def test_list_subjects_for_report_all(self):
+        rows = [(1, "Math"), (2, "Arabe")]
+        conn, cur = _plain_cursor(rows=rows)
+        repo = AttendanceRepository(conn)
+        result = repo.list_subjects_for_report()
+        assert result == rows
+        sql = cur.execute.call_args[0][0]
+        assert "FROM Subjects" in sql
+
+    def test_list_slots_for_report_with_subject_filter(self):
+        rows = [(12, "Lundi", "08:00", "09:00", "Math")]
+        conn, cur = _plain_cursor(rows=rows)
+        repo = AttendanceRepository(conn)
+        result = repo.list_slots_for_report(1, 5)
+        assert result == rows
+        sql = cur.execute.call_args[0][0]
+        params = cur.execute.call_args[0][1]
+        assert "T.subject_id = %s" in sql
+        assert 5 in params
+
     def test_fetch_report_no_filters(self):
-        rows = [("2025-01-01", "Ali Ben", "6A", "Present", 0, "")]
+        rows = [("2025-01-01", "Ali Ben", "6A", "Present", 0, "", "08:00", "09:00", "Math")]
         conn, cur = _plain_cursor(rows=rows)
         repo = AttendanceRepository(conn)
         result = repo.fetch_report_data(1, "2025-01-01", "2025-01-31")
         assert result == rows
         sql = cur.execute.call_args[0][0]
         assert "BETWEEN" in sql
+        assert "LEFT JOIN Timetable" in sql
 
     def test_fetch_report_year_minus1_skips_year_filter(self):
         conn, cur = _plain_cursor(rows=[])
@@ -265,13 +326,18 @@ class TestAttendanceRepoReport:
     def test_fetch_report_with_all_filters(self):
         conn, cur = _plain_cursor(rows=[])
         repo = AttendanceRepository(conn)
-        repo.fetch_report_data(1, "2025-01-01", "2025-01-31",
-                               class_id=2, student_id=5, period_id=3)
+        repo.fetch_report_data(
+            1, "2025-01-01", "2025-01-31", class_id=2, student_id=5, period_id=3, subject_id=4, timetable_slot_id=9
+        )
         sql = cur.execute.call_args[0][0]
         params = cur.execute.call_args[0][1]
         assert "class_id" in sql or "SCN.class_id" in sql
         assert "student_id" in sql or "A.student_id" in sql
+        assert "T.subject_id = %s" in sql
+        assert "A.timetable_slot_id = %s" in sql
         assert 5 in params
+        assert 4 in params
+        assert 9 in params
 
     def test_get_high_absence_students(self):
         rows = [("Ali Ben", 35.0)]
@@ -287,6 +353,7 @@ class TestAttendanceRepoReport:
 # ════════════════════════════════════════════════════════════════════════════
 # GradesRepository
 # ════════════════════════════════════════════════════════════════════════════
+
 
 class TestGradesRepoLookups:
     def test_list_classes(self):
@@ -387,25 +454,27 @@ class TestGradesRepoGradingSheet:
         result = repo.load_grading_sheet(1, 1, 1, 1)
         assert result == rows
 
-    def test_upsert_grade_update(self):
+    def test_upsert_grade_is_atomic_insert_on_conflict(self):
+        # Single atomic statement: INSERT ... ON CONFLICT DO UPDATE (migration 009).
         conn = MagicMock()
         cur = MagicMock()
         conn.cursor.return_value = cur
-        cur.fetchone.return_value = (10,)
         repo = GradesRepository(conn)
         repo.upsert_grade(1, 1, 1, 1, 15.0, "Bien", "2025-01-15")
-        calls = [c[0][0] for c in cur.execute.call_args_list]
-        assert any("UPDATE" in s for s in calls)
+        # Exactly one statement, no prior SELECT-then-branch.
+        assert cur.execute.call_count == 1
+        sql = cur.execute.call_args[0][0]
+        assert "INSERT INTO Grades" in sql
+        assert "ON CONFLICT" in sql and "DO UPDATE" in sql
 
-    def test_upsert_grade_insert(self):
+    def test_upsert_grade_passes_all_values(self):
         conn = MagicMock()
         cur = MagicMock()
         conn.cursor.return_value = cur
-        cur.fetchone.return_value = None
         repo = GradesRepository(conn)
-        repo.upsert_grade(1, 1, 1, 1, 12.0, "", "2025-01-15")
-        calls = [c[0][0] for c in cur.execute.call_args_list]
-        assert any("INSERT" in s for s in calls)
+        repo.upsert_grade(7, 3, 2, 5, 12.0, "note", "2025-01-15")
+        params = cur.execute.call_args[0][1]
+        assert params == (7, 3, 2, 12.0, "note", "2025-01-15", 5)
 
 
 class TestGradesRepoSearch:
@@ -488,6 +557,7 @@ class TestGradesRepoLabels:
 # StaffRepository
 # ════════════════════════════════════════════════════════════════════════════
 
+
 class TestStaffRepoBasic:
     def test_list_staff_returns_rows(self):
         rows = [(1, "Ali Ben", "Prof", "Maths", "0700000", "CDI", 3000, 50, "", "Actif")]
@@ -523,9 +593,15 @@ class TestStaffRepoBasic:
         conn, cur = _plain_cursor()
         repo = StaffRepository(conn)
         data = {
-            "first_name": "Ali", "last_name": "Ben", "role": "Prof",
-            "specialty": "Maths", "phone": "0700", "hire_date": "2020-01-01",
-            "contract_type": "CDI", "salary_base": 3000, "hourly_rate": 50,
+            "first_name": "Ali",
+            "last_name": "Ben",
+            "role": "Prof",
+            "specialty": "Maths",
+            "phone": "0700",
+            "hire_date": "2020-01-01",
+            "contract_type": "CDI",
+            "salary_base": 3000,
+            "hourly_rate": 50,
         }
         repo.add_staff(data)
         sql = cur.execute.call_args[0][0]
@@ -535,9 +611,15 @@ class TestStaffRepoBasic:
         conn, cur = _plain_cursor()
         repo = StaffRepository(conn)
         data = {
-            "first_name": "Ali", "last_name": "Ben", "role": "Prof",
-            "specialty": "Maths", "phone": "0700", "hire_date": "2020-01-01",
-            "contract_type": "CDI", "salary_base": 3000, "hourly_rate": 50,
+            "first_name": "Ali",
+            "last_name": "Ben",
+            "role": "Prof",
+            "specialty": "Maths",
+            "phone": "0700",
+            "hire_date": "2020-01-01",
+            "contract_type": "CDI",
+            "salary_base": 3000,
+            "hourly_rate": 50,
         }
         repo.update_staff(1, data)
         sql = cur.execute.call_args[0][0]

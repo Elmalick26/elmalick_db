@@ -31,77 +31,121 @@ configure_qt_font_environment()
 
 
 class Colors:
-    """مجموعة الألوان الموحدة - Deep Slate Theme (Light Mode)"""
+    """مجموعة الألوان الموحدة 2026 — Indigo/Slate Light Mode"""
 
-    PRIMARY = "#3B82F6"  # Blue 500
-    PRIMARY_HOVER = "#2563EB"  # Blue 600
-    PRIMARY_DARK = "#1E40AF"  # Blue 700
+    # ── Primary (Indigo spectrum) ───────────────────────────────────────
+    PRIMARY = "#4F46E5"  # Indigo 600
+    PRIMARY_HOVER = "#4338CA"  # Indigo 700
+    PRIMARY_DARK = "#3730A3"  # Indigo 800
+    PRIMARY_LIGHT = "#EEF2FF"  # Indigo 50  (tint for backgrounds)
 
-    SECONDARY = "#8B5CF6"  # Violet 500
+    # ── Accent / Secondary (Violet) ─────────────────────────────────────
+    SECONDARY = "#7C3AED"  # Violet 600
 
-    SUCCESS = "#10B981"  # Emerald 500
-    SUCCESS_HOVER = "#059669"  # Emerald 600
-    WARNING = "#F59E0B"  # Amber 500
-    DANGER = "#EF4444"  # Red 500
-    DANGER_HOVER = "#DC2626"  # Red 600
+    # ── Semantic ────────────────────────────────────────────────────────
+    SUCCESS = "#059669"  # Emerald 600
+    SUCCESS_HOVER = "#047857"  # Emerald 700
+    SUCCESS_LIGHT = "#ECFDF5"  # Emerald 50
+    WARNING = "#D97706"  # Amber 600
+    WARNING_LIGHT = "#FFFBEB"  # Amber 50
+    DANGER = "#DC2626"  # Red 600
+    DANGER_HOVER = "#B91C1C"  # Red 700
+    DANGER_LIGHT = "#FEF2F2"  # Red 50
+    INFO = "#0284C7"  # Sky 600
+    INFO_LIGHT = "#F0F9FF"  # Sky 50
 
-    # خلفيات
-    BG_MAIN = "#F1F5F9"  # Slate 100 (Application Background)
-    BG_CARD = "#FFFFFF"  # White (Card Background)
-    BG_HEADER = "#1E293B"  # Slate 800 (Header Background)
+    # ── Application Backgrounds ─────────────────────────────────────────
+    BG_MAIN = "#F8FAFC"  # Slate 50  — page canvas
+    BG_CARD = "#FFFFFF"  # White     — card surface
+    BG_HEADER = "#1E293B"  # Slate 800 — module header / topbar
 
-    # نصوص وحدود
-    TEXT_PRIMARY = "#334155"  # Slate 700
+    # ── Sidebar ─────────────────────────────────────────────────────────
+    SIDEBAR_BG = "#0F1629"  # Deep navy sidebar
+    SIDEBAR_ITEM_HOVER = "#1E2D45"  # Nav item hover
+    SIDEBAR_ITEM_ACTIVE = "#1E40AF"  # Nav item active (indigo tint)
+    SIDEBAR_ACCENT = "#4F46E5"  # Active item left border
+    SIDEBAR_TEXT = "#CBD5E1"  # Nav item label
+    SIDEBAR_TEXT_MUTED = "#475569"  # Category headers
+    SIDEBAR_ICON = "#94A3B8"  # Icon color at rest
+
+    # ── Text ────────────────────────────────────────────────────────────
+    TEXT_PRIMARY = "#1E293B"  # Slate 800
     TEXT_SECONDARY = "#64748B"  # Slate 500
-    HEADER_TEXT = "#FFFFFF"
-    BORDER = "#E2E8F0"  # Slate 200
-    BORDER_FOCUS = "#3B82F6"  # Primary Color
-    INPUT_BG = "#EEF2F7"  # Slate 100
-    INPUT_BG_FOCUS = "#FFFFFF"  # White
-    INPUT_BORDER = "#94A3B8"  # Slate 400
-    TAB_BG = "#E2E8F0"  # Slate 200
-    TAB_HOVER_BG = "#CBD5E1"  # Slate 300
+    HEADER_TEXT = "#F8FAFC"  # Near-white on dark headers
 
-    # عناصر إضافية
-    SCROLL_BG = "#F1F5F9"
+    # ── Borders & Inputs ────────────────────────────────────────────────
+    BORDER = "#E2E8F0"  # Slate 200
+    BORDER_FOCUS = "#4F46E5"  # Indigo on focus
+    INPUT_BG = "#F1F5F9"  # Slate 100
+    INPUT_BG_FOCUS = "#FFFFFF"
+    INPUT_BORDER = "#CBD5E1"  # Slate 300
+
+    # ── Tabs ────────────────────────────────────────────────────────────
+    TAB_BG = "#F1F5F9"
+    TAB_HOVER_BG = "#E2E8F0"
+
+    # ── Scrollbars ──────────────────────────────────────────────────────
+    SCROLL_BG = "#F8FAFC"
     SCROLL_HANDLE = "#CBD5E1"
 
 
 class DarkColors:
-    """مجموعة الألوان للوضع الداكن - Dark Theme"""
+    """مجموعة الألوان للوضع الداكن 2026 — Indigo/Slate Dark Mode"""
 
-    PRIMARY = "#60A5FA"  # Blue 400 (Lighter for dark mode)
-    PRIMARY_HOVER = "#3B82F6"
-    PRIMARY_DARK = "#2563EB"
+    # ── Primary ─────────────────────────────────────────────────────────
+    PRIMARY = "#818CF8"  # Indigo 400 (lighter on dark)
+    PRIMARY_HOVER = "#6366F1"  # Indigo 500
+    PRIMARY_DARK = "#4F46E5"  # Indigo 600
+    PRIMARY_LIGHT = "#1E1B4B"  # Indigo 950 tint
 
-    SECONDARY = "#A78BFA"
+    # ── Accent ──────────────────────────────────────────────────────────
+    SECONDARY = "#A78BFA"  # Violet 400
 
-    SUCCESS = "#34D399"
+    # ── Semantic ────────────────────────────────────────────────────────
+    SUCCESS = "#34D399"  # Emerald 400
     SUCCESS_HOVER = "#10B981"
-    WARNING = "#FBBF24"
-    DANGER = "#F87171"
+    SUCCESS_LIGHT = "#022C22"
+    WARNING = "#FBBF24"  # Amber 400
+    WARNING_LIGHT = "#1C1400"
+    DANGER = "#F87171"  # Red 400
     DANGER_HOVER = "#EF4444"
+    DANGER_LIGHT = "#1F0A0A"
+    INFO = "#38BDF8"  # Sky 400
+    INFO_LIGHT = "#082F49"
 
-    # خلفيات
-    BG_MAIN = "#0F172A"  # Slate 900
-    BG_CARD = "#1E293B"  # Slate 800
-    BG_HEADER = "#020617"  # Slate 950
+    # ── Application Backgrounds ─────────────────────────────────────────
+    BG_MAIN = "#0D1117"  # Very dark canvas
+    BG_CARD = "#161B2E"  # Card surface
+    BG_HEADER = "#0A0F1E"  # Module header
 
-    # نصوص وحدود
-    TEXT_PRIMARY = "#F8FAFC"  # Slate 50
+    # ── Sidebar ─────────────────────────────────────────────────────────
+    SIDEBAR_BG = "#080D1A"  # Darker than card
+    SIDEBAR_ITEM_HOVER = "#151E35"
+    SIDEBAR_ITEM_ACTIVE = "#1E1B4B"
+    SIDEBAR_ACCENT = "#818CF8"
+    SIDEBAR_TEXT = "#94A3B8"
+    SIDEBAR_TEXT_MUTED = "#334155"
+    SIDEBAR_ICON = "#64748B"
+
+    # ── Text ────────────────────────────────────────────────────────────
+    TEXT_PRIMARY = "#E2E8F0"  # Slate 200
     TEXT_SECONDARY = "#94A3B8"  # Slate 400
-    HEADER_TEXT = "#E2E8F0"
-    BORDER = "#334155"  # Slate 700
-    BORDER_FOCUS = "#60A5FA"
-    INPUT_BG = "#111827"  # Gray 900
-    INPUT_BG_FOCUS = "#1F2937"  # Gray 800
-    INPUT_BORDER = "#64748B"  # Slate 500
-    TAB_BG = "#0F172A"  # Slate 900
-    TAB_HOVER_BG = "#1F2937"  # Gray 800
+    HEADER_TEXT = "#F8FAFC"
 
-    # عناصر إضافية
-    SCROLL_BG = "#0F172A"
-    SCROLL_HANDLE = "#334155"
+    # ── Borders & Inputs ────────────────────────────────────────────────
+    BORDER = "#1E293B"  # Slate 800
+    BORDER_FOCUS = "#818CF8"
+    INPUT_BG = "#0F172A"
+    INPUT_BG_FOCUS = "#1E293B"
+    INPUT_BORDER = "#334155"
+
+    # ── Tabs ────────────────────────────────────────────────────────────
+    TAB_BG = "#0F172A"
+    TAB_HOVER_BG = "#1E293B"
+
+    # ── Scrollbars ──────────────────────────────────────────────────────
+    SCROLL_BG = "#0D1117"
+    SCROLL_HANDLE = "#1E293B"
 
 
 # ========== BASE STYLES (القوالب الأساسية) ==========
@@ -111,251 +155,404 @@ class StyleTemplates:
     def get_common_styles(colors):
         """توليد الأنماط المشتركة بناءً على الألوان الممررة"""
         return f"""
-            /* --- Global Widget Settings --- */
+            /* ═══════════════════════════════════════════════════
+               Global Reset
+            ═══════════════════════════════════════════════════ */
             QWidget {{
-                font-family: 'Segoe UI', 'Cairo', sans-serif;
+                font-family: 'Segoe UI', 'Cairo', 'Noto Sans Arabic', sans-serif;
+                font-size: 13px;
                 color: {colors.TEXT_PRIMARY};
             }}
-
             QLabel {{
                 color: {colors.TEXT_PRIMARY};
+                background: transparent;
             }}
-
-            /* --- Main Window --- */
             QMainWindow {{
                 background-color: {colors.BG_MAIN};
             }}
 
-            /* --- GroupBox --- */
+            /* ═══════════════════════════════════════════════════
+               GroupBox
+            ═══════════════════════════════════════════════════ */
             QGroupBox {{
                 border: 1px solid {colors.BORDER};
-                border-radius: 8px;
-                margin-top: 20px;
+                border-radius: 10px;
+                margin-top: 22px;
                 background-color: {colors.BG_CARD};
-                font-weight: bold;
-                padding-top: 20px;
+                font-weight: 600;
+                padding-top: 18px;
             }}
             QGroupBox::title {{
                 subcontrol-origin: margin;
                 subcontrol-position: top left;
-                padding: 0 5px;
-                left: 10px;
+                padding: 2px 8px;
+                left: 12px;
                 color: {colors.TEXT_SECONDARY};
+                font-size: 11px;
+                letter-spacing: 0.5px;
             }}
 
-            /* --- Inputs (LineEdit, SpinBox, DateEdit) --- */
+            /* ═══════════════════════════════════════════════════
+               Inputs — Line / Spin / Date
+            ═══════════════════════════════════════════════════ */
             QLineEdit, QDateEdit, QTimeEdit, QSpinBox, QDoubleSpinBox {{
-                padding: 8px 10px;
-                border: 1px solid {colors.BORDER};
-                border-radius: 6px;
+                padding: 9px 12px;
+                border: 1.5px solid {colors.INPUT_BORDER};
+                border-radius: 8px;
                 background-color: {colors.INPUT_BG};
                 color: {colors.TEXT_PRIMARY};
                 selection-background-color: {colors.PRIMARY};
+                selection-color: #ffffff;
+                min-height: 36px;
             }}
             QLineEdit::placeholder {{
                 color: {colors.TEXT_SECONDARY};
+                font-style: italic;
             }}
-            QLineEdit:focus, QDateEdit:focus, QTimeEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus {{
+            QLineEdit:focus, QDateEdit:focus, QTimeEdit:focus,
+            QSpinBox:focus, QDoubleSpinBox:focus {{
                 border: 2px solid {colors.BORDER_FOCUS};
                 background-color: {colors.INPUT_BG_FOCUS};
+                outline: none;
             }}
-            QLineEdit:disabled, QDateEdit:disabled {{
+            QLineEdit:disabled, QDateEdit:disabled, QSpinBox:disabled {{
                 background-color: {colors.BG_MAIN};
                 color: {colors.TEXT_SECONDARY};
+                border-color: {colors.BORDER};
             }}
 
-            /* --- ComboBox --- */
+            /* ═══════════════════════════════════════════════════
+               ComboBox
+            ═══════════════════════════════════════════════════ */
             QComboBox {{
-                padding: 8px 10px;
-                border: 1px solid {colors.BORDER};
-                border-radius: 6px;
+                padding: 9px 12px;
+                border: 1.5px solid {colors.INPUT_BORDER};
+                border-radius: 8px;
                 background-color: {colors.INPUT_BG};
                 color: {colors.TEXT_PRIMARY};
+                min-height: 36px;
             }}
             QComboBox::drop-down {{
                 border: none;
-                padding-right: 10px;
+                padding-right: 12px;
+                width: 24px;
             }}
             QComboBox::down-arrow {{
-                image: none; /* يمكن استبدالها بصورة */
+                image: none;
                 border-left: 5px solid transparent;
                 border-right: 5px solid transparent;
                 border-top: 5px solid {colors.TEXT_SECONDARY};
-                margin-right: 5px;
+                margin-right: 8px;
             }}
             QComboBox QAbstractItemView {{
                 border: 1px solid {colors.BORDER};
+                border-radius: 8px;
                 background-color: {colors.BG_CARD};
                 color: {colors.TEXT_PRIMARY};
                 selection-background-color: {colors.PRIMARY};
                 selection-color: white;
                 outline: none;
-                padding: 5px;
+                padding: 4px;
             }}
             QComboBox:focus {{
                 border: 2px solid {colors.BORDER_FOCUS};
                 background-color: {colors.INPUT_BG_FOCUS};
             }}
 
-            /* --- TextEdit --- */
+            /* ═══════════════════════════════════════════════════
+               TextEdit
+            ═══════════════════════════════════════════════════ */
             QTextEdit {{
-                padding: 10px;
-                border: 1px solid {colors.BORDER};
-                border-radius: 6px;
+                padding: 10px 12px;
+                border: 1.5px solid {colors.INPUT_BORDER};
+                border-radius: 8px;
                 background-color: {colors.INPUT_BG};
                 color: {colors.TEXT_PRIMARY};
+                line-height: 1.5;
             }}
             QTextEdit:focus {{
                 border: 2px solid {colors.BORDER_FOCUS};
                 background-color: {colors.INPUT_BG_FOCUS};
             }}
 
-            /* --- Tables --- */
+            /* ═══════════════════════════════════════════════════
+               Tables — Clean with subtle row stripe & hover
+            ═══════════════════════════════════════════════════ */
             QTableWidget {{
                 background-color: {colors.BG_CARD};
                 border: 1px solid {colors.BORDER};
-                border-radius: 8px;
-                gridline-color: {colors.BORDER};
-                selection-background-color: {colors.PRIMARY}30; /* Semi-transparent primary */
+                border-radius: 10px;
+                gridline-color: transparent;
+                alternate-background-color: {colors.BG_MAIN};
+                selection-background-color: {colors.PRIMARY}22;
                 selection-color: {colors.TEXT_PRIMARY};
+                font-size: 13px;
             }}
             QTableWidget::item {{
-                padding: 8px;
-                border-bottom: 1px solid {colors.BG_MAIN};
+                padding: 10px 12px;
+                border-bottom: 1px solid {colors.BORDER};
+                color: {colors.TEXT_PRIMARY};
+            }}
+            QTableWidget::item:hover {{
+                background-color: {colors.PRIMARY}14;
+            }}
+            QTableWidget::item:selected {{
+                background-color: {colors.PRIMARY}2A;
                 color: {colors.TEXT_PRIMARY};
             }}
             QHeaderView::section {{
                 background-color: {colors.BG_HEADER};
                 color: {colors.HEADER_TEXT};
-                padding: 10px;
+                padding: 11px 12px;
                 border: none;
-                font-weight: bold;
-                font-size: 13px;
+                border-right: 1px solid {colors.BORDER};
+                font-weight: 700;
+                font-size: 12px;
+                letter-spacing: 0.4px;
                 text-transform: uppercase;
+            }}
+            QHeaderView::section:first {{
+                border-top-left-radius: 10px;
+            }}
+            QHeaderView::section:last {{
+                border-right: none;
+                border-top-right-radius: 10px;
             }}
             QTableCornerButton::section {{
                 background-color: {colors.BG_HEADER};
                 border: none;
+                border-top-left-radius: 10px;
             }}
 
-            /* --- TabWidget (Modern Pills) --- */
+            /* ═══════════════════════════════════════════════════
+               TabWidget — Pill-style
+            ═══════════════════════════════════════════════════ */
             QTabWidget::pane {{
                 border: 1px solid {colors.BORDER};
-                border-radius: 8px;
+                border-radius: 10px;
                 background: {colors.BG_CARD};
                 top: -1px;
             }}
             QTabBar::tab {{
                 background: {colors.TAB_BG};
                 color: {colors.TEXT_SECONDARY};
-                padding: 10px 25px;
+                padding: 9px 22px;
                 margin-right: 4px;
-                border-top-left-radius: 6px;
-                border-top-right-radius: 6px;
-                font-weight: bold;
+                border-top-left-radius: 7px;
+                border-top-right-radius: 7px;
+                font-weight: 600;
+                font-size: 13px;
             }}
             QTabBar::tab:selected {{
                 background: {colors.BG_CARD};
                 color: {colors.PRIMARY};
                 border-bottom: 2px solid {colors.PRIMARY};
+                font-weight: 700;
             }}
-            QTabBar::tab:hover {{
+            QTabBar::tab:hover:!selected {{
                 background: {colors.TAB_HOVER_BG};
+                color: {colors.TEXT_PRIMARY};
             }}
 
-            /* --- Menus --- */
+            /* ═══════════════════════════════════════════════════
+               Menus
+            ═══════════════════════════════════════════════════ */
             QMenu {{
                 background-color: {colors.BG_CARD};
                 color: {colors.TEXT_PRIMARY};
                 border: 1px solid {colors.BORDER};
+                border-radius: 8px;
+                padding: 4px;
+            }}
+            QMenu::item {{
+                padding: 8px 20px;
+                border-radius: 5px;
             }}
             QMenu::item:selected {{
-                background-color: {colors.PRIMARY};
-                color: white;
+                background-color: {colors.PRIMARY}18;
+                color: {colors.PRIMARY};
+            }}
+            QMenu::separator {{
+                height: 1px;
+                background: {colors.BORDER};
+                margin: 4px 8px;
             }}
             QMenuBar {{
                 background-color: {colors.BG_HEADER};
                 color: {colors.HEADER_TEXT};
+                padding: 2px;
+            }}
+            QMenuBar::item {{
+                padding: 6px 12px;
+                border-radius: 5px;
             }}
             QMenuBar::item:selected {{
                 background-color: {colors.PRIMARY};
                 color: white;
             }}
 
-            /* --- Check/Radio --- */
+            /* ═══════════════════════════════════════════════════
+               CheckBox / RadioButton
+            ═══════════════════════════════════════════════════ */
             QCheckBox, QRadioButton {{
                 color: {colors.TEXT_PRIMARY};
+                spacing: 8px;
+            }}
+            QCheckBox::indicator, QRadioButton::indicator {{
+                width: 17px;
+                height: 17px;
+                border: 2px solid {colors.INPUT_BORDER};
+                border-radius: 4px;
+                background: {colors.INPUT_BG};
+            }}
+            QCheckBox::indicator:checked {{
+                background-color: {colors.PRIMARY};
+                border-color: {colors.PRIMARY};
             }}
 
-            /* --- Scrollbars (Modern & Slim) --- */
+            /* ═══════════════════════════════════════════════════
+               Scrollbars — Slim & modern
+            ═══════════════════════════════════════════════════ */
             QScrollBar:vertical {{
                 border: none;
                 background: {colors.SCROLL_BG};
-                width: 10px;
-                margin: 0px;
-                border-radius: 0px;
+                width: 6px;
+                margin: 0;
             }}
             QScrollBar::handle:vertical {{
                 background: {colors.SCROLL_HANDLE};
-                min-height: 20px;
-                border-radius: 5px;
+                min-height: 30px;
+                border-radius: 3px;
             }}
             QScrollBar::handle:vertical:hover {{
                 background: {colors.TEXT_SECONDARY};
             }}
             QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
-                height: 0px;
+                height: 0;
+            }}
+            QScrollBar:horizontal {{
+                border: none;
+                background: {colors.SCROLL_BG};
+                height: 6px;
+            }}
+            QScrollBar::handle:horizontal {{
+                background: {colors.SCROLL_HANDLE};
+                min-width: 30px;
+                border-radius: 3px;
+            }}
+            QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
+                width: 0;
             }}
 
-            /* --- Tooltips --- */
+            /* ═══════════════════════════════════════════════════
+               Tooltips
+            ═══════════════════════════════════════════════════ */
             QToolTip {{
                 color: {colors.HEADER_TEXT};
                 background-color: {colors.BG_HEADER};
                 border: 1px solid {colors.BORDER};
-                padding: 5px;
-                border-radius: 4px;
-                opacity: 230;
+                padding: 6px 10px;
+                border-radius: 6px;
+                font-size: 12px;
+                opacity: 240;
             }}
 
-            /* --- MessageBox --- */
+            /* ═══════════════════════════════════════════════════
+               MessageBox
+            ═══════════════════════════════════════════════════ */
             QMessageBox {{
                 background-color: {colors.BG_CARD};
+                border-radius: 10px;
             }}
             QMessageBox QLabel {{
                 color: {colors.TEXT_PRIMARY};
+                font-size: 14px;
+                padding: 4px;
+            }}
+
+            /* ═══════════════════════════════════════════════════
+               Frame / Cards
+            ═══════════════════════════════════════════════════ */
+            QFrame[class="card"] {{
+                background-color: {colors.BG_CARD};
+                border: 1px solid {colors.BORDER};
+                border-radius: 12px;
+            }}
+
+            /* ═══════════════════════════════════════════════════
+               Splitter
+            ═══════════════════════════════════════════════════ */
+            QSplitter::handle {{
+                background: {colors.BORDER};
+                width: 1px;
+                height: 1px;
             }}
         """
 
     @staticmethod
     def get_button_styles(colors):
         return f"""
-            /* Primary Button */
+            /* ─── Default / Primary ───────────────────────────── */
             QPushButton {{
                 background-color: {colors.PRIMARY};
-                color: white;
-                font-weight: bold;
-                padding: 10px 20px;
-                border-radius: 6px;
+                color: #ffffff;
+                font-weight: 700;
+                padding: 9px 20px;
+                border-radius: 8px;
                 border: none;
-                font-size: 14px;
+                font-size: 13px;
+                letter-spacing: 0.3px;
             }}
-            QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}
+            QPushButton:hover  {{ background-color: {colors.PRIMARY_HOVER}; }}
             QPushButton:pressed {{ background-color: {colors.PRIMARY_DARK}; }}
+            QPushButton:disabled {{
+                background-color: {colors.BORDER};
+                color: {colors.TEXT_SECONDARY};
+            }}
 
-            /* Specific Classes (Assign these manually in code if needed) */
-            QPushButton[class="danger"] {{ background-color: {colors.DANGER}; }}
-            QPushButton[class="danger"]:hover {{ background-color: {colors.DANGER_HOVER}; }}
+            /* ─── Danger ──────────────────────────────────────── */
+            QPushButton[class="danger"] {{
+                background-color: {colors.DANGER};
+                color: white;
+            }}
+            QPushButton[class="danger"]:hover  {{ background-color: {colors.DANGER_HOVER}; }}
 
-            QPushButton[class="success"] {{ background-color: {colors.SUCCESS}; }}
+            /* ─── Success ─────────────────────────────────────── */
+            QPushButton[class="success"] {{
+                background-color: {colors.SUCCESS};
+                color: white;
+            }}
             QPushButton[class="success"]:hover {{ background-color: {colors.SUCCESS_HOVER}; }}
 
+            /* ─── Outline (Ghost) ─────────────────────────────── */
             QPushButton[class="outline"] {{
                 background-color: transparent;
                 border: 2px solid {colors.PRIMARY};
                 color: {colors.PRIMARY};
             }}
             QPushButton[class="outline"]:hover {{
-                background-color: {colors.PRIMARY}10;
+                background-color: {colors.PRIMARY_LIGHT};
+            }}
+
+            /* ─── Secondary / Subtle ──────────────────────────── */
+            QPushButton[class="secondary"] {{
+                background-color: {colors.INPUT_BG};
+                color: {colors.TEXT_PRIMARY};
+                border: 1px solid {colors.BORDER};
+            }}
+            QPushButton[class="secondary"]:hover {{
+                background-color: {colors.BORDER};
+            }}
+
+            /* ─── Icon-only round ─────────────────────────────── */
+            QPushButton[class="icon"] {{
+                background-color: transparent;
+                border: none;
+                border-radius: 20px;
+                padding: 4px;
+            }}
+            QPushButton[class="icon"]:hover {{
+                background-color: {colors.INPUT_BG};
             }}
         """
 
@@ -421,14 +618,25 @@ def rgba(color, alpha):
     return f"rgba({qcolor.red()}, {qcolor.green()}, {qcolor.blue()}, {alpha})"
 
 
-def get_card_style():
+def get_card_style(elevated: bool = False):
     """نمط البطاقة البيضاء"""
     colors = ThemeManager.get_colors()
+    if elevated:
+        return f"""
+            QFrame {{
+                background-color: {colors.BG_CARD};
+                border-radius: 14px;
+                border: 1px solid {colors.BORDER_FOCUS}66;
+            }}
+        """
     return f"""
         QFrame {{
             background-color: {colors.BG_CARD};
-            border-radius: 12px;
+            border-radius: 14px;
             border: 1px solid {colors.BORDER};
+        }}
+        QFrame:hover {{
+            border-color: {colors.BORDER_FOCUS}66;
         }}
     """
 
@@ -440,29 +648,47 @@ def get_table_style():
         QTableWidget {{
             background-color: {colors.BG_CARD};
             border: 1px solid {colors.BORDER};
-            border-radius: 8px;
-            gridline-color: {colors.BORDER};
+            border-radius: 10px;
+            gridline-color: transparent;
+            alternate-background-color: {colors.BG_MAIN};
             font-size: 13px;
             color: {colors.TEXT_PRIMARY};
+            selection-background-color: {colors.PRIMARY}22;
+            selection-color: {colors.TEXT_PRIMARY};
         }}
         QTableWidget::item {{
-            padding: 6px;
-            border-bottom: 1px solid {colors.BG_MAIN};
+            padding: 10px 12px;
+            border-bottom: 1px solid {colors.BORDER};
             color: {colors.TEXT_PRIMARY};
         }}
-        QTableWidget::item:alternate {{
-            background-color: {colors.BG_MAIN};
+        QTableWidget::item:hover {{
+            background-color: {colors.PRIMARY}14;
         }}
         QTableWidget::item:selected {{
-            background-color: {colors.PRIMARY};
-            color: white;
+            background-color: {colors.PRIMARY}2A;
+            color: {colors.TEXT_PRIMARY};
         }}
         QHeaderView::section {{
             background-color: {colors.BG_HEADER};
             color: {colors.HEADER_TEXT};
-            padding: 10px;
+            padding: 11px 12px;
             border: none;
-            font-weight: bold;
+            border-right: 1px solid {colors.BORDER};
+            font-weight: 700;
+            font-size: 12px;
+            letter-spacing: 0.4px;
+        }}
+        QHeaderView::section:first {{
+            border-top-left-radius: 10px;
+        }}
+        QHeaderView::section:last {{
+            border-right: none;
+            border-top-right-radius: 10px;
+        }}
+        QTableCornerButton::section {{
+            background-color: {colors.BG_HEADER};
+            border: none;
+            border-top-left-radius: 10px;
         }}
     """
 
@@ -474,26 +700,29 @@ def get_tabs_style():
         QTabWidget::pane {{
             border: 1px solid {colors.BORDER};
             background: {colors.BG_CARD};
-            border-radius: 12px;
-            margin-top: 15px;
+            border-radius: 10px;
+            top: -1px;
         }}
         QTabBar::tab {{
-            background: {colors.BG_MAIN};
+            background: {colors.TAB_BG};
             color: {colors.TEXT_SECONDARY};
-            padding: 12px 30px;
-            margin-right: 6px;
-            border-top-left-radius: 8px;
-            border-top-right-radius: 8px;
-            font-weight: bold;
-            font-family: 'Segoe UI', 'Cairo';
+            padding: 9px 24px;
+            margin-right: 4px;
+            border-top-left-radius: 7px;
+            border-top-right-radius: 7px;
+            font-weight: 600;
+            font-size: 13px;
+            font-family: 'Segoe UI', 'Cairo', sans-serif;
         }}
         QTabBar::tab:selected {{
             background: {colors.BG_CARD};
             color: {colors.PRIMARY};
             border-bottom: 2px solid {colors.PRIMARY};
+            font-weight: 700;
         }}
-        QTabBar::tab:hover {{
-            background: {colors.BORDER};
+        QTabBar::tab:hover:!selected {{
+            background: {colors.TAB_HOVER_BG};
+            color: {colors.TEXT_PRIMARY};
         }}
     """
 
@@ -980,6 +1209,7 @@ ROLE_CAPABILITIES: dict = {
         "student_attendance": {"can_write": True, "can_delete": False},
         "admin_docs": {"can_write": True, "can_delete": False},
         "communication": {"can_write": True, "can_delete": False},
+        "timetable_manager": {"can_write": False, "can_delete": False},
     },
     "Pédagogique": {
         "academic_settings": {"can_write": False, "can_delete": False},
@@ -988,6 +1218,7 @@ ROLE_CAPABILITIES: dict = {
         "student_discipline": {"can_write": True, "can_delete": False},
         "student_grades": {"can_write": True, "can_delete": False},
         "bulletin_generation": {"can_write": True, "can_delete": False},
+        "timetable_manager": {"can_write": True, "can_delete": True},
         "advanced_reports": {"can_write": False, "can_delete": False},
     },
     "Prof": {

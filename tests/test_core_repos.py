@@ -5,14 +5,14 @@ from unittest.mock import MagicMock, call
 
 import pytest
 
-from repositories.inventory_repo import InventoryRepository
-from repositories.import_wizard_repo import ImportWizardRepository
-from repositories.year_end_repo import YearEndRepository
 from repositories.attendance_repo import AttendanceRepository
 from repositories.grades_repo import GradesRepository
-
+from repositories.import_wizard_repo import ImportWizardRepository
+from repositories.inventory_repo import InventoryRepository
+from repositories.year_end_repo import YearEndRepository
 
 # ─── helpers ────────────────────────────────────────────────────────────────
+
 
 def _conn():
     """Mock psycopg2-style connection + plain cursor."""
@@ -33,6 +33,7 @@ def _ctx_conn():
 
 
 # ─── InventoryRepository ────────────────────────────────────────────────────
+
 
 class TestInventoryRepository:
     def test_list_all_items(self):
@@ -113,6 +114,7 @@ class TestInventoryRepository:
 
 # ─── ImportWizardRepository ─────────────────────────────────────────────────
 
+
 class TestImportWizardRepository:
     def test_get_next_class_number(self):
         conn, cur = _ctx_conn()
@@ -133,12 +135,18 @@ class TestImportWizardRepository:
         cur.fetchone.return_value = (77,)
         repo = ImportWizardRepository(conn)
         data = {
-            "first_name_fr": "Ahmed", "last_name_fr": "Ba",
-            "first_name_ar": "أحمد", "last_name_ar": "با",
-            "birth_date": "2010-01-01", "birth_place": "Dakar",
-            "gender": "M", "address": "Rue 10",
-            "parent_name": "Mamadou Ba", "parent_phone": "771234567",
-            "parent_email": "m@ex.com", "parent_address": "Rue 11",
+            "first_name_fr": "Ahmed",
+            "last_name_fr": "Ba",
+            "first_name_ar": "أحمد",
+            "last_name_ar": "با",
+            "birth_date": "2010-01-01",
+            "birth_place": "Dakar",
+            "gender": "M",
+            "address": "Rue 10",
+            "parent_name": "Mamadou Ba",
+            "parent_phone": "771234567",
+            "parent_email": "m@ex.com",
+            "parent_address": "Rue 11",
         }
         sid = repo.insert_student(data)
         assert sid == 77
@@ -165,6 +173,7 @@ class TestImportWizardRepository:
 
 
 # ─── YearEndRepository ──────────────────────────────────────────────────────
+
 
 class TestYearEndRepository:
     def test_list_academic_years(self):
@@ -265,6 +274,7 @@ class TestYearEndRepository:
 
 # ─── AttendanceRepository ───────────────────────────────────────────────────
 
+
 class TestAttendanceRepository:
     def test_list_classes(self):
         conn, cur = _conn()
@@ -325,8 +335,29 @@ class TestAttendanceRepository:
         result = repo.resolve_period_id_for_class_date(1, "2026-07-01", 1)
         assert result is None
 
+    def test_resolve_timetable_slot_invalid_args(self):
+        conn, _ = _conn()
+        repo = AttendanceRepository(conn)
+        assert repo.resolve_timetable_slot_for_class_datetime(0, "2026-01-01", "08:00") is None
+        assert repo.resolve_timetable_slot_for_class_datetime(1, "", "08:00") is None
+        assert repo.resolve_timetable_slot_for_class_datetime(1, "2026-01-01", "") is None
+
+    def test_resolve_timetable_slot_found(self):
+        conn, cur = _conn()
+        cur.fetchone.return_value = (11,)
+        repo = AttendanceRepository(conn)
+        result = repo.resolve_timetable_slot_for_class_datetime(1, "2026-01-05", "08:30")
+        assert result == 11
+
+    def test_list_timetable_slots_for_class_date_invalid_args(self):
+        conn, _ = _conn()
+        repo = AttendanceRepository(conn)
+        assert repo.list_timetable_slots_for_class_date(0, "2026-01-05") == []
+        assert repo.list_timetable_slots_for_class_date(1, "") == []
+
 
 # ─── GradesRepository ───────────────────────────────────────────────────────
+
 
 class TestGradesRepository:
     def test_list_classes(self):

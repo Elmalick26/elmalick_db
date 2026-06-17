@@ -418,6 +418,20 @@ class TestDisciplineRepository:
         result = repo.resolve_period_id_for_class_date(1, "2025-01-15", 1)
         assert result == 5
 
+    def test_list_timetable_slots_for_class_date(self):
+        conn, cur = _conn()
+        cur.fetchall.return_value = [(10, "08:00", "09:00", "Math")]
+        repo = DisciplineRepository(conn)
+        rows = repo.list_timetable_slots_for_class_date(1, "2025-01-13")
+        assert rows == [(10, "08:00", "09:00", "Math")]
+
+    def test_resolve_timetable_slot_context_for_class_datetime(self):
+        conn, cur = _conn()
+        cur.fetchone.return_value = (10, "08:00", "09:00", "Math")
+        repo = DisciplineRepository(conn)
+        row = repo.resolve_timetable_slot_context_for_class_datetime(1, "2025-01-13", "08:15")
+        assert row[0] == 10
+
     # ── CRUD incidents ────────────────────────────────────────────────────────
 
     def test_insert_incident(self):
@@ -426,11 +440,34 @@ class TestDisciplineRepository:
         repo.insert_incident(1, "2025-01-01", "Absence", "Avertissement", 5, "Obs", 1, 2)
         assert "INSERT INTO StudentDiscipline" in cur.execute.call_args[0][0]
 
+    def test_insert_incident_with_slot(self):
+        conn, cur = _conn()
+        repo = DisciplineRepository(conn)
+        repo.insert_incident(1, "2025-01-01", "Absence", "Avertissement", 5, "Obs", 1, 2, 11)
+        params = cur.execute.call_args[0][1]
+        assert 11 in params
+
     def test_update_incident(self):
         conn, cur = _conn()
         repo = DisciplineRepository(conn)
         repo.update_incident(3, "2025-01-02", "Retard", "Punition", 2, "Note")
         assert "UPDATE StudentDiscipline" in cur.execute.call_args[0][0]
+
+    def test_list_subjects_for_history(self):
+        conn, cur = _conn()
+        cur.fetchall.return_value = [(1, "Math")]
+        repo = DisciplineRepository(conn)
+        rows = repo.list_subjects_for_history(class_id=1)
+        assert rows == [(1, "Math")]
+
+    def test_list_slots_for_history_subject_filter(self):
+        conn, cur = _conn()
+        cur.fetchall.return_value = [(11, "Lundi", "08:00", "09:00", "Math")]
+        repo = DisciplineRepository(conn)
+        rows = repo.list_slots_for_history(class_id=1, subject_id=1)
+        assert len(rows) == 1
+        sql = cur.execute.call_args[0][0]
+        assert "T.subject_id = %s" in sql
 
     def test_delete_incident(self):
         conn, cur = _conn()
@@ -440,7 +477,21 @@ class TestDisciplineRepository:
 
     def test_get_incident_details_found(self):
         conn, cur = _conn()
-        cur.fetchone.return_value = (1, "Ahmed Diop", "CI", 1, "2025-01-01", "Absence", "Avert.", 5, "Obs")
+        cur.fetchone.return_value = (
+            1,
+            "Ahmed Diop",
+            "CI",
+            1,
+            "2025-01-01",
+            "Absence",
+            "Avert.",
+            5,
+            "Obs",
+            None,
+            None,
+            None,
+            "",
+        )
         repo = DisciplineRepository(conn)
         detail = repo.get_incident_details(1)
         assert detail is not None
@@ -456,7 +507,21 @@ class TestDisciplineRepository:
     def test_get_incident_details_no_class(self):
         """class_name should default to '-' when C.class_name_fr is None."""
         conn, cur = _conn()
-        cur.fetchone.return_value = (1, "Ahmed Diop", None, None, "2025-01-01", "Absence", "Avert.", 5, "Obs")
+        cur.fetchone.return_value = (
+            1,
+            "Ahmed Diop",
+            None,
+            None,
+            "2025-01-01",
+            "Absence",
+            "Avert.",
+            5,
+            "Obs",
+            None,
+            None,
+            None,
+            "",
+        )
         repo = DisciplineRepository(conn)
         detail = repo.get_incident_details(1)
         assert detail["class_name"] == "-"
@@ -491,8 +556,21 @@ class TestDisciplineRepository:
         conn, cur = _conn()
         cur.fetchall.return_value = [(1, "Ahmed Diop", "CI", "2025-01-01", "Abs", "Avert.", 5, "")]
         repo = DisciplineRepository(conn)
-        rows = repo.get_history(year_id=1, class_id=2, period_id=3, search="Ahmed")
+        rows = repo.get_history(
+            year_id=1,
+            class_id=2,
+            period_id=3,
+            subject_id=4,
+            timetable_slot_id=9,
+            search="Ahmed",
+        )
         assert len(rows) == 1
+        sql = cur.execute.call_args[0][0]
+        params = cur.execute.call_args[0][1]
+        assert "T.subject_id = %s" in sql
+        assert "D.timetable_slot_id = %s" in sql
+        assert 4 in params
+        assert 9 in params
 
     def test_get_history_year_and_class_only(self):
         conn, cur = _conn()

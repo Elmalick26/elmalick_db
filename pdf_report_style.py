@@ -1,5 +1,8 @@
 import os
+
+from app_logger import AppLogger
 from database_setup import DatabaseManager
+from pdf_helpers import sanitize_latin as _sanitize_latin
 from repositories.staff_repo import StaffRepository
 
 SLATE_HEADER_BG = (30, 41, 59)
@@ -32,20 +35,17 @@ def set_zebra_row_fill(pdf, row_index):
     pdf.set_fill_color(*fill_color)
 
 
-def _sanitize_latin(text):
-    if text is None:
-        return ""
-    if not isinstance(text, str):
-        text = str(text)
-    return text.encode('latin-1', 'ignore').decode('latin-1')
-
-
 def get_school_info_row():
+    # FIX 1: DatabaseManager is not a context manager — `with DatabaseManager() as db:`
+    # raised AttributeError on every call, silently caught, returning None always.
+    # Every PDF header in the system showed blank school info as a result.
+    # FIX 2: Log the exception so failures are visible instead of disappearing silently.
     try:
-        with DatabaseManager() as db:
-            conn = db.get_connection()
+        db = DatabaseManager()
+        with db.get_connection() as conn:
             return StaffRepository(conn).get_school_info()
-    except Exception:
+    except Exception as e:
+        AppLogger.error("pdf_report_style", f"Failed to load school info: {e}")
         return None
 
 
@@ -54,7 +54,10 @@ def apply_grades_sheet_header(pdf, school_info, title_doc, font_name="Helvetica"
     pdf.set_xy(left_x, left_y)
     pdf.set_font(font_name, '', 8)
 
-    if school_info:
+    # FIX 3: Added len > 7 guard — indices 1–7 were accessed with only a
+    # truthiness check; a partial tuple from the DB raised IndexError.
+    # Index 8 already had an explicit len guard; now all accesses are consistent.
+    if school_info and len(school_info) > 7:
         republic = _sanitize_latin(school_info[1])
         pdf.cell(80, 3, republic, 0, 1, 'L')
         ia_text = _sanitize_latin(school_info[2])

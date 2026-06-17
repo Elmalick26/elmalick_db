@@ -1,4 +1,4 @@
-import os
+﻿import os
 import sys
 from datetime import datetime
 
@@ -10,6 +10,8 @@ from PyQt6.QtWidgets import (
     QApplication,
     QComboBox,
     QDateEdit,
+    QDialog,
+    QFormLayout,
     QFrame,
     QGridLayout,
     QGroupBox,
@@ -30,6 +32,10 @@ from PyQt6.QtWidgets import (
 import security_utils
 from app_logger import AppLogger
 from database_setup import DatabaseManager, log_audit
+from pdf_helpers import ARABIC_SUPPORT
+from pdf_helpers import find_arabic_font_path as _get_arabic_font_path
+from pdf_helpers import prepare_pdf_text as _prepare_pdf_text
+from pdf_helpers import setup_pdf_arabic_font
 from pdf_report_style import (
     apply_grades_sheet_header,
     apply_table_body_style,
@@ -39,33 +45,188 @@ from pdf_report_style import (
 )
 from print_export_service import get_report_output_mode, output_pdf
 from repositories.user_repo import UserRepository
-from ui_styles import (
-    Colors,
-    ModuleHeaderWidget,
-    ThemeManager,
-    apply_shadow_to_widget,
-    get_card_style,
-    get_table_style,
-    get_tabs_style,
+from ui_components import (
+    BaseDialog,
+    card_frame,
+    dialog_button_row,
+    dialog_error_label,
+    style_table,
+    styled_button,
+    styled_combo,
+    styled_input,
 )
+from ui_styles import Colors, ModuleHeaderWidget, ThemeManager, get_module_caps, get_table_style, get_tabs_style
 
 USER_AUDIT_REPORT_OUTPUT_MODE = get_report_output_mode("user_audit_report_mode", "save")
 
 
-def _get_arabic_font_path():
-    base_dir = os.path.dirname(os.path.abspath(__file__))
-    candidates = [
-        os.path.join(base_dir, "fonts", "Amiri-Regular.ttf"),
-        os.path.join(base_dir, "fonts", "NotoNaskhArabic-Regular.ttf"),
-        os.path.join(base_dir, "fonts", "Cairo-Regular.ttf"),
-        os.path.join(base_dir, "Fonts", "Amiri", "Amiri-Regular.ttf"),
-        os.path.join(base_dir, "Fonts", "Noto_Naskh_Arabic", "NotoNaskhArabic-Regular.ttf"),
-        os.path.join(base_dir, "Fonts", "Cairo", "Cairo-Regular.ttf"),
-    ]
-    for path in candidates:
-        if os.path.exists(path):
-            return path
-    return None
+class UserDialog(BaseDialog):
+    """Dialog for adding/editing users"""
+
+    def __init__(self, staff_list=None, data=None, parent=None):
+        super().__init__("Éditer Utilisateur" if data else "Ajouter Utilisateur", parent)
+        self.staff_list = staff_list or []
+        self.data = data
+        self.setMinimumWidth(500)
+        self.setModal(True)
+
+        self._err_lbl = dialog_error_label()
+        self.dialog_layout.addWidget(self._err_lbl)
+
+        form = QFormLayout()
+        form.setSpacing(12)
+
+        self.cmb_staff = styled_combo()
+        self.cmb_staff.addItem("Lier à un employé...", None)
+        for staff_id, staff_name in self.staff_list:
+            self.cmb_staff.addItem(staff_name, staff_id)
+        form.addRow("Employé:", self.cmb_staff)
+
+        self.cmb_role = styled_combo()
+        self.cmb_role.addItems(["Admin", "Comptable", "Prof", "Secretaire", "Pédagogique"])
+        form.addRow("Rôle:", self.cmb_role)
+
+        self.txt_username = styled_input("Nom d'utilisateur")
+        form.addRow("Utilisateur:", self.txt_username)
+
+        self.txt_email = styled_input("Email")
+        form.addRow("Email:", self.txt_email)
+
+        self.txt_password = styled_input("Mot de passe")
+        self.txt_password.setEchoMode(QLineEdit.EchoMode.Password)
+        form.addRow("Mot de passe:", self.txt_password)
+
+        if data:
+            self.cmb_staff.setCurrentIndex(self.cmb_staff.findData(data.get("staff_id")))
+            self.cmb_role.setCurrentText(data.get("role", "Prof"))
+            self.txt_username.setText(data.get("username", ""))
+            self.txt_email.setText(data.get("email", ""))
+            if data.get("password"):
+                self.txt_password.setText(data.get("password", ""))
+
+        self.dialog_layout.addLayout(form)
+        self.dialog_layout.addLayout(dialog_button_row("Valider" if data else "Créer", self.accept, self.reject))
+
+    def get_values(self):
+        return {
+            "staff_id": self.cmb_staff.currentData(),
+            "role": self.cmb_role.currentText(),
+            "username": self.txt_username.text().strip(),
+            "email": self.txt_email.text().strip(),
+            "password": self.txt_password.text().strip(),
+        }
+
+    def _validate(self):
+        vals = self.get_values()
+        if not vals["username"]:
+            self._err_lbl.setText("Le nom d'utilisateur est requis.")
+            self._err_lbl.setVisible(True)
+            return False
+        if not vals["password"]:
+            self._err_lbl.setText("Le mot de passe est requis.")
+            self._err_lbl.setVisible(True)
+            return False
+        self._err_lbl.setVisible(False)
+        return True
+
+    def accept(self):
+        if self._validate():
+            super().accept()
+
+
+class UserEditDialog(BaseDialog):
+    """Dialog for editing user password and deleting account"""
+
+    def __init__(self, user_data, parent=None):
+        super().__init__(f"Gérer: {user_data.get('username', 'N/A')}", parent)
+        self.user_data = user_data
+        self.setMinimumWidth(450)
+        self.setModal(True)
+        colors = ThemeManager.get_colors()
+
+        info_lbl = QLabel(f"Utilisateur: {user_data.get('username')} | Email: {user_data.get('email')}")
+        info_lbl.setStyleSheet(f"font-weight: 600; color: {colors.TEXT_PRIMARY};")
+        self.dialog_layout.addWidget(info_lbl)
+
+        # Password reset section
+        pwd_lbl = QLabel("Réinitialiser le mot de passe:")
+        pwd_lbl.setStyleSheet(f"font-weight: 600; color: {colors.TEXT_SECONDARY};")
+        self.dialog_layout.addWidget(pwd_lbl)
+
+        self._pwd_err = dialog_error_label()
+        self.dialog_layout.addWidget(self._pwd_err)
+
+        self.txt_new_password = styled_input("Nouveau mot de passe")
+        self.txt_new_password.setEchoMode(QLineEdit.EchoMode.Password)
+        self.dialog_layout.addWidget(self.txt_new_password)
+
+        btn_reset = styled_button("💾 Valider Mot de Passe", min_height=38)
+        btn_reset.clicked.connect(self.on_reset_password)
+        self.dialog_layout.addWidget(btn_reset)
+
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setStyleSheet(f"color: {colors.BORDER};")
+        sep.setFixedHeight(1)
+        self.dialog_layout.addWidget(sep)
+
+        del_lbl = QLabel("Zone Danger: Supprimer ce compte")
+        del_lbl.setStyleSheet(f"font-weight: 600; color: {colors.DANGER};")
+        self.dialog_layout.addWidget(del_lbl)
+
+        btn_delete = styled_button(
+            "🗑️ Supprimer Définitivement", bg_color=colors.DANGER, hover_color=colors.DANGER_HOVER, min_height=38
+        )
+        btn_delete.clicked.connect(self.on_delete_account)
+        self.dialog_layout.addWidget(btn_delete)
+
+        self.dialog_layout.addStretch()
+
+        close_row = QHBoxLayout()
+        close_row.addStretch()
+        colors2 = ThemeManager.get_colors()
+        btn_close = QPushButton("Fermer")
+        btn_close.setMinimumHeight(36)
+        btn_close.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_close.setStyleSheet(
+            f"QPushButton {{ background:transparent; border:1.5px solid {colors2.BORDER};"
+            f" color:{colors2.TEXT_SECONDARY}; font-weight:700; border-radius:8px; padding:6px 18px; }}"
+            f"QPushButton:hover {{ background:{colors2.BG_MAIN}; color:{colors2.TEXT_PRIMARY}; }}"
+        )
+        btn_close.clicked.connect(self.reject)
+        close_row.addWidget(btn_close)
+        self.dialog_layout.addLayout(close_row)
+
+        self.password_changed = False
+        self.account_deleted = False
+
+    def on_reset_password(self):
+        new_pass = self.txt_new_password.text().strip()
+        if not new_pass:
+            self._pwd_err.setText("Veuillez entrer un nouveau mot de passe.")
+            self._pwd_err.setVisible(True)
+            return
+        self._pwd_err.setVisible(False)
+        reply = QMessageBox.question(
+            self, "Confirmation", f"Êtes-vous sûr de vouloir changer le mot de passe de {self.user_data['username']} ?"
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+        self.user_data["new_password"] = new_pass
+        self.password_changed = True
+        QMessageBox.information(self, "Succès", "Mot de passe mis à jour.")
+        self.txt_new_password.clear()
+
+    def on_delete_account(self):
+        reply = QMessageBox.warning(
+            self,
+            "Confirmation Définitive",
+            f"⚠️ Êtes-vous ABSOLUMENT sûr de vouloir supprimer {self.user_data['username']} ?\n\nCette action est IRRÉVERSIBLE.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            self.account_deleted = True
+            self.accept()
 
 
 class UserManagementWindow(QMainWindow):
@@ -84,6 +245,7 @@ class UserManagementWindow(QMainWindow):
         self.current_audit_report_title = "Rapport Journal d'Audit"
         self.current_audit_period_label = "30 derniers jours"
 
+        self.staff_list_cache = []
         self.ensure_admin_exists()
         self.init_ui()
         self.load_users()
@@ -113,14 +275,19 @@ class UserManagementWindow(QMainWindow):
         except Exception as e:
             AppLogger.error("UserManagement", f"Audit Error: {e}")
 
+    def apply_rbac(self, role: str) -> None:
+        """تطبيق صلاحيات الأزرار بناءً على دور المستخدم — يُستدعى من MainWindow."""
+        caps = get_module_caps(role, "user_management")
+        if hasattr(self, "btn_add"):
+            self.btn_add.setEnabled(caps["can_write"])
+            self.btn_add.setVisible(caps["can_write"])
+
     def init_ui(self):
         self.central_widget = QWidget()
         self.setCentralWidget(self.central_widget)
         self.main_layout = QVBoxLayout(self.central_widget)
-        self.main_layout.setContentsMargins(20, 20, 20, 20)
-        self.main_layout.setSpacing(15)
-
-        colors = ThemeManager.get_colors()
+        self.main_layout.setContentsMargins(24, 20, 24, 20)
+        self.main_layout.setSpacing(16)
 
         # 1. En-tête unifié
         header = ModuleHeaderWidget(
@@ -146,34 +313,16 @@ class UserManagementWindow(QMainWindow):
         self.main_layout.addWidget(self.tabs)
 
     def create_card(self):
-        frame = QFrame()
-        frame.setStyleSheet(get_card_style())
-        return frame
+        return card_frame()
 
     def styled_input(self, placeholder):
-        le = QLineEdit()
-        le.setPlaceholderText(placeholder)
-        le.setMinimumHeight(38)
-        colors = ThemeManager.get_colors()
-        le.setStyleSheet(
-            f"QLineEdit {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }} QLineEdit:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}"
-        )
-        return le
+        return styled_input(placeholder)
 
     def styled_combo(self):
-        combo = QComboBox()
-        combo.setMinimumHeight(38)
-        colors = ThemeManager.get_colors()
-        combo.setStyleSheet(
-            f"QComboBox {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }} QComboBox:focus {{ border: 2px solid {colors.BORDER_FOCUS}; background: {colors.INPUT_BG_FOCUS}; }}"
-        )
-        return combo
+        return styled_combo()
 
     def style_table(self, table):
-        table.setShowGrid(False)
-        table.setAlternatingRowColors(True)
-        table.verticalHeader().setVisible(False)
-        table.setStyleSheet(get_table_style())
+        style_table(table)
 
     def _load_kpi_stats(self):
         """Charge les statistiques des utilisateurs."""
@@ -205,118 +354,48 @@ class UserManagementWindow(QMainWindow):
         tab = QWidget()
         layout = QVBoxLayout(tab)
         layout.setContentsMargins(20, 20, 20, 20)
-        layout.setSpacing(20)
-
-        top_layout = QHBoxLayout()
-        top_layout.setSpacing(20)
-
-        # Left Card: Add User
-        add_card = self.create_card()
-        alay = QVBoxLayout(add_card)
-        alay.setContentsMargins(15, 15, 15, 15)
+        layout.setSpacing(16)
 
         colors = ThemeManager.get_colors()
-        lbl_add_title = QLabel("➕ Nouveau Utilisateur / إضافة مستخدم")
-        lbl_add_title.setStyleSheet(
-            f"font-weight: bold; color: {colors.TEXT_PRIMARY}; font-size: 14px; margin-bottom: 5px;"
+
+        # Toolbar: Title + Add button
+        toolbar = QHBoxLayout()
+        toolbar.setContentsMargins(0, 0, 0, 0)
+        toolbar.setSpacing(12)
+
+        lbl_title = QLabel("👥 Utilisateurs / المستخدمون")
+        lbl_title.setStyleSheet(f"font-weight: 600; font-size: 14px; color: {colors.TEXT_PRIMARY};")
+        toolbar.addWidget(lbl_title)
+        toolbar.addStretch()
+
+        self.btn_add = QPushButton("➕ Ajouter Utilisateur")
+        self.btn_add.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_add.setMinimumHeight(38)
+        self.btn_add.setMaximumWidth(200)
+        self.btn_add.setStyleSheet(
+            f"QPushButton {{ background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 {colors.SUCCESS} stop:1 #16A34A); color: white; font-weight: 700; padding: 8px 16px; border-radius: 8px; border: none; }} QPushButton:hover {{ background: {colors.SUCCESS_HOVER}; }} QPushButton:disabled {{ background:{colors.BORDER}; color:{colors.TEXT_SECONDARY}; }}"
         )
-        alay.addWidget(lbl_add_title)
+        self.btn_add.clicked.connect(lambda: self.open_user_dialog())
+        toolbar.addWidget(self.btn_add)
+        layout.addLayout(toolbar)
 
-        form_grid = QGridLayout()
-        self.combo_staff = self.styled_combo()
-        self.combo_staff.setPlaceholderText("Lier à un employé...")
-        self.load_staff_list()
-        self.combo_staff.currentIndexChanged.connect(self.on_staff_selected)
-
-        self.txt_new_user = self.styled_input("Nom d'utilisateur")
-        self.txt_new_email = self.styled_input("Email")
-        self.txt_new_pass = self.styled_input("Mot de passe")
-        self.txt_new_pass.setEchoMode(QLineEdit.EchoMode.Password)
-
-        self.combo_role = self.styled_combo()
-        self.combo_role.addItems(["Admin", "Comptable", "Prof", "Secretaire", "Pédagogique"])
-
-        form_grid.addWidget(QLabel("Employé:"), 0, 0)
-        form_grid.addWidget(self.combo_staff, 0, 1)
-        form_grid.addWidget(QLabel("Rôle:"), 1, 0)
-        form_grid.addWidget(self.combo_role, 1, 1)
-        form_grid.addWidget(QLabel("User:"), 2, 0)
-        form_grid.addWidget(self.txt_new_user, 2, 1)
-        form_grid.addWidget(QLabel("Email:"), 3, 0)
-        form_grid.addWidget(self.txt_new_email, 3, 1)
-        form_grid.addWidget(QLabel("Pass:"), 4, 0)
-        form_grid.addWidget(self.txt_new_pass, 4, 1)
-
-        btn_add = QPushButton("Créer le compte")
-        btn_add.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_add.setStyleSheet(
-            f"QPushButton {{ background-color: {colors.SUCCESS}; color: white; font-weight: bold; padding: 10px; border-radius: 6px; border: none; }} QPushButton:hover {{ background-color: {colors.SUCCESS_HOVER}; }}"
-        )
-        btn_add.clicked.connect(self.add_user)
-
-        alay.addLayout(form_grid)
-        alay.addWidget(btn_add)
-        alay.addStretch()
-
-        top_layout.addWidget(add_card, 1)
-
-        # Right Card: Manage Selected User
-        manage_card = self.create_card()
-        mlay = QVBoxLayout(manage_card)
-        mlay.setContentsMargins(15, 15, 15, 15)
-
-        lbl_manage_title = QLabel("🔧 Gestion & Sécurité / إدارة الحساب")
-        lbl_manage_title.setStyleSheet(
-            f"font-weight: bold; color: {colors.TEXT_PRIMARY}; font-size: 14px; margin-bottom: 5px;"
-        )
-        mlay.addWidget(lbl_manage_title)
-
-        self.lbl_selected_user = QLabel("Aucun utilisateur sélectionné")
-        self.lbl_selected_user.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.lbl_selected_user.setStyleSheet(
-            f"background-color: {colors.BG_MAIN}; color: {colors.TEXT_SECONDARY}; padding: 8px; border-radius: 6px; font-weight: bold; border: 1px solid {colors.BORDER};"
-        )
-        mlay.addWidget(self.lbl_selected_user)
-
-        mlay.addSpacing(10)
-        mlay.addWidget(QLabel("Réinitialiser le mot de passe:"))
-        self.txt_reset_pass = self.styled_input("Nouveau mot de passe")
-        self.txt_reset_pass.setEchoMode(QLineEdit.EchoMode.Password)
-        mlay.addWidget(self.txt_reset_pass)
-
-        btn_reset = QPushButton("Modifier le Mot de Passe")
-        btn_reset.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_reset.setStyleSheet(
-            f"QPushButton {{ background-color: {colors.PRIMARY}; color: white; font-weight: bold; padding: 8px; border-radius: 6px; border: none; }} QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}"
-        )
-        btn_reset.clicked.connect(self.reset_password)
-        mlay.addWidget(btn_reset)
-
-        mlay.addSpacing(15)
-        btn_delete = QPushButton("Supprimer ce Compte")
-        btn_delete.setCursor(Qt.CursorShape.PointingHandCursor)
-        btn_delete.setStyleSheet(
-            f"QPushButton {{ background-color: {colors.DANGER}; color: white; font-weight: bold; padding: 8px; border-radius: 6px; border: none; }} QPushButton:hover {{ background-color: {colors.DANGER_HOVER}; }}"
-        )
-        btn_delete.clicked.connect(self.delete_user)
-        mlay.addWidget(btn_delete)
-        mlay.addStretch()
-
-        top_layout.addWidget(manage_card, 1)
-        layout.addLayout(top_layout)
-
-        # Bottom Section: Users Table
-        layout.addWidget(QLabel("Liste des Utilisateurs / قائمة المستخدمين:"))
+        # Users Table with Action column
         self.table = QTableWidget()
         self.style_table(self.table)
-        self.table.setColumnCount(5)
-        self.table.setHorizontalHeaderLabels(["ID", "👤 Employé", "📝 Utilisateur", "📧 Email", "🔐 Rôle"])
-        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        self.table.setColumnCount(6)
+        self.table.setHorizontalHeaderLabels(["ID", "👤 Employé", "📝 Utilisateur", "📧 Email", "🔐 Rôle", "⚙️ Action"])
+        self.table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.ResizeToContents)  # ID
+        self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)  # Employé
+        self.table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.Stretch)  # Utilisateur
+        self.table.horizontalHeader().setSectionResizeMode(3, QHeaderView.ResizeMode.Stretch)  # Email
+        self.table.horizontalHeader().setSectionResizeMode(4, QHeaderView.ResizeMode.ResizeToContents)  # Rôle
+        self.table.horizontalHeader().setSectionResizeMode(5, QHeaderView.ResizeMode.Fixed)  # Action
+        self.table.horizontalHeader().resizeSection(5, 110)
         self.table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.table.itemClicked.connect(self.select_user)
-
         layout.addWidget(self.table)
+
         self.tabs.addTab(tab, "  👥 Utilisateurs  ")
+        self.load_users()
 
     def setup_audit_tab(self):
         tab = QWidget()
@@ -348,7 +427,7 @@ class UserManagementWindow(QMainWindow):
         self.date_audit_from.dateChanged.connect(self.load_audit_logs)
         colors = ThemeManager.get_colors()
         self.date_audit_from.setStyleSheet(
-            f"QDateEdit {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }}"
+            f"QDateEdit {{ padding: 9px 13px; border: 1.5px solid {colors.INPUT_BORDER}; border-radius: 8px; background-color: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }}"
         )
         flay.addWidget(self.date_audit_from)
 
@@ -359,7 +438,7 @@ class UserManagementWindow(QMainWindow):
         self.date_audit_to.setEnabled(False)
         self.date_audit_to.dateChanged.connect(self.load_audit_logs)
         self.date_audit_to.setStyleSheet(
-            f"QDateEdit {{ padding: 8px 12px; border: 1px solid {colors.BORDER}; border-radius: 6px; background: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }}"
+            f"QDateEdit {{ padding: 9px 13px; border: 1.5px solid {colors.INPUT_BORDER}; border-radius: 8px; background-color: {colors.INPUT_BG}; color: {colors.TEXT_PRIMARY}; }}"
         )
         flay.addWidget(self.date_audit_to)
 
@@ -371,8 +450,9 @@ class UserManagementWindow(QMainWindow):
 
         btn_export_audit = QPushButton("📄 Exporter Rapport PDF")
         btn_export_audit.setCursor(Qt.CursorShape.PointingHandCursor)
+        btn_export_audit.setMinimumHeight(42)
         btn_export_audit.setStyleSheet(
-            f"QPushButton {{ background-color: {colors.PRIMARY}; color: white; font-weight: bold; padding: 8px 14px; border-radius: 6px; border: none; }} QPushButton:hover {{ background-color: {colors.PRIMARY_HOVER}; }}"
+            f"QPushButton {{ background: qlineargradient(x1:0,y1:0,x2:1,y2:0, stop:0 {colors.PRIMARY} stop:1 {colors.PRIMARY_HOVER}); color: white; font-weight: bold; padding: 8px 14px; border-radius: 8px; border: none; }} QPushButton:hover {{ background: {colors.PRIMARY_DARK}; }}"
         )
         btn_export_audit.clicked.connect(self.export_audit_report_pdf)
         flay.addWidget(btn_export_audit)
@@ -432,43 +512,110 @@ class UserManagementWindow(QMainWindow):
         return None, None
 
     # --- Logic ---
-    def load_staff_list(self):
-        try:
-            db = DatabaseManager()
-            with db.get_connection() as conn:
-                rows = UserRepository(conn).list_active_staff()
+    def open_user_dialog(self, user_id=None):
+        """Open UserDialog for adding or editing a user."""
+        staff_list = [(s[0], f"{s[1]} {s[2]}") for s in self.staff_list_cache]
+        dialog = UserDialog(
+            staff_list=staff_list, data=None if user_id is None else self._get_user_data(user_id), parent=self
+        )
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            values = dialog.get_values()
+            try:
+                hashed_pwd = security_utils.hash_password(values['password'])
+                db = DatabaseManager()
+                with db.get_connection() as conn:
+                    if user_id is None:
+                        UserRepository(conn).create_user(
+                            values['username'], values['email'], hashed_pwd, values['role'], staff_id=values['staff_id']
+                        )
+                        log_audit(conn, getattr(self, "current_user", "admin"), "CREATE_USER", values['username'])
+                    else:
+                        UserRepository(conn).update_user(user_id, values['email'], values['role'])
+                        log_audit(conn, getattr(self, "current_user", "admin"), "UPDATE_USER", values['username'])
+                    conn.commit()
+                self.load_users()
+                QMessageBox.information(self, "Succès", "Utilisateur sauvegardé.")
+            except psycopg2.IntegrityError:
+                QMessageBox.warning(self, "Erreur", "Nom d'utilisateur déjà pris.")
+            except Exception as e:
+                QMessageBox.critical(self, "Erreur", str(e))
 
-            self.combo_staff.clear()
-            self.combo_staff.addItem("- Aucun lien -", None)
-
-            for staff_id, first_name, last_name in rows:
-                first = str(first_name or "").strip()
-                last = str(last_name or "").strip()
-                display_name = f"{first} {last}".strip() or "[Staff]"
-                self.combo_staff.addItem(display_name, staff_id)
-        except Exception:
-            pass
-
-    def on_staff_selected(self):
-        staff_id = self.combo_staff.currentData()
-        if not staff_id:
-            self.txt_new_email.clear()
+    def open_edit_dialog(self, user_id):
+        """Open UserEditDialog for password reset or account deletion."""
+        user_data = self._get_user_data(user_id)
+        if not user_data:
+            QMessageBox.warning(self, "Erreur", "Utilisateur introuvable.")
             return
+        dialog = UserEditDialog(user_data, parent=self)
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            try:
+                db = DatabaseManager()
+                with db.get_connection() as conn:
+                    if dialog.password_changed:
+                        hashed_pwd = security_utils.hash_password(dialog.user_data.get("new_password", ""))
+                        UserRepository(conn).update_password(user_id, hashed_pwd)
+                        log_audit(conn, getattr(self, "current_user", "admin"), "RESET_PASSWORD", user_data["username"])
+                    if dialog.account_deleted:
+                        if user_id == 1 or user_data["username"] == 'admin':
+                            QMessageBox.warning(self, "Interdit", "Impossible de supprimer l'administrateur.")
+                            return
+                        UserRepository(conn).delete_user(user_id)
+                        log_audit(conn, getattr(self, "current_user", "admin"), "DELETE_USER", user_data["username"])
+                    conn.commit()
+                self.load_users()
+                if dialog.account_deleted:
+                    QMessageBox.information(self, "Succès", "Compte supprimé.")
+                else:
+                    QMessageBox.information(self, "Succès", "Mot de passe mis à jour.")
+            except Exception as e:
+                QMessageBox.critical(self, "Erreur", str(e))
+
+    def _get_user_data(self, user_id):
+        """Retrieve user data by ID as a dict."""
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
-                email = UserRepository(conn).get_staff_email(staff_id)
-            self.txt_new_email.setText(email)
-        except Exception:
-            self.txt_new_email.clear()
+                cursor = conn.cursor()
+                cursor.execute(
+                    """
+                    SELECT u.id, u.staff_id,
+                           COALESCE(s.first_name || ' ' || s.last_name, '---') AS staff_name,
+                           u.username, u.email, u.role
+                    FROM Users u
+                    LEFT JOIN Staff s ON u.staff_id = s.id
+                    WHERE u.id = %s
+                    """,
+                    (user_id,),
+                )
+                row = cursor.fetchone()
+            if row:
+                return {
+                    "id": row[0],
+                    "staff_id": row[1],
+                    "staff_name": row[2],
+                    "username": row[3],
+                    "email": row[4],
+                    "role": row[5],
+                }
+            return None
+        except Exception as e:
+            AppLogger.error("UserManagement", f"Error fetching user data: {e}")
+            return None
 
     def load_users(self):
         self.table.setRowCount(0)
+        self.staff_list_cache = []  # Populate cache for dialogs
         try:
             db = DatabaseManager()
             with db.get_connection() as conn:
+                # Populate staff cache for UserDialog
+                staff_rows = UserRepository(conn).list_active_staff()
+                self.staff_list_cache = [(s[0], s[1], s[2]) for s in staff_rows]  # (staff_id, first_name, last_name)
+
+                # Load users
                 rows = UserRepository(conn).list_users()
 
+            colors = ThemeManager.get_colors()
             for row in rows:
                 idx = self.table.rowCount()
                 self.table.insertRow(idx)
@@ -478,8 +625,67 @@ class UserManagementWindow(QMainWindow):
                 self.table.setItem(idx, 2, QTableWidgetItem(str(username or "")))
                 self.table.setItem(idx, 3, QTableWidgetItem(str(email or "")))
                 self.table.setItem(idx, 4, QTableWidgetItem(str(role or "")))
+
+                # Action column: Edit + Delete buttons
+                action_widget = QWidget()
+                action_layout = QHBoxLayout(action_widget)
+                action_layout.setContentsMargins(4, 2, 4, 2)
+                action_layout.setSpacing(6)
+                action_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
+
+                btn_edit = QPushButton("✎ Éditer")
+                btn_edit.setCursor(Qt.CursorShape.PointingHandCursor)
+                btn_edit.setFixedHeight(28)
+                btn_edit.setStyleSheet(
+                    f"QPushButton {{ background: {colors.PRIMARY}; color: white; font-size: 11px; font-weight: 600; border-radius: 6px; border: none; padding: 3px 8px; }} "
+                    f"QPushButton:hover {{ background: {colors.PRIMARY_HOVER}; }}"
+                )
+                btn_edit.clicked.connect(lambda checked, uid=user_id: self.open_edit_dialog(uid))
+                action_layout.addWidget(btn_edit)
+
+                btn_delete = QPushButton("✕ Suppr")
+                btn_delete.setCursor(Qt.CursorShape.PointingHandCursor)
+                btn_delete.setFixedHeight(28)
+                btn_delete.setStyleSheet(
+                    f"QPushButton {{ background: {colors.DANGER}; color: white; font-size: 11px; font-weight: 600; border-radius: 6px; border: none; padding: 3px 8px; }} "
+                    f"QPushButton:hover {{ background: {colors.DANGER_HOVER}; }}"
+                )
+                btn_delete.clicked.connect(lambda checked, uid=user_id: self._confirm_delete_user(uid))
+                action_layout.addWidget(btn_delete)
+
+                self.table.setCellWidget(idx, 5, action_widget)
+                self.table.setRowHeight(idx, 38)
         except Exception as e:
+            AppLogger.error("UserManagement", f"Error loading users: {e}")
             QMessageBox.critical(self, "Erreur", f"Erreur de chargement: {e}")
+
+    def _confirm_delete_user(self, user_id):
+        """Confirm and delete a user."""
+        user_data = self._get_user_data(user_id)
+        if not user_data:
+            return
+        if user_id == 1 or user_data["username"] == 'admin':
+            QMessageBox.warning(self, "Interdit", "Impossible de supprimer l'administrateur.")
+            return
+        if (
+            QMessageBox.question(
+                self,
+                "Confirmer la suppression",
+                f"Supprimer l'utilisateur '{user_data['username']}' ?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            )
+            == QMessageBox.StandardButton.Yes
+        ):
+            try:
+                db = DatabaseManager()
+                with db.get_connection() as conn:
+                    UserRepository(conn).delete_user(user_id)
+                    log_audit(conn, getattr(self, "current_user", "admin"), "DELETE_USER", user_data["username"])
+                    conn.commit()
+                self.load_users()
+                QMessageBox.information(self, "Succès", "Compte supprimé.")
+            except Exception as e:
+                QMessageBox.critical(self, "Erreur", str(e))
 
     def load_audit_logs(self):
         self.table_audit.setRowCount(0)
@@ -558,116 +764,8 @@ class UserManagementWindow(QMainWindow):
             mode=mode,
             dialog_title="Exporter Rapport Journal d'Audit",
             success_save_message=f"Rapport du journal d'audit exporte ({self.current_audit_period_label}, max {len(self.current_audit_report_rows)} lignes).",
-            success_print_message=f"Rapport du journal d'audit envoye a l'imprimante.",
+            success_print_message="Rapport du journal d'audit envoye a l'imprimante.",
         )
-
-    def add_user(self):
-        staff_id = self.combo_staff.currentData()
-        username = self.txt_new_user.text().strip()
-        email = self.txt_new_email.text().strip()
-        password = self.txt_new_pass.text()
-        role = self.combo_role.currentText()
-
-        if not username or not password:
-            QMessageBox.warning(self, "Erreur", "Champs obligatoires manquants.")
-            return
-
-        try:
-            is_valid, msg = security_utils.validate_password(password)
-            if not is_valid:
-                QMessageBox.warning(self, "Erreur", msg)
-                return
-
-            hashed_pwd = security_utils.hash_password(password)
-            db = DatabaseManager()
-            with db.get_connection() as conn:
-                UserRepository(conn).create_user(username, email, hashed_pwd, role, staff_id=staff_id)
-                log_audit(conn, getattr(self, "current_user", "admin"), "CREATE_USER", username)
-                conn.commit()
-
-            self.log_action("Add User", username)
-            self.load_users()
-            self.txt_new_user.clear()
-            self.txt_new_email.clear()
-            self.txt_new_pass.clear()
-            QMessageBox.information(self, "Succès", "Utilisateur ajouté.")
-        except psycopg2.IntegrityError:
-            QMessageBox.warning(self, "Erreur", "Nom d'utilisateur déjà pris.")
-        except Exception as e:
-            QMessageBox.critical(self, "Erreur", str(e))
-
-    def select_user(self, item):
-        row = item.row()
-        self.selected_user_id = int(self.table.item(row, 0).text())
-        self.selected_username = self.table.item(row, 2).text()
-        staff_name = self.table.item(row, 1).text()
-
-        colors = ThemeManager.get_colors()
-        self.lbl_selected_user.setText(f"👤 {self.selected_username} ({staff_name})")
-        self.lbl_selected_user.setStyleSheet(
-            f"background-color: {colors.BG_MAIN}; color: {colors.PRIMARY}; padding: 8px; border-radius: 6px; font-weight: bold; border: 1px solid {colors.BORDER};"
-        )
-
-    def reset_password(self):
-        if not self.selected_user_id:
-            QMessageBox.warning(self, "Erreur", "Aucun utilisateur sélectionné.")
-            return
-
-        new_pwd = self.txt_reset_pass.text()
-        if not new_pwd:
-            QMessageBox.warning(self, "Erreur", "Entrez un nouveau mot de passe.")
-            return
-
-        is_valid, msg = security_utils.validate_password(new_pwd)
-        if not is_valid:
-            QMessageBox.warning(self, "Erreur", msg)
-            return
-
-        hashed_pwd = security_utils.hash_password(new_pwd)
-        try:
-            db = DatabaseManager()
-            with db.get_connection() as conn:
-                UserRepository(conn).update_password(self.selected_user_id, hashed_pwd)
-                log_audit(conn, getattr(self, "current_user", "admin"), "RESET_PASSWORD", self.selected_username)
-                conn.commit()
-
-            self.log_action("Reset Password", self.selected_username)
-            self.txt_reset_pass.clear()
-            QMessageBox.information(self, "Succès", "Mot de passe mis à jour.")
-        except Exception as e:
-            QMessageBox.critical(self, "Erreur", str(e))
-
-    def delete_user(self):
-        if not self.selected_user_id:
-            return
-        if self.selected_user_id == 1 or self.selected_username == 'admin':
-            QMessageBox.warning(self, "Interdit", "Impossible de supprimer l'administrateur principal.")
-            return
-
-        if (
-            QMessageBox.question(
-                self,
-                "Confirmer",
-                f"Supprimer '{self.selected_username}' ?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            )
-            == QMessageBox.StandardButton.Yes
-        ):
-            try:
-                db = DatabaseManager()
-                with db.get_connection() as conn:
-                    UserRepository(conn).delete_user(self.selected_user_id)
-                    log_audit(conn, getattr(self, "current_user", "admin"), "DELETE_USER", self.selected_username)
-                    conn.commit()
-                self.load_users()
-                self.lbl_selected_user.setText("Aucun utilisateur sélectionné")
-                colors = ThemeManager.get_colors()
-                self.lbl_selected_user.setStyleSheet(
-                    f"background-color: {colors.BG_MAIN}; color: {colors.TEXT_SECONDARY}; padding: 8px; border-radius: 6px; border: 1px solid {colors.BORDER};"
-                )
-                self.selected_user_id = None
-            except Exception as e:
-                QMessageBox.critical(self, "Erreur", str(e))
 
 
 if __name__ == "__main__":
