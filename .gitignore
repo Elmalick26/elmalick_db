@@ -33,6 +33,8 @@ venv/
 # Build output (PyInstaller)
 dist_release/
 build/
+build_release/
+build_release_log.txt
 *.spec.bak
 
 # Media / personal data (PII)
