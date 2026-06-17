@@ -155,6 +155,11 @@ class GradeCalculator:
 
                     for assess in assessments:
                         assess_id, assess_name, assess_code, assess_w = assess
+                        # School policy (confirmed): a missing grade counts as 0 and is
+                        # included in the average (count_devoirs increments every loop).
+                        # An absent assessment is treated as a fail, NOT excluded — this
+                        # intentionally differs from GradeService.calculate_period_average,
+                        # which skips None scores.
                         score = grades_map.get((std_id, sub_id, assess_id), 0)
 
                         if not is_primary:
