@@ -29,7 +29,7 @@ from app_logger import AppLogger
 from database_setup import DatabaseManager
 from print_export_service import get_report_output_mode, output_pdf
 from repositories.bulletin_repo import BulletinRepository
-from services.grade_service import GradeService
+from services.grade_service import GradeService, is_primary_cycle
 from ui_styles import (
     Colors,
     ModuleHeaderWidget,
@@ -69,8 +69,7 @@ class GradeCalculator:
         db = DatabaseManager()
         with db.get_connection() as conn:
             cycle_name = BulletinRepository(conn).get_cycle_name_for_class(class_id) or ""
-        cycle_name = cycle_name.lower()
-        is_primary = "elem" in cycle_name or "prim" in cycle_name or "ibtida" in cycle_name
+        is_primary = is_primary_cycle(cycle_name)
         max_score = 10.0 if is_primary else 20.0
         return is_primary, max_score
 
@@ -170,14 +169,20 @@ class GradeCalculator:
                                 exam_score = score
                                 has_exam = True
                         else:
-                            weighted_sum_prim += score * assess_w
-                            total_weight_prim += assess_w
+                            # Primary: the subject average is the composition only —
+                            # devoirs are never counted at this level.
+                            is_devoir = "DEV" in str(assess_code).upper() or "DEVOIR" in str(assess_name).upper()
+                            if not is_devoir:
+                                weighted_sum_prim += score * assess_w
+                                total_weight_prim += assess_w
 
                     moy_subject = 0
                     if not is_primary:
                         moy_devoirs = (sum_devoirs / count_devoirs) if count_devoirs > 0 else 0
                     if count_devoirs > 0 and has_exam:
-                        moy_subject = (moy_devoirs + (exam_score * 2)) / 3
+                        # Collège/Lycée subject average: devoirs and composition weigh
+                        # equally — moy_matière = (moy_devoirs + composition) / 2.
+                        moy_subject = (moy_devoirs + exam_score) / 2
                     elif has_exam:
                         moy_subject = exam_score
                     elif count_devoirs > 0:

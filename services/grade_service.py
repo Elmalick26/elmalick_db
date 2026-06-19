@@ -2,6 +2,26 @@
 
 from __future__ import annotations
 
+import unicodedata
+
+_PRIMARY_KEYS = ("elem", "prim", "ibtida")
+
+
+def is_primary_cycle(cycle_name: str | None) -> bool:
+    """Return True for a primary cycle (élémentaire / primaire / ابتدائي).
+
+    Accent- and case-insensitive: 'Élémentaire' normalises to 'elementaire' so it
+    matches 'elem'. Without this, the accented 'é' makes a plain substring check
+    miss the cycle and fall back to the collège scale/formula.
+    """
+    if not cycle_name:
+        return False
+    stripped = unicodedata.normalize("NFKD", str(cycle_name))
+    stripped = "".join(c for c in stripped if not unicodedata.combining(c)).lower()
+    if any(k in stripped for k in _PRIMARY_KEYS):
+        return True
+    return "ابتدائ" in str(cycle_name)  # Arabic form
+
 
 class GradeService:
     """Pure business rules for grade averages, promotion decisions, and next class selection."""
@@ -25,8 +45,7 @@ class GradeService:
         return float(fallback_average)
 
     def get_promotion_threshold(self, cycle_name: str | None) -> float:
-        cycle_lower = (cycle_name or "").lower()
-        if "elem" in cycle_lower or "prim" in cycle_lower or "ibtida" in cycle_lower:
+        if is_primary_cycle(cycle_name):
             return 5.0
         return 10.0
 
