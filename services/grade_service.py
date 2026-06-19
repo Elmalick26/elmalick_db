@@ -20,7 +20,9 @@ def is_primary_cycle(cycle_name: str | None) -> bool:
     stripped = "".join(c for c in stripped if not unicodedata.combining(c)).lower()
     if any(k in stripped for k in _PRIMARY_KEYS):
         return True
-    return "ابتدائ" in str(cycle_name)  # Arabic form
+    # Arabic form — match on the stem after the (variably-hamza'd) alef so
+    # ابتدائي / إبتدائي / أبتدائي all qualify.
+    return "بتدائ" in str(cycle_name)
 
 
 class GradeService:

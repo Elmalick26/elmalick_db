@@ -7,6 +7,7 @@ import psycopg2
 from app_logger import AppLogger
 from database_setup import DatabaseManager
 from repositories.academic_repo import AcademicRepository
+from services.grade_service import is_primary_cycle
 
 try:
     from config_manager import ConfigManager
@@ -1291,8 +1292,7 @@ class AcademicSettingsWindow(BaseWindow):
                         "Veuillez d'abord définir les dates de début et de fin de l'année scolaire. / يرجى تحديد تاريخ البداية والنهاية للسنة أولاً.",
                     )
                     return
-                # FIX 8: Use literal Arabic string instead of unreadable unicode escape
-                is_elementary = "elem" in cycle_name or "prim" in cycle_name or "إبتدائي" in cycle_name
+                is_elementary = is_primary_cycle(cycle_name)
                 repo.generate_periods_and_assessments(
                     year_id,
                     cycle_id,

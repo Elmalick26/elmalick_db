@@ -12,6 +12,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from services.grade_service import is_primary_cycle
+
 
 class GradesRepository:
     def __init__(self, conn: Any) -> None:
@@ -74,8 +76,7 @@ class GradesRepository:
 
     def get_max_score_for_class(self, class_id: int) -> float:
         """Return 10.0 for primary cycles, 20.0 for all others."""
-        cname = (self.get_cycle_name_for_class(class_id) or "").lower()
-        return 10.0 if any(k in cname for k in ("elem", "prim", "ibtida")) else 20.0
+        return 10.0 if is_primary_cycle(self.get_cycle_name_for_class(class_id)) else 20.0
 
     def get_class_subjects(self, class_id: int) -> list[tuple]:
         """Return (id, name_fr, name_ar, coefficient) for a class.
@@ -219,7 +220,7 @@ class GradesRepository:
             SELECT S.first_name_fr || ' ' || S.last_name_fr,
                    ROUND(
                        AVG(G.score * 20.0 /
-                           CASE WHEN LOWER(CY.name_fr) ~* '(elem|prim|ibtida)'
+                           CASE WHEN LOWER(CY.name_fr) ~* '(elem|élém|prim|ibtida)'
                                 THEN 10.0 ELSE 20.0 END
                        )
                    ) AS avg_normalized
@@ -232,7 +233,7 @@ class GradesRepository:
             GROUP BY S.id, S.first_name_fr, S.last_name_fr
             HAVING ROUND(
                        AVG(G.score * 20.0 /
-                           CASE WHEN LOWER(CY.name_fr) ~* '(elem|prim|ibtida)'
+                           CASE WHEN LOWER(CY.name_fr) ~* '(elem|élém|prim|ibtida)'
                                 THEN 10.0 ELSE 20.0 END
                        )::numeric, 1
                    ) < %s

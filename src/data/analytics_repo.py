@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
+from services.grade_service import is_primary_cycle
+
 
 class AnalyticsRepository:
     def __init__(self, conn: Any) -> None:
@@ -48,8 +50,7 @@ class AnalyticsRepository:
             (class_id,),
         )
         row = cursor.fetchone()
-        cycle_name = (row[0] or "").lower() if row else ""
-        return 10 if ("elem" in cycle_name or "prim" in cycle_name) else 20
+        return 10 if is_primary_cycle(row[0] if row else "") else 20
 
     # ── Attendance ────────────────────────────────────────────────────────────
 
@@ -257,7 +258,7 @@ class AnalyticsRepository:
             SELECT SB.subject_name_fr,
                    AVG(G.score)       AS avg_score,
                    SB.coefficient,
-                   MAX(CASE WHEN LOWER(CY.name_fr) ~* '(elem|prim|ibtida)'
+                   MAX(CASE WHEN LOWER(CY.name_fr) ~* '(elem|élém|prim|ibtida)'
                             THEN 10.0 ELSE 20.0 END) AS max_score
             FROM Grades G
             JOIN Subjects SB    ON G.subject_id = SB.id
