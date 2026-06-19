@@ -305,6 +305,27 @@ def initialize_schema(db_manager) -> None:  # noqa: C901
         for stmt in index_statements:
             cursor.execute(stmt)
 
+        # Timetable must be created BEFORE the tables that reference it
+        # (StudentAttendance, StudentDiscipline) so a clean-database init does not
+        # fail with "relation timetable does not exist".
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS Timetable (
+                id SERIAL PRIMARY KEY,
+                class_id INTEGER,
+                day_of_week TEXT,
+                start_time TEXT,
+                end_time TEXT,
+                subject_id INTEGER,
+                teacher_id INTEGER,
+                room TEXT,
+                FOREIGN KEY (class_id) REFERENCES Classes(id),
+                FOREIGN KEY (subject_id) REFERENCES Subjects(id),
+                FOREIGN KEY (teacher_id) REFERENCES Staff(id)
+            )
+        """
+        )
+
         cursor.execute(
             """
            CREATE TABLE IF NOT EXISTS StudentAttendance (
@@ -373,24 +394,6 @@ def initialize_schema(db_manager) -> None:  # noqa: C901
                 timetable_slot_id INTEGER,
                 FOREIGN KEY (student_id) REFERENCES Students(id),
                 FOREIGN KEY (timetable_slot_id) REFERENCES Timetable(id) ON DELETE SET NULL
-            )
-        """
-        )
-
-        cursor.execute(
-            """
-            CREATE TABLE IF NOT EXISTS Timetable (
-                id SERIAL PRIMARY KEY,
-                class_id INTEGER,
-                day_of_week TEXT,
-                start_time TEXT,
-                end_time TEXT,
-                subject_id INTEGER,
-                teacher_id INTEGER,
-                room TEXT,
-                FOREIGN KEY (class_id) REFERENCES Classes(id),
-                FOREIGN KEY (subject_id) REFERENCES Subjects(id),
-                FOREIGN KEY (teacher_id) REFERENCES Staff(id)
             )
         """
         )
