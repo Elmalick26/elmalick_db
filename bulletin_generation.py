@@ -1635,13 +1635,21 @@ class BulletinGenerationWindow(QMainWindow):
         if not folder:
             return
 
-        try:
+        # The whole generation (per-student grades + multi-page PDF build + file
+        # writes) is Qt-free — the save folder is already chosen — so run it off the
+        # UI thread to keep the window responsive for a whole class.
+        if self._worker and self._worker.isRunning():
+            self._worker.requestInterruption()
+            self._worker.quit()
+            self._worker.wait(3000)
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+
+        def _work():
             db = DatabaseManager()
             with db.get_connection() as conn:
                 repo = BulletinRepository(conn)
                 school_info = repo.get_school_info()
                 # FIX 2: _get_period_year_id expects a BulletinRepository, not a raw cursor.
-                # Passing cursor caused AttributeError on every batch bulletin print.
                 year_id = GradeCalculator()._get_period_year_id(repo, real_period_id)
                 year_label = repo.get_year_label(year_id) or repo.get_last_year_label() or "202X-202X"
                 class_res = repo.get_class_names(class_id)
@@ -1664,12 +1672,10 @@ class BulletinGenerationWindow(QMainWindow):
                     continue
 
                 full_data = calc.get_student_bulletin_data(std_rank_data['id'], class_id, real_period_id)
-
                 if not full_data:
                     continue
 
                 full_data['stats']['rank'] = std_rank_data['rank']
-
                 pdf = BulletinPDF(school_info, period_name, year_label)
                 pdf.draw_bulletin(full_data, class_name)
 
@@ -1683,10 +1689,20 @@ class BulletinGenerationWindow(QMainWindow):
                 )
                 pdf.output(os.path.join(folder, bulletin_name))
                 count += 1
+            return count
 
-            QMessageBox.information(self, "Terminé", f"{count} bulletins générés avec succès.")
-        except Exception as e:
-            QMessageBox.critical(self, "Erreur", f"Erreur lors de la génération: {str(e)}")
+        self._worker = BulletinComputeWorker(_work)
+        self._worker.done.connect(self._on_generate_done)
+        self._worker.error.connect(self._on_generate_error)
+        self._worker.start()
+
+    def _on_generate_done(self, count):
+        QApplication.restoreOverrideCursor()
+        QMessageBox.information(self, "Terminé", f"{count} bulletins générés avec succès.")
+
+    def _on_generate_error(self, msg):
+        QApplication.restoreOverrideCursor()
+        QMessageBox.critical(self, "Erreur", f"Erreur lors de la génération: {msg}")
 
     def calculate_honor_roll(self):
         cid = self.combo_class_honor.currentData()
