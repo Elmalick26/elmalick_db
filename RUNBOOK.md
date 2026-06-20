@@ -31,9 +31,13 @@ set DB_NAME=elmalick_db
 set DB_USER=elmalick_user
 set DB_PASSWORD=<mot-de-passe-fort>
 
-# 4. Appliquer les migrations Alembic
+# 4. Initialiser la base (création des tables + migrations jusqu'à head)
+#    Nouvelle base : utiliser le bootstrap (alembic seul ne peut pas créer
+#    une base vierge — les tables viennent de db_schema).
+.venv\Scripts\python.exe setup_database.py
+# Base déjà initialisée : appliquer seulement les nouvelles migrations
 .venv\Scripts\python.exe -m alembic upgrade head
-# Résultat attendu: Running upgrade ... -> 010
+# Résultat attendu: head = 010
 
 # 5. Vérifier la dérive de schéma (optionnel)
 .venv\Scripts\python.exe -c "from database_setup import DatabaseManager; db = DatabaseManager(); db.initialize()"

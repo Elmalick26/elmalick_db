@@ -55,15 +55,24 @@ pip install -r requirements_api.txt
    password is read from the OS keyring or the `PGPASSWORD` environment variable —
    it is **not** stored in `config.ini`.
 
-3. Apply the schema migrations (this is the single source of truth for the
-   schema — always run it after pulling new code):
+3. Set up the schema. Run the bootstrap once — it creates all tables and brings
+   the migrations to head (works on an empty database; safe to re-run):
 
    ```bash
-   .venv/Scripts/python -m alembic upgrade head     # Windows
-   .venv/bin/python -m alembic upgrade head          # Linux/macOS
+   .venv/Scripts/python setup_database.py     # Windows
+   .venv/bin/python setup_database.py          # Linux/macOS
    ```
 
-   The current head is revision **010**.
+   On an existing database that is already initialised, applying only new
+   migrations is enough:
+
+   ```bash
+   .venv/Scripts/python -m alembic upgrade head
+   ```
+
+   > Note: `alembic upgrade head` alone cannot build a *clean* database from
+   > scratch — the table-creating step lives in `db_schema`, so use
+   > `setup_database.py` for a fresh install. The current head is revision **010**.
 
 ## Configuration & secrets
 
