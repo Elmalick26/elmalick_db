@@ -241,11 +241,26 @@ class TestYearEndRepository:
             (2, "COMPO", "Composition"),
         ]
 
-    def test_get_subject_period_grade_map(self):
+    def test_get_grades_for_students_year(self):
         conn, cur = _conn()
-        cur.fetchall.return_value = [(1, 12.0), (2, 10.0)]
+        # (student_id, subject_id, period_id, assessment_id, score)
+        cur.fetchall.return_value = [
+            (10, 1, 1, 1, 12.0),
+            (10, 1, 1, 2, 10.0),
+            (10, 2, 1, 3, 8.0),
+            (11, 1, 1, 1, 14.0),
+        ]
         repo = YearEndRepository(conn)
-        assert repo.get_subject_period_grade_map(1, 1, 1, 1) == {1: 12.0, 2: 10.0}
+        index = repo.get_grades_for_students_year([10, 11], year_id=1)
+        assert index[(10, 1, 1)] == {1: 12.0, 2: 10.0}
+        assert index[(10, 2, 1)] == {3: 8.0}
+        assert index[(11, 1, 1)] == {1: 14.0}
+
+    def test_get_grades_for_students_year_empty_skips_query(self):
+        conn, cur = _conn()
+        repo = YearEndRepository(conn)
+        assert repo.get_grades_for_students_year([], year_id=1) == {}
+        cur.execute.assert_not_called()  # no IN-empty query
 
     def test_get_fallback_average(self):
         conn, cur = _conn()

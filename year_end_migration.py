@@ -97,26 +97,43 @@ class MigrationCalculator(QThread):
                 else:
                     students = repo.list_all_active_students(self.current_year_id)
 
+                # Pre-fetch everything the per-student loop needs, to avoid an
+                # N×P×S query storm: all grades in one bulk query, assessment types
+                # once per period, and cycle name/subjects cached per cycle.
+                grade_index = repo.get_grades_for_students_year([s[0] for s in students], self.current_year_id)
+                assess_by_period = {pid: repo.get_period_assessment_types(pid) for pid in period_ids}
+                cycle_name_cache: dict = {}
+                subjects_cache: dict = {}
+
+                def _cycle_name(cid):
+                    if cid not in cycle_name_cache:
+                        cycle_name_cache[cid] = repo.get_cycle_name(cid)
+                    return cycle_name_cache[cid]
+
+                def _subjects(cid):
+                    if cid not in subjects_cache:
+                        try:
+                            subjects_cache[cid] = repo.list_subjects_with_coefficient(cid)
+                        except Exception:
+                            subjects_cache[cid] = []
+                    return subjects_cache[cid]
+
                 total = max(len(students), 1)
                 for i, (std_id, fname, lname, class_id) in enumerate(students):
                     if self.isInterruptionRequested():  # cooperative cancel (window closed)
                         break
                     cycle_id = class_map.get(class_id, {}).get('cycle', 0)
-                    cycle_name = repo.get_cycle_name(cycle_id)
+                    cycle_name = _cycle_name(cycle_id)
                     is_primary = is_primary_cycle(cycle_name)
-                    subjects = []
-                    try:
-                        subjects = repo.list_subjects_with_coefficient(cycle_id)
-                    except Exception:
-                        pass
+                    subjects = _subjects(cycle_id)
 
                     period_avgs = []
                     if period_ids and subjects:
                         for pid in period_ids:
-                            assess_types = repo.get_period_assessment_types(pid)  # (id, code, name)
+                            assess_types = assess_by_period.get(pid, [])  # (id, code, name)
                             weighted_scores = []
                             for sub_id, coef in subjects:
-                                gmap = repo.get_subject_period_grade_map(std_id, sub_id, pid, self.current_year_id)
+                                gmap = grade_index.get((std_id, sub_id, pid))
                                 if not gmap:
                                     continue  # subject not graded this period
                                 # Missing assessment counts as 0 (school policy) — same as the bulletin.

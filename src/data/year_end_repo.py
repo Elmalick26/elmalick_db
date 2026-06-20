@@ -84,23 +84,31 @@ class YearEndRepository:
         )
         return cursor.fetchall()
 
-    def get_subject_period_grade_map(self, student_id: int, subject_id: int, period_id: int, year_id: int) -> dict:
-        """Return {assessment_id: score} for one subject in one period.
+    def get_grades_for_students_year(self, student_ids: list, year_id: int) -> dict:
+        """Bulk-fetch a year's grades for many students in one query.
 
-        Combined with get_period_assessment_types, lets the promotion path compute
-        the canonical subject average with missing assessments counted as 0 —
-        exactly as the bulletin does (so the decision matches the report card).
+        Returns {(student_id, subject_id, period_id): {assessment_id: score}}.
+        Combined with get_period_assessment_types, the promotion path computes the
+        canonical subject average with missing assessments counted as 0 — exactly
+        as the bulletin does (so the decision matches the report card). This single
+        query replaces the per-(student, subject, period) fetch that turned the
+        whole-class migration into an N×P×S query storm.
         """
+        index: dict = {}
+        if not student_ids:
+            return index
         cursor = self.conn.cursor()
         cursor.execute(
             """
-            SELECT G.assessment_id, G.score
+            SELECT G.student_id, G.subject_id, A.period_id, G.assessment_id, G.score
             FROM Grades G JOIN AssessmentTypes A ON G.assessment_id = A.id
-            WHERE G.student_id=%s AND G.subject_id=%s AND A.period_id=%s AND G.year_id=%s
+            WHERE G.year_id=%s AND G.student_id = ANY(%s)
             """,
-            (student_id, subject_id, period_id, year_id),
+            (year_id, list(student_ids)),
         )
-        return {row[0]: row[1] for row in cursor.fetchall()}
+        for sid, subject_id, period_id, assessment_id, score in cursor.fetchall():
+            index.setdefault((sid, subject_id, period_id), {})[assessment_id] = score
+        return index
 
     def get_fallback_average(self, student_id: int, year_id: int) -> float:
         cursor = self.conn.cursor()
