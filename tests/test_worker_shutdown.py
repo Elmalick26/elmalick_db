@@ -124,6 +124,23 @@ class TestYearEndMigrationStop:
         self._win(None).stop_background_workers()
 
 
+class TestBulletinGenerationStop:
+    def _win(self, worker):
+        from bulletin_generation import BulletinGenerationWindow
+
+        w = BulletinGenerationWindow.__new__(BulletinGenerationWindow)
+        w._worker = worker
+        return w
+
+    def test_stops_running_worker(self):
+        worker = _running_worker()
+        self._win(worker).stop_background_workers()
+        _assert_stopped(worker)
+
+    def test_no_worker_is_safe(self):
+        self._win(None).stop_background_workers()
+
+
 # ---------------------------------------------------------------------------
 # MainWindow.closeEvent — stops module workers BEFORE closing the DB pool
 # ---------------------------------------------------------------------------

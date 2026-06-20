@@ -75,19 +75,6 @@ class YearEndRepository:
         cursor.execute("SELECT id, coefficient FROM Subjects WHERE cycle_id=%s", (cycle_id,))
         return cursor.fetchall()
 
-    def get_grade_average(self, student_id: int, subject_id: int, period_id: int, year_id: int) -> float | None:
-        cursor = self.conn.cursor()
-        cursor.execute(
-            """
-            SELECT AVG(G.score) FROM Grades G
-            JOIN AssessmentTypes A ON G.assessment_id = A.id
-            WHERE G.student_id=%s AND G.subject_id=%s AND A.period_id=%s AND G.year_id=%s
-            """,
-            (student_id, subject_id, period_id, year_id),
-        )
-        res = cursor.fetchone()
-        return float(res[0]) if res and res[0] is not None else None
-
     def get_period_assessment_types(self, period_id: int) -> list:
         """Return [(id, type_code, name_fr)] for all assessments defined in a period."""
         cursor = self.conn.cursor()

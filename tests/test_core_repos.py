@@ -232,19 +232,20 @@ class TestYearEndRepository:
         rows = repo.list_subjects_with_coefficient(cycle_id=1)
         assert rows[0] == (1, 3)
 
-    def test_get_grade_average_found(self):
+    def test_get_period_assessment_types(self):
         conn, cur = _conn()
-        cur.fetchone.return_value = (13.5,)
+        cur.fetchall.return_value = [(1, "DEV1", "Devoir 1"), (2, "COMPO", "Composition")]
         repo = YearEndRepository(conn)
-        avg = repo.get_grade_average(student_id=1, subject_id=1, period_id=1, year_id=1)
-        assert avg == 13.5
+        assert repo.get_period_assessment_types(period_id=1) == [
+            (1, "DEV1", "Devoir 1"),
+            (2, "COMPO", "Composition"),
+        ]
 
-    def test_get_grade_average_none(self):
+    def test_get_subject_period_grade_map(self):
         conn, cur = _conn()
-        cur.fetchone.return_value = (None,)
+        cur.fetchall.return_value = [(1, 12.0), (2, 10.0)]
         repo = YearEndRepository(conn)
-        avg = repo.get_grade_average(1, 1, 1, 1)
-        assert avg is None
+        assert repo.get_subject_period_grade_map(1, 1, 1, 1) == {1: 12.0, 2: 10.0}
 
     def test_get_fallback_average(self):
         conn, cur = _conn()

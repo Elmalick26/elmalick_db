@@ -3,7 +3,7 @@ import sys
 from datetime import datetime
 
 from fpdf import FPDF
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QThread, pyqtSignal
 from PyQt6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -802,12 +802,32 @@ class BulletinPDF(FPDF):
 # --- 3. الواجهة الرسومية (UI) ---
 
 
+class BulletinComputeWorker(QThread):
+    """Runs a heavy bulletin computation off the UI thread (avoids freezing the
+    window while a whole class is graded/ranked). Emits the callable's result."""
+
+    done = pyqtSignal(object)
+    error = pyqtSignal(str)
+
+    def __init__(self, fn):
+        super().__init__()
+        self._fn = fn
+
+    def run(self) -> None:
+        try:
+            self.done.emit(self._fn())
+        except Exception as exc:
+            AppLogger.error("BulletinGeneration", f"compute worker: {exc}")
+            self.error.emit(str(exc))
+
+
 class BulletinGenerationWindow(QMainWindow):
     def __init__(self):
         super().__init__()
         self.setWindowTitle("Génération des Bulletins / إصدار الكشوف")
         self.setMinimumSize(1100, 700)
         self._arabic_font_warned = False
+        self._worker: BulletinComputeWorker | None = None
 
         # تطبيق المظهر (Dark Mode أو Light Mode)
         ThemeManager.apply_theme(self)
@@ -1202,29 +1222,61 @@ class BulletinGenerationWindow(QMainWindow):
             QMessageBox.warning(self, "Erreur", "Période invalide pour cette classe.")
             return
 
-        try:
-            calc = GradeCalculator()
-            self.batch_results = calc.get_student_averages(class_id, real_period_id, include_conduct=True)
+        # Run the heavy compute (whole-class grades + ranking) off the UI thread so
+        # the window stays responsive for large classes.
+        if self._worker and self._worker.isRunning():
+            self._worker.requestInterruption()
+            self._worker.quit()
+            self._worker.wait(3000)
+
+        self.btn_calc_batch.setEnabled(False)
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        calc = GradeCalculator()
+
+        def _work():
+            results = calc.get_student_averages(class_id, real_period_id, include_conduct=True)
             is_primary, max_score = calc.get_class_context(class_id)
-            class_size = len(self.batch_results)
+            return calc, results, is_primary, max_score
 
-            self.table_batch.setRowCount(0)
-            for row_data in self.batch_results:
-                idx = self.table_batch.rowCount()
-                self.table_batch.insertRow(idx)
-                self.table_batch.setItem(idx, 0, QTableWidgetItem(str(row_data['rank'])))
-                self.table_batch.setItem(idx, 1, QTableWidgetItem(str(row_data.get('class_number') or "-")))
-                self.table_batch.setItem(idx, 2, QTableWidgetItem(row_data['name']))
-                self.table_batch.setItem(idx, 3, QTableWidgetItem(f"{row_data['general_average']:.2f}"))
-                mention = calc.get_mention(row_data['general_average'], max_score)
-                self.table_batch.setItem(idx, 4, QTableWidgetItem(mention))
-                dec = calc.get_decision(row_data['general_average'], is_primary, max_score)
-                self.table_batch.setItem(idx, 5, QTableWidgetItem(dec))
+        self._worker = BulletinComputeWorker(_work)
+        self._worker.done.connect(self._on_batch_done)
+        self._worker.error.connect(self._on_batch_error)
+        self._worker.start()
 
-            for row_data in self.batch_results:
-                row_data['class_size'] = class_size
-        except Exception as e:
-            QMessageBox.critical(self, "Erreur", f"Erreur de calcul: {e}")
+    def _on_batch_done(self, payload):
+        QApplication.restoreOverrideCursor()
+        self.btn_calc_batch.setEnabled(True)
+        calc, results, is_primary, max_score = payload
+        self.batch_results = results
+        class_size = len(results)
+
+        self.table_batch.setRowCount(0)
+        for row_data in results:
+            idx = self.table_batch.rowCount()
+            self.table_batch.insertRow(idx)
+            self.table_batch.setItem(idx, 0, QTableWidgetItem(str(row_data['rank'])))
+            self.table_batch.setItem(idx, 1, QTableWidgetItem(str(row_data.get('class_number') or "-")))
+            self.table_batch.setItem(idx, 2, QTableWidgetItem(row_data['name']))
+            self.table_batch.setItem(idx, 3, QTableWidgetItem(f"{row_data['general_average']:.2f}"))
+            self.table_batch.setItem(idx, 4, QTableWidgetItem(calc.get_mention(row_data['general_average'], max_score)))
+            self.table_batch.setItem(
+                idx, 5, QTableWidgetItem(calc.get_decision(row_data['general_average'], is_primary, max_score))
+            )
+            row_data['class_size'] = class_size
+
+    def _on_batch_error(self, msg):
+        QApplication.restoreOverrideCursor()
+        self.btn_calc_batch.setEnabled(True)
+        QMessageBox.critical(self, "Erreur", f"Erreur de calcul: {msg}")
+
+    def stop_background_workers(self) -> None:
+        """Stop the compute worker before the shared DB pool closes (called by the
+        main window on shutdown — this module is embedded, so closeEvent never fires)."""
+        worker = getattr(self, "_worker", None)
+        if worker is not None and worker.isRunning():
+            worker.requestInterruption()
+            worker.quit()
+            worker.wait(3000)
 
     def print_summary_list(self):
         if _get_arabic_font_path() is None and not self._arabic_font_warned:
