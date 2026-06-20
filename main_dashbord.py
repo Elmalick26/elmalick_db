@@ -972,6 +972,9 @@ class MainWindow(QMainWindow):
 
             try:
                 module_instance = window_class()
+                # Propagate the logged-in user so module audit logs record the real
+                # actor (modules read getattr(self, "current_user", "system")).
+                module_instance.current_user = self.username
                 # تطبيق RBAC على مستوى الأزرار داخل الوحدة
                 if hasattr(module_instance, "apply_rbac"):
                     module_instance.apply_rbac(self.user_role)

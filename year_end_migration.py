@@ -35,7 +35,7 @@ from PyQt6.QtWidgets import (
 )
 
 from app_logger import AppLogger
-from database_setup import DatabaseManager
+from database_setup import DatabaseManager, log_audit
 from pdf_report_style import (
     apply_grades_sheet_header,
     apply_table_body_style,
@@ -220,6 +220,28 @@ class MigrationWindow(QMainWindow):
         self.btn_calc.setVisible(caps["can_write"])
         self.btn_execute.setEnabled(caps["can_write"])
         self.btn_execute.setVisible(caps["can_write"])
+
+    def _audit_decision_overrides(self, conn, migration_rows: list) -> int:
+        """Log to AuditLogs each row whose final decision differs from the
+        auto-computed one (a manual director override / rachat). Returns the count.
+
+        Documents the authorised override required by school policy: actor +
+        student + auto-decision -> manual-decision, in the migration transaction.
+        """
+        actor = getattr(self, "current_user", "system")
+        auto_decisions = {r["id"]: r["decision"] for r in self.migration_data}
+        overrides = 0
+        for row in migration_rows:
+            auto = auto_decisions.get(row["student_id"])
+            if auto is not None and row["decision"] != auto:
+                log_audit(
+                    conn,
+                    actor,
+                    "GRADE_DECISION_OVERRIDE",
+                    f"student={row['student_id']}: {auto} -> {row['decision']}",
+                )
+                overrides += 1
+        return overrides
 
     def init_ui(self):
         self.central_widget = QWidget()
@@ -531,8 +553,15 @@ class MigrationWindow(QMainWindow):
                     target_year_id,
                     change_active_year,
                 )
+
+                # Audit manual overrides of the auto-computed decision (rachat).
+                overrides = self._audit_decision_overrides(conn, migration_rows)
+
                 conn.commit()
-                AppLogger.info("YearEndMigration", f"Migration succeeded: {count} records, year={target_year_id}")
+                AppLogger.info(
+                    "YearEndMigration",
+                    f"Migration succeeded: {count} records, year={target_year_id}, manual_overrides={overrides}",
+                )
 
                 summary = self._build_summary_message(migration_rows, count)
                 QMessageBox.information(self, "Migration réussie / الترحيل ناجح", summary)
