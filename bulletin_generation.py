@@ -1692,32 +1692,47 @@ class BulletinGenerationWindow(QMainWindow):
         cid = self.combo_class_honor.currentData()
         pname = self.combo_period_honor.currentText()
         pid = self.get_real_period_id(cid, pname)
-        threshold_rank = self.spin_threshold.value()
+        self._honor_threshold = self.spin_threshold.value()
 
         if not pid:
             return
 
-        try:
-            calc = GradeCalculator()
+        # Whole-class compute off the UI thread (like the batch preview).
+        if self._worker and self._worker.isRunning():
+            self._worker.requestInterruption()
+            self._worker.quit()
+            self._worker.wait(3000)
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        calc = GradeCalculator()
+
+        def _work():
             all_results = calc.get_student_averages(cid, pid, include_conduct=True)
             _, max_s = calc.get_class_context(cid)
+            return calc, all_results, max_s
 
-            self.honor_list = [s for s in all_results if s['rank'] <= threshold_rank]
+        self._worker = BulletinComputeWorker(_work)
+        self._worker.done.connect(self._on_honor_done)
+        self._worker.error.connect(self._on_honor_error)
+        self._worker.start()
 
-            self.table_honor.setRowCount(0)
-            for s in self.honor_list:
-                idx = self.table_honor.rowCount()
-                self.table_honor.insertRow(idx)
-                self.table_honor.setItem(idx, 0, QTableWidgetItem(str(s['rank'])))
-                name_fr = s['name']
-                name_ar = s.get('name_ar', '')
-                display_name = f"{name_fr} / {name_ar}" if name_ar else name_fr
-                self.table_honor.setItem(idx, 1, QTableWidgetItem(display_name))
-                self.table_honor.setItem(idx, 2, QTableWidgetItem(f"{s['general_average']:.2f}"))
-                mention = calc.get_mention(s['general_average'], max_s)
-                self.table_honor.setItem(idx, 3, QTableWidgetItem(mention))
-        except Exception as e:
-            QMessageBox.critical(self, "Erreur", f"Erreur de calcul honor roll: {e}")
+    def _on_honor_done(self, payload):
+        QApplication.restoreOverrideCursor()
+        calc, all_results, max_s = payload
+        self.honor_list = [s for s in all_results if s['rank'] <= self._honor_threshold]
+        self.table_honor.setRowCount(0)
+        for s in self.honor_list:
+            idx = self.table_honor.rowCount()
+            self.table_honor.insertRow(idx)
+            self.table_honor.setItem(idx, 0, QTableWidgetItem(str(s['rank'])))
+            name_ar = s.get('name_ar', '')
+            display_name = f"{s['name']} / {name_ar}" if name_ar else s['name']
+            self.table_honor.setItem(idx, 1, QTableWidgetItem(display_name))
+            self.table_honor.setItem(idx, 2, QTableWidgetItem(f"{s['general_average']:.2f}"))
+            self.table_honor.setItem(idx, 3, QTableWidgetItem(calc.get_mention(s['general_average'], max_s)))
+
+    def _on_honor_error(self, msg):
+        QApplication.restoreOverrideCursor()
+        QMessageBox.critical(self, "Erreur", f"Erreur de calcul honor roll: {msg}")
 
     def print_certificates(self):
         if _get_arabic_font_path() is None and not self._arabic_font_warned:
