@@ -88,23 +88,32 @@ class YearEndRepository:
         res = cursor.fetchone()
         return float(res[0]) if res and res[0] is not None else None
 
-    def get_assessment_scores_for_period(self, student_id: int, subject_id: int, period_id: int, year_id: int) -> list:
-        """Return [(type_code, name_fr, score)] for one subject in one period.
+    def get_period_assessment_types(self, period_id: int) -> list:
+        """Return [(id, type_code, name_fr)] for all assessments defined in a period."""
+        cursor = self.conn.cursor()
+        cursor.execute(
+            "SELECT id, type_code, name_fr FROM AssessmentTypes WHERE period_id=%s",
+            (period_id,),
+        )
+        return cursor.fetchall()
 
-        Lets the promotion path compute the subject average with the canonical
-        GradeService.subject_average rule (devoirs + composition) instead of a flat
-        AVG of all assessments — so the decision matches the bulletin.
+    def get_subject_period_grade_map(self, student_id: int, subject_id: int, period_id: int, year_id: int) -> dict:
+        """Return {assessment_id: score} for one subject in one period.
+
+        Combined with get_period_assessment_types, lets the promotion path compute
+        the canonical subject average with missing assessments counted as 0 —
+        exactly as the bulletin does (so the decision matches the report card).
         """
         cursor = self.conn.cursor()
         cursor.execute(
             """
-            SELECT A.type_code, A.name_fr, G.score
+            SELECT G.assessment_id, G.score
             FROM Grades G JOIN AssessmentTypes A ON G.assessment_id = A.id
             WHERE G.student_id=%s AND G.subject_id=%s AND A.period_id=%s AND G.year_id=%s
             """,
             (student_id, subject_id, period_id, year_id),
         )
-        return cursor.fetchall()
+        return {row[0]: row[1] for row in cursor.fetchall()}
 
     def get_fallback_average(self, student_id: int, year_id: int) -> float:
         cursor = self.conn.cursor()

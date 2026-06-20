@@ -114,6 +114,19 @@ class TestCollegeSubjectAverage:
         assert res["subjects"][0]["avg"] == pytest.approx(11.5)
         assert res["general_average"] == pytest.approx(11.5)
 
+    def test_missing_devoir_counts_as_zero(self):
+        """D1=12, D2 missing, Compo=10 → devoirs=[12,0]→6 → (6+10)/2 = 8.0.
+
+        School policy: an un-entered grade counts as 0 (same in bulletin & promotion).
+        """
+        res = _run_averages(
+            "Collège",
+            subjects=[(1, "Maths", "", 1.0)],
+            assessments=_COLLEGE_ASSESS,
+            grades={(1, 1, 10): 12.0, (1, 1, 12): 10.0},  # assessment 11 (Devoir 2) absent
+        )
+        assert res["subjects"][0]["avg"] == pytest.approx(8.0)
+
     def test_compo_not_double_weighted(self):
         """D1=D2=10, Compo=16 → (10+16)/2 = 13.0  (the (d+2c)/3 bug gives 14.0)."""
         res = _run_averages(

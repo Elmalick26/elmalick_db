@@ -113,22 +113,24 @@ class MigrationCalculator(QThread):
                     period_avgs = []
                     if period_ids and subjects:
                         for pid in period_ids:
+                            assess_types = repo.get_period_assessment_types(pid)  # (id, code, name)
                             weighted_scores = []
                             for sub_id, coef in subjects:
-                                rows = repo.get_assessment_scores_for_period(std_id, sub_id, pid, self.current_year_id)
-                                if not rows:
-                                    continue  # subject has no grades this period
+                                gmap = repo.get_subject_period_grade_map(std_id, sub_id, pid, self.current_year_id)
+                                if not gmap:
+                                    continue  # subject not graded this period
+                                # Missing assessment counts as 0 (school policy) — same as the bulletin.
                                 devoirs = [
-                                    sc for code, name, sc in rows if GradeService.is_devoir_assessment(code, name)
+                                    gmap.get(aid, 0)
+                                    for aid, code, name in assess_types
+                                    if GradeService.is_devoir_assessment(code, name)
                                 ]
-                                compo = next(
-                                    (
-                                        sc
-                                        for code, name, sc in rows
-                                        if not GradeService.is_devoir_assessment(code, name)
-                                    ),
-                                    None,
-                                )
+                                compo_ids = [
+                                    aid
+                                    for aid, code, name in assess_types
+                                    if not GradeService.is_devoir_assessment(code, name)
+                                ]
+                                compo = gmap.get(compo_ids[0], 0) if compo_ids else None
                                 subj_avg = self.grade_service.subject_average(devoirs, compo, is_primary)
                                 weighted_scores.append((subj_avg, float(coef)))
                             period_avgs.append(self.grade_service.calculate_period_average(weighted_scores))
