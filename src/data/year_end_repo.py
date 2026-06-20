@@ -88,6 +88,24 @@ class YearEndRepository:
         res = cursor.fetchone()
         return float(res[0]) if res and res[0] is not None else None
 
+    def get_assessment_scores_for_period(self, student_id: int, subject_id: int, period_id: int, year_id: int) -> list:
+        """Return [(type_code, name_fr, score)] for one subject in one period.
+
+        Lets the promotion path compute the subject average with the canonical
+        GradeService.subject_average rule (devoirs + composition) instead of a flat
+        AVG of all assessments — so the decision matches the bulletin.
+        """
+        cursor = self.conn.cursor()
+        cursor.execute(
+            """
+            SELECT A.type_code, A.name_fr, G.score
+            FROM Grades G JOIN AssessmentTypes A ON G.assessment_id = A.id
+            WHERE G.student_id=%s AND G.subject_id=%s AND A.period_id=%s AND G.year_id=%s
+            """,
+            (student_id, subject_id, period_id, year_id),
+        )
+        return cursor.fetchall()
+
     def get_fallback_average(self, student_id: int, year_id: int) -> float:
         cursor = self.conn.cursor()
         cursor.execute(

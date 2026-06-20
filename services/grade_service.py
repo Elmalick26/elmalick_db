@@ -28,6 +28,31 @@ def is_primary_cycle(cycle_name: str | None) -> bool:
 class GradeService:
     """Pure business rules for grade averages, promotion decisions, and next class selection."""
 
+    @staticmethod
+    def is_devoir_assessment(type_code: str | None, name: str | None) -> bool:
+        """True if an assessment is a devoir (vs a composition)."""
+        return "DEV" in str(type_code or "").upper() or "DEVOIR" in str(name or "").upper()
+
+    def subject_average(self, devoir_scores: list[float], composition: float | None, is_primary: bool) -> float:
+        """Canonical per-subject average — the single source of truth for both the
+        bulletin and the year-end promotion decision.
+
+        Primary (/10): composition only — devoirs are ignored.
+        Collège/Lycée (/20): (mean(devoirs) + composition) / 2 when both exist;
+            otherwise whichever part is available.
+        """
+        compo = None if composition is None else float(composition)
+        if is_primary:
+            return compo if compo is not None else 0.0
+        devs = [float(d) for d in devoir_scores if d is not None]
+        if devs and compo is not None:
+            return (sum(devs) / len(devs) + compo) / 2
+        if compo is not None:
+            return compo
+        if devs:
+            return sum(devs) / len(devs)
+        return 0.0
+
     def calculate_period_average(self, weighted_scores: list[tuple[float, float]]) -> float:
         total_points = 0.0
         total_coefficient = 0.0

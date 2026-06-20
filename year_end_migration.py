@@ -45,7 +45,7 @@ from pdf_report_style import (
 )
 from print_export_service import get_report_output_mode, output_pdf
 from repositories.year_end_repo import YearEndRepository
-from services.grade_service import GradeService
+from services.grade_service import GradeService, is_primary_cycle
 from services.migration_service import MigrationService
 from ui_components import card_frame, style_table, styled_combo
 from ui_styles import (
@@ -102,6 +102,8 @@ class MigrationCalculator(QThread):
                     if self.isInterruptionRequested():  # cooperative cancel (window closed)
                         break
                     cycle_id = class_map.get(class_id, {}).get('cycle', 0)
+                    cycle_name = repo.get_cycle_name(cycle_id)
+                    is_primary = is_primary_cycle(cycle_name)
                     subjects = []
                     try:
                         subjects = repo.list_subjects_with_coefficient(cycle_id)
@@ -113,9 +115,22 @@ class MigrationCalculator(QThread):
                         for pid in period_ids:
                             weighted_scores = []
                             for sub_id, coef in subjects:
-                                avg_val = repo.get_grade_average(std_id, sub_id, pid, self.current_year_id)
-                                if avg_val is not None:
-                                    weighted_scores.append((avg_val, float(coef)))
+                                rows = repo.get_assessment_scores_for_period(std_id, sub_id, pid, self.current_year_id)
+                                if not rows:
+                                    continue  # subject has no grades this period
+                                devoirs = [
+                                    sc for code, name, sc in rows if GradeService.is_devoir_assessment(code, name)
+                                ]
+                                compo = next(
+                                    (
+                                        sc
+                                        for code, name, sc in rows
+                                        if not GradeService.is_devoir_assessment(code, name)
+                                    ),
+                                    None,
+                                )
+                                subj_avg = self.grade_service.subject_average(devoirs, compo, is_primary)
+                                weighted_scores.append((subj_avg, float(coef)))
                             period_avgs.append(self.grade_service.calculate_period_average(weighted_scores))
 
                     fallback_average = 0.0
@@ -124,8 +139,7 @@ class MigrationCalculator(QThread):
 
                     avg_annual = self.grade_service.calculate_annual_average(period_avgs, fallback_average)
 
-                    # --- Decision Logic ---
-                    cycle_name = repo.get_cycle_name(cycle_id)
+                    # --- Decision Logic --- (cycle_name computed above)
                     decision = self.grade_service.get_promotion_decision(avg_annual, cycle_name)
 
                     # --- Next Class Logic ---

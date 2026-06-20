@@ -144,51 +144,23 @@ class GradeCalculator:
                 for sub in subjects:
                     sub_id, sub_name_fr, sub_name_ar, sub_coef = sub
 
-                    sum_devoirs = 0
-                    count_devoirs = 0
-                    exam_score = 0
-                    has_exam = False
-
-                    weighted_sum_prim = 0
-                    total_weight_prim = 0
-
+                    # Classify the period's assessments into devoirs + composition.
+                    # Missing grade counts as 0 (school policy: absent = fail, not excluded).
+                    devoir_scores = []
+                    composition = None
                     for assess in assessments:
                         assess_id, assess_name, assess_code, assess_w = assess
-                        # School policy (confirmed): a missing grade counts as 0 and is
-                        # included in the average (count_devoirs increments every loop).
-                        # An absent assessment is treated as a fail, NOT excluded — this
-                        # intentionally differs from GradeService.calculate_period_average,
-                        # which skips None scores.
                         score = grades_map.get((std_id, sub_id, assess_id), 0)
-
-                        if not is_primary:
-                            if 'DEV' in str(assess_code).upper() or 'DEVOIR' in str(assess_name).upper():
-                                sum_devoirs += score
-                                count_devoirs += 1
-                            else:
-                                exam_score = score
-                                has_exam = True
+                        if self._grade_service.is_devoir_assessment(assess_code, assess_name):
+                            devoir_scores.append(score)
                         else:
-                            # Primary: the subject average is the composition only —
-                            # devoirs are never counted at this level.
-                            is_devoir = "DEV" in str(assess_code).upper() or "DEVOIR" in str(assess_name).upper()
-                            if not is_devoir:
-                                weighted_sum_prim += score * assess_w
-                                total_weight_prim += assess_w
+                            composition = score
 
-                    moy_subject = 0
-                    if not is_primary:
-                        moy_devoirs = (sum_devoirs / count_devoirs) if count_devoirs > 0 else 0
-                    if count_devoirs > 0 and has_exam:
-                        # Collège/Lycée subject average: devoirs and composition weigh
-                        # equally — moy_matière = (moy_devoirs + composition) / 2.
-                        moy_subject = (moy_devoirs + exam_score) / 2
-                    elif has_exam:
-                        moy_subject = exam_score
-                    elif count_devoirs > 0:
-                        moy_subject = moy_devoirs
-                    else:
-                        moy_subject = (weighted_sum_prim / total_weight_prim) if total_weight_prim > 0 else 0
+                    # Canonical subject average — same logic the promotion decision uses.
+                    moy_subject = self._grade_service.subject_average(devoir_scores, composition, is_primary)
+                    moy_devoirs = (sum(devoir_scores) / len(devoir_scores)) if devoir_scores else 0
+                    has_exam = composition is not None
+                    exam_score = composition if composition is not None else 0
 
                     points = moy_subject * sub_coef
 
@@ -200,9 +172,7 @@ class GradeCalculator:
                             'name_fr': sub_name_fr,
                             'name_ar': sub_name_ar,
                             'coef': sub_coef,
-                            'moy_devoir': (
-                                (sum_devoirs / count_devoirs) if count_devoirs > 0 and not is_primary else None
-                            ),
+                            'moy_devoir': (moy_devoirs if devoir_scores and not is_primary else None),
                             'note_compo': exam_score if has_exam and not is_primary else moy_subject,
                             'avg': moy_subject,
                             'points': points,

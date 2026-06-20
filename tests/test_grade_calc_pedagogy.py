@@ -30,6 +30,39 @@ import pytest
 
 import bulletin_generation
 from bulletin_generation import GradeCalculator
+from services.grade_service import GradeService
+
+
+# ══════════════════════════════════════════════════════════════════
+# Canonical subject_average — single source of truth (bulletin + promotion)
+# ══════════════════════════════════════════════════════════════════
+class TestCanonicalSubjectAverage:
+    svc = GradeService()
+
+    def test_college_devoirs_and_compo(self):
+        assert self.svc.subject_average([12, 14], 10, is_primary=False) == pytest.approx(11.5)
+
+    def test_college_compo_not_doubled(self):
+        assert self.svc.subject_average([10, 10], 16, is_primary=False) == pytest.approx(13.0)
+
+    def test_college_only_composition(self):
+        assert self.svc.subject_average([], 10, is_primary=False) == pytest.approx(10.0)
+
+    def test_college_only_devoirs(self):
+        assert self.svc.subject_average([12, 14], None, is_primary=False) == pytest.approx(13.0)
+
+    def test_college_empty_is_zero(self):
+        assert self.svc.subject_average([], None, is_primary=False) == 0.0
+
+    def test_primary_composition_only(self):
+        # devoirs ignored entirely in primary
+        assert self.svc.subject_average([1, 2], 7, is_primary=True) == pytest.approx(7.0)
+
+    def test_is_devoir_classification(self):
+        assert GradeService.is_devoir_assessment("DEV1", "Devoir 1") is True
+        assert GradeService.is_devoir_assessment("X", "Devoir 2") is True
+        assert GradeService.is_devoir_assessment("COMPO", "Composition") is False
+        assert GradeService.is_devoir_assessment(None, None) is False
 
 
 def _run_averages(cycle_name, subjects, assessments, grades, *, class_id=1, period_id=1):
