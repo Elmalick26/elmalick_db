@@ -45,7 +45,7 @@ from pdf_report_style import (
 )
 from print_export_service import get_report_output_mode, output_pdf
 from repositories.year_end_repo import YearEndRepository
-from services.grade_service import GradeService, is_primary_cycle
+from services.grade_service import GradeService, resolve_is_primary
 from services.migration_service import MigrationService
 from ui_components import card_frame, style_table, styled_combo
 from ui_styles import (
@@ -105,9 +105,11 @@ class MigrationCalculator(QThread):
                 cycle_name_cache: dict = {}
                 subjects_cache: dict = {}
 
-                def _cycle_name(cid):
+                def _cycle_type(cid):
+                    # (name, resolved is_primary) — explicit flag wins, name fallback.
                     if cid not in cycle_name_cache:
-                        cycle_name_cache[cid] = repo.get_cycle_name(cid)
+                        name, flag = repo.get_cycle_type(cid)
+                        cycle_name_cache[cid] = (name or "", resolve_is_primary(flag, name))
                     return cycle_name_cache[cid]
 
                 def _subjects(cid):
@@ -123,8 +125,7 @@ class MigrationCalculator(QThread):
                     if self.isInterruptionRequested():  # cooperative cancel (window closed)
                         break
                     cycle_id = class_map.get(class_id, {}).get('cycle', 0)
-                    cycle_name = _cycle_name(cycle_id)
-                    is_primary = is_primary_cycle(cycle_name)
+                    cycle_name, is_primary = _cycle_type(cycle_id)
                     subjects = _subjects(cycle_id)
 
                     period_avgs = []
@@ -158,8 +159,8 @@ class MigrationCalculator(QThread):
 
                     avg_annual = self.grade_service.calculate_annual_average(period_avgs, fallback_average)
 
-                    # --- Decision Logic --- (cycle_name computed above)
-                    decision = self.grade_service.get_promotion_decision(avg_annual, cycle_name)
+                    # --- Decision Logic --- (is_primary resolved from explicit flag above)
+                    decision = self.grade_service.get_promotion_decision(avg_annual, cycle_name, is_primary=is_primary)
 
                     # --- Next Class Logic ---
                     next_class_id, next_class_name = self.grade_service.get_next_class(

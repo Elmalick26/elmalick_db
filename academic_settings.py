@@ -7,7 +7,7 @@ import psycopg2
 from app_logger import AppLogger
 from database_setup import DatabaseManager
 from repositories.academic_repo import AcademicRepository
-from services.grade_service import is_primary_cycle
+from services.grade_service import is_primary_cycle, resolve_is_primary
 
 try:
     from config_manager import ConfigManager
@@ -133,11 +133,22 @@ class CycleDialog(BaseDialog):
         form.setSpacing(12)
         self.txt_fr = styled_input("Nom (FR)")
         self.txt_ar = styled_input("الاسم (عربي)")
+        # Explicit grading scale — chosen, not inferred from the name. This is what
+        # the bulletin and promotion use, so it cannot be mistyped.
+        self.cmb_type = styled_combo()
+        self.cmb_type.addItem("ابتدائي / Primaire (/10)", True)
+        self.cmb_type.addItem("إعدادي · ثانوي / Collège · Lycée (/20)", False)
         if data:
             self.txt_fr.setText(data.get("fr", ""))
             self.txt_ar.setText(data.get("ar", ""))
+            # Prefill from the explicit flag; for legacy rows (flag NULL) suggest the
+            # type the name currently resolves to.
+            flag = data.get("is_primary")
+            primary = bool(flag) if flag is not None else is_primary_cycle(data.get("fr") or data.get("ar"))
+            self.cmb_type.setCurrentIndex(0 if primary else 1)
         form.addRow("Nom FR:", self.txt_fr)
         form.addRow("Nom AR:", self.txt_ar)
+        form.addRow("Type / النوع:", self.cmb_type)
         self.dialog_layout.addLayout(form)
         self.dialog_layout.addLayout(dialog_button_row("💾 Enregistrer", self._validate, self.reject))
 
@@ -149,7 +160,11 @@ class CycleDialog(BaseDialog):
         self.accept()
 
     def get_values(self) -> dict:
-        return {"fr": self.txt_fr.text().strip(), "ar": self.txt_ar.text().strip()}
+        return {
+            "fr": self.txt_fr.text().strip(),
+            "ar": self.txt_ar.text().strip(),
+            "is_primary": bool(self.cmb_type.currentData()),
+        }
 
 
 class ClassDialog(BaseDialog):
@@ -1057,7 +1072,7 @@ class AcademicSettingsWindow(BaseWindow):
                 with db.get_connection() as conn:
                     res = AcademicRepository(conn).get_cycle(cycle_id)
                 if res:
-                    data = {"fr": res[0], "ar": res[1]}
+                    data = {"fr": res[0], "ar": res[1], "is_primary": res[2]}
             except Exception as e:
                 QMessageBox.critical(self, "Erreur", friendly_db_error(e))
                 return
@@ -1068,7 +1083,7 @@ class AcademicSettingsWindow(BaseWindow):
             try:
                 db = DatabaseManager()
                 with db.get_connection() as conn:
-                    AcademicRepository(conn).upsert_cycle(cycle_id, values["fr"], values["ar"])
+                    AcademicRepository(conn).upsert_cycle(cycle_id, values["fr"], values["ar"], values["is_primary"])
                     conn.commit()
                 self.refresh_all_data()
             except Exception as e:
@@ -1292,7 +1307,10 @@ class AcademicSettingsWindow(BaseWindow):
                         "Veuillez d'abord définir les dates de début et de fin de l'année scolaire. / يرجى تحديد تاريخ البداية والنهاية للسنة أولاً.",
                     )
                     return
-                is_elementary = is_primary_cycle(cycle_name)
+                # Use the cycle's explicit type (name as fallback) to pick the
+                # period structure: 3 trimesters for primary, 2 semesters otherwise.
+                cyc = repo.get_cycle(cycle_id)
+                is_elementary = resolve_is_primary(cyc[2] if cyc else None, (cyc[0] if cyc else None) or cycle_name)
                 repo.generate_periods_and_assessments(
                     year_id,
                     cycle_id,

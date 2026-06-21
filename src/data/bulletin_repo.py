@@ -142,6 +142,21 @@ class BulletinRepository:
         row = cursor.fetchone()
         return row[0] if row else None
 
+    def get_cycle_type_for_class(self, class_id: int) -> tuple:
+        """Return (name_fr, is_primary_flag) for a class's cycle, or (None, None).
+
+        The flag is the authoritative grading-scale selector; the name is kept for
+        display and as a fallback when the flag is unset (legacy rows)."""
+        cursor = self.conn.cursor()
+        cursor.execute(
+            """SELECT CY.name_fr, CY.is_primary FROM Classes CL
+               JOIN Cycles CY ON CL.cycle_id = CY.id
+               WHERE CL.id = %s""",
+            (class_id,),
+        )
+        row = cursor.fetchone()
+        return (row[0], row[1]) if row else (None, None)
+
     def get_subjects_for_class(self, class_id: int) -> list:
         """Return subjects from Timetable; fall back to Subjects by cycle."""
         cursor = self.conn.cursor()

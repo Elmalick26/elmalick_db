@@ -32,6 +32,16 @@ from database_setup import DatabaseManager
 _DB_SCHEMA_BASELINE = "004"
 
 
+# Canonical cycles seeded on a fresh install so the grading scale is correct out
+# of the box and admins never have to type a cycle name the code must recognise.
+# (name_fr, name_ar, is_primary)
+_CANONICAL_CYCLES = [
+    ("Primaire", "ابتدائي", True),
+    ("Collège", "إعدادي", False),
+    ("Lycée", "ثانوي", False),
+]
+
+
 def _current_alembic_version(db: DatabaseManager) -> str | None:
     with db.get_connection() as conn:
         cur = conn.cursor()
@@ -43,8 +53,26 @@ def _current_alembic_version(db: DatabaseManager) -> str | None:
             return None  # alembic_version table absent → fresh database
 
 
+def seed_cycles(db: DatabaseManager) -> int:
+    """Insert the canonical cycles (with explicit is_primary) if Cycles is empty.
+
+    Idempotent — does nothing once any cycle exists, so it never disturbs an
+    operator's own cycle definitions. Returns the number inserted."""
+    with db.get_connection() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT COUNT(*) FROM Cycles")
+        if (cur.fetchone()[0] or 0) > 0:
+            return 0
+        cur.executemany(
+            "INSERT INTO Cycles (name_fr, name_ar, is_primary) VALUES (%s, %s, %s)",
+            _CANONICAL_CYCLES,
+        )
+        conn.commit()
+        return len(_CANONICAL_CYCLES)
+
+
 def setup_database() -> None:
-    """Create the schema and bring Alembic to head. Idempotent."""
+    """Create the schema, bring Alembic to head, seed canonical cycles. Idempotent."""
     db = DatabaseManager()
     db.initialize_database()  # tables via db_schema (CREATE TABLE IF NOT EXISTS)
 
@@ -54,7 +82,11 @@ def setup_database() -> None:
         # so the constraint migrations (005-010) apply cleanly on top.
         command.stamp(cfg, _DB_SCHEMA_BASELINE)
     command.upgrade(cfg, "head")
-    AppLogger.info("Setup", "Database setup complete — schema + migrations at head.")
+    seeded = seed_cycles(db)
+    AppLogger.info(
+        "Setup",
+        f"Database setup complete — schema + migrations at head; {seeded} canonical cycles seeded.",
+    )
 
 
 if __name__ == "__main__":

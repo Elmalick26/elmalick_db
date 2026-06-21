@@ -74,7 +74,9 @@ def _run_averages(cycle_name, subjects, assessments, grades, *, class_id=1, peri
     Returns the single student's result dict.
     """
     repo = MagicMock()
-    repo.get_cycle_name_for_class.return_value = cycle_name
+    # flag=None exercises the name-fallback path, so these name-based scale tests
+    # still assert the heuristic that backs legacy (unflagged) cycles.
+    repo.get_cycle_type_for_class.return_value = (cycle_name, None)
     repo.get_period_year_id.return_value = 1
     repo.list_students_in_class_ordered.return_value = [(1, "Awa", "Diop", "عوا", "جوب", 1)]
     repo.get_subjects_for_class.return_value = subjects

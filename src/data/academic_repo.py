@@ -95,22 +95,29 @@ class AcademicRepository:
     # ── Cycles ─────────────────────────────────────────────
 
     def list_cycles(self) -> list:
-        """Return (id, name_fr, name_ar) for all cycles."""
+        """Return (id, name_fr, name_ar, is_primary) for all cycles."""
         cursor = self.conn.cursor()
-        cursor.execute("SELECT id, name_fr, name_ar FROM Cycles")
+        cursor.execute("SELECT id, name_fr, name_ar, is_primary FROM Cycles")
         return cursor.fetchall()
 
     def get_cycle(self, cycle_id: int) -> tuple | None:
+        """Return (name_fr, name_ar, is_primary) for a cycle, or None."""
         cursor = self.conn.cursor()
-        cursor.execute("SELECT name_fr, name_ar FROM Cycles WHERE id=%s", (cycle_id,))
+        cursor.execute("SELECT name_fr, name_ar, is_primary FROM Cycles WHERE id=%s", (cycle_id,))
         return cursor.fetchone()
 
-    def upsert_cycle(self, cycle_id: int | None, fr: str, ar: str) -> None:
+    def upsert_cycle(self, cycle_id: int | None, fr: str, ar: str, is_primary: bool | None = None) -> None:
         cursor = self.conn.cursor()
         if cycle_id:
-            cursor.execute("UPDATE Cycles SET name_fr=%s, name_ar=%s WHERE id=%s", (fr, ar, cycle_id))
+            cursor.execute(
+                "UPDATE Cycles SET name_fr=%s, name_ar=%s, is_primary=%s WHERE id=%s",
+                (fr, ar, is_primary, cycle_id),
+            )
         else:
-            cursor.execute("INSERT INTO Cycles (name_fr, name_ar) VALUES (%s, %s)", (fr, ar))
+            cursor.execute(
+                "INSERT INTO Cycles (name_fr, name_ar, is_primary) VALUES (%s, %s, %s)",
+                (fr, ar, is_primary),
+            )
 
     def delete_cycle(self, cycle_id: int) -> None:
         cursor = self.conn.cursor()

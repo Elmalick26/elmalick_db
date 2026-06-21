@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from services.grade_service import is_primary_cycle
+from services.grade_service import resolve_is_primary
 
 
 class GradesRepository:
@@ -75,8 +75,18 @@ class GradesRepository:
         return row[0] if row else None
 
     def get_max_score_for_class(self, class_id: int) -> float:
-        """Return 10.0 for primary cycles, 20.0 for all others."""
-        return 10.0 if is_primary_cycle(self.get_cycle_name_for_class(class_id)) else 20.0
+        """Return 10.0 for primary cycles, 20.0 for all others.
+
+        Uses the explicit Cycles.is_primary flag (name as fallback) so the grade
+        entry clamp can never be mis-scaled by a mistyped cycle name."""
+        cursor = self.conn.cursor()
+        cursor.execute(
+            "SELECT CY.name_fr, CY.is_primary FROM Classes CL JOIN Cycles CY ON CL.cycle_id = CY.id WHERE CL.id = %s",
+            (class_id,),
+        )
+        row = cursor.fetchone()
+        name, flag = (row[0], row[1]) if row else (None, None)
+        return 10.0 if resolve_is_primary(flag, name) else 20.0
 
     def get_class_subjects(self, class_id: int) -> list[tuple]:
         """Return (id, name_fr, name_ar, coefficient) for a class.

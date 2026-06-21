@@ -126,3 +126,12 @@ class YearEndRepository:
         cursor.execute("SELECT name_fr FROM Cycles WHERE id=%s", (cycle_id,))
         row = cursor.fetchone()
         return row[0] if row else ""
+
+    def get_cycle_type(self, cycle_id: int) -> tuple:
+        """Return (name_fr, is_primary_flag) for a cycle, or (None, None).
+
+        The explicit flag drives the promotion scale; name is the legacy fallback."""
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT name_fr, is_primary FROM Cycles WHERE id=%s", (cycle_id,))
+        row = cursor.fetchone()
+        return (row[0], row[1]) if row else (None, None)
