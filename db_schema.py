@@ -143,7 +143,8 @@ def initialize_schema(db_manager) -> None:  # noqa: C901
             CREATE TABLE IF NOT EXISTS Cycles (
                 id SERIAL PRIMARY KEY,
                 name_ar TEXT,
-                name_fr TEXT
+                name_fr TEXT,
+                is_primary BOOLEAN
             )
         """
         )

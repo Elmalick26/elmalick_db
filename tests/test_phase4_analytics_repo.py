@@ -76,19 +76,20 @@ class TestAnalyticsGetStudentColumns:
 
 
 class TestAnalyticsGetClassMaxScore:
+    # Rows are (name_fr, is_primary); flag=None exercises the name-fallback path.
     def test_elementary_cycle(self):
         repo, cursor = _make_repo()
-        cursor.fetchone.return_value = ("elementaire",)  # lowercase, no accent
+        cursor.fetchone.return_value = ("elementaire", None)  # lowercase, no accent
         assert repo.get_class_max_score(1) == 10
 
     def test_primary_cycle(self):
         repo, cursor = _make_repo()
-        cursor.fetchone.return_value = ("Primaire",)
+        cursor.fetchone.return_value = ("Primaire", None)
         assert repo.get_class_max_score(2) == 10
 
     def test_secondary_cycle(self):
         repo, cursor = _make_repo()
-        cursor.fetchone.return_value = ("Secondaire",)
+        cursor.fetchone.return_value = ("Secondaire", None)
         assert repo.get_class_max_score(3) == 20
 
     def test_class_not_found(self):
@@ -98,8 +99,14 @@ class TestAnalyticsGetClassMaxScore:
 
     def test_cycle_name_none(self):
         repo, cursor = _make_repo()
-        cursor.fetchone.return_value = (None,)
+        cursor.fetchone.return_value = (None, None)
         assert repo.get_class_max_score(1) == 20
+
+    def test_explicit_flag_overrides_name(self):
+        # A non-primary-looking name flagged primary still scores /10.
+        repo, cursor = _make_repo()
+        cursor.fetchone.return_value = ("Cycle X", True)
+        assert repo.get_class_max_score(1) == 10
 
 
 # ===========================================================================

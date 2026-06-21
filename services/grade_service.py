@@ -25,6 +25,19 @@ def is_primary_cycle(cycle_name: str | None) -> bool:
     return "بتدائ" in str(cycle_name)
 
 
+def resolve_is_primary(is_primary_flag: bool | None, cycle_name: str | None) -> bool:
+    """Authoritative primary/secondary decision for the grading scale.
+
+    Prefer the explicit ``Cycles.is_primary`` flag (set from a fixed dropdown, so
+    it cannot be mistyped). Fall back to the name heuristic only when the flag is
+    NULL — i.e. legacy rows created before the column existed. This keeps the
+    grading scale from depending on a free-text label.
+    """
+    if is_primary_flag is not None:
+        return bool(is_primary_flag)
+    return is_primary_cycle(cycle_name)
+
+
 class GradeService:
     """Pure business rules for grade averages, promotion decisions, and next class selection."""
 
@@ -71,13 +84,16 @@ class GradeService:
             return sum(valid_averages) / len(valid_averages)
         return float(fallback_average)
 
-    def get_promotion_threshold(self, cycle_name: str | None) -> float:
-        if is_primary_cycle(cycle_name):
-            return 5.0
-        return 10.0
+    def get_promotion_threshold(self, cycle_name: str | None = None, *, is_primary: bool | None = None) -> float:
+        """Pass mark for the cycle. Prefer the explicit ``is_primary`` flag; fall
+        back to the cycle name when it is not supplied (legacy callers)."""
+        primary = is_primary if is_primary is not None else is_primary_cycle(cycle_name)
+        return 5.0 if primary else 10.0
 
-    def get_promotion_decision(self, annual_average: float, cycle_name: str | None) -> str:
-        threshold = self.get_promotion_threshold(cycle_name)
+    def get_promotion_decision(
+        self, annual_average: float, cycle_name: str | None = None, *, is_primary: bool | None = None
+    ) -> str:
+        threshold = self.get_promotion_threshold(cycle_name, is_primary=is_primary)
         return "Admis" if float(annual_average) >= threshold else "Redouble"
 
     def get_honor_mention(self, average: float) -> str:

@@ -29,7 +29,7 @@ from app_logger import AppLogger
 from database_setup import DatabaseManager
 from print_export_service import get_report_output_mode, output_pdf
 from repositories.bulletin_repo import BulletinRepository
-from services.grade_service import GradeService, is_primary_cycle
+from services.grade_service import GradeService, resolve_is_primary
 from ui_styles import (
     Colors,
     ModuleHeaderWidget,
@@ -68,8 +68,8 @@ class GradeCalculator:
     def get_class_context(self, class_id):
         db = DatabaseManager()
         with db.get_connection() as conn:
-            cycle_name = BulletinRepository(conn).get_cycle_name_for_class(class_id) or ""
-        is_primary = is_primary_cycle(cycle_name)
+            cycle_name, is_primary_flag = BulletinRepository(conn).get_cycle_type_for_class(class_id)
+        is_primary = resolve_is_primary(is_primary_flag, cycle_name or "")
         max_score = 10.0 if is_primary else 20.0
         return is_primary, max_score
 

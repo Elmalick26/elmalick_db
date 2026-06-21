@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from services.grade_service import is_primary_cycle
+from services.grade_service import resolve_is_primary
 
 
 class AnalyticsRepository:
@@ -42,7 +42,7 @@ class AnalyticsRepository:
         cursor = self.conn.cursor()
         cursor.execute(
             """
-            SELECT COALESCE(CY.name_fr, '')
+            SELECT COALESCE(CY.name_fr, ''), CY.is_primary
             FROM Classes CL
             LEFT JOIN Cycles CY ON CL.cycle_id = CY.id
             WHERE CL.id = %s
@@ -50,7 +50,8 @@ class AnalyticsRepository:
             (class_id,),
         )
         row = cursor.fetchone()
-        return 10 if is_primary_cycle(row[0] if row else "") else 20
+        name, flag = (row[0], row[1]) if row else ("", None)
+        return 10 if resolve_is_primary(flag, name) else 20
 
     # ── Attendance ────────────────────────────────────────────────────────────
 

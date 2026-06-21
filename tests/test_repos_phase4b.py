@@ -407,14 +407,21 @@ class TestGradesRepoLookups:
         assert repo.get_cycle_name_for_class(99) is None
 
     def test_get_max_score_primary(self):
-        conn, cur = _plain_cursor(fetchone_val=("Primaire",))
+        # Rows are (name_fr, is_primary); flag=None exercises the name fallback.
+        conn, cur = _plain_cursor(fetchone_val=("Primaire", None))
         repo = GradesRepository(conn)
         assert repo.get_max_score_for_class(1) == 10.0
 
     def test_get_max_score_secondary(self):
-        conn, cur = _plain_cursor(fetchone_val=("Collège",))
+        conn, cur = _plain_cursor(fetchone_val=("Collège", None))
         repo = GradesRepository(conn)
         assert repo.get_max_score_for_class(1) == 20.0
+
+    def test_get_max_score_explicit_flag_wins(self):
+        # Non-primary-looking name flagged primary → /10 via the explicit flag.
+        conn, cur = _plain_cursor(fetchone_val=("Cycle X", True))
+        repo = GradesRepository(conn)
+        assert repo.get_max_score_for_class(1) == 10.0
 
     def test_get_class_subjects_from_timetable(self):
         rows = [(1, "Maths", "رياضيات", 4)]

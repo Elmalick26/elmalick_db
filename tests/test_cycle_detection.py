@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 import pytest
 
-from services.grade_service import GradeService, is_primary_cycle
+from services.grade_service import GradeService, is_primary_cycle, resolve_is_primary
 
 
 @pytest.mark.parametrize(
@@ -49,3 +49,25 @@ class TestThresholdUsesDetection:
 
     def test_college_threshold_10(self):
         assert GradeService().get_promotion_threshold("Collège") == 10.0
+
+    def test_threshold_uses_explicit_flag(self):
+        # An explicit is_primary flag overrides the name entirely.
+        assert GradeService().get_promotion_threshold("Collège", is_primary=True) == 5.0
+        assert GradeService().get_promotion_threshold("Primaire", is_primary=False) == 10.0
+
+
+class TestResolveIsPrimary:
+    """resolve_is_primary: explicit flag wins; name heuristic only as fallback."""
+
+    def test_explicit_true_overrides_secondary_name(self):
+        assert resolve_is_primary(True, "Collège") is True
+
+    def test_explicit_false_overrides_primary_name(self):
+        assert resolve_is_primary(False, "Élémentaire") is False
+
+    def test_none_flag_falls_back_to_name(self):
+        assert resolve_is_primary(None, "Élémentaire") is True
+        assert resolve_is_primary(None, "Collège") is False
+
+    def test_none_flag_and_no_name(self):
+        assert resolve_is_primary(None, None) is False
